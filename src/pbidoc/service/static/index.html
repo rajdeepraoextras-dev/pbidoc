@@ -122,7 +122,34 @@
     box-shadow: 0 10px 24px -10px rgba(201,151,27,.7); transition: transform .2s, box-shadow .2s !important;
   }
   .nav-cta:hover { transform: translateY(-1px); box-shadow: 0 14px 30px -10px rgba(201,151,27,.85); background: var(--grad) !important; }
-  .menu-toggle { display: none; }
+  .menu-toggle {
+    display: none; width: 40px; height: 40px; place-items: center; flex: none;
+    background: var(--glass); border: 1px solid var(--border); border-radius: 10px;
+    color: var(--text); cursor: pointer; transition: border-color .2s, background .2s;
+  }
+  .menu-toggle:hover { border-color: var(--border-strong); background: rgba(255,255,255,.06); }
+  .menu-toggle svg { width: 20px; height: 20px; }
+
+  .scroll-progress {
+    position: fixed; top: 0; left: 0; height: 2px; width: 0%;
+    background: var(--grad); z-index: 60; pointer-events: none;
+    box-shadow: 0 0 12px rgba(242,200,17,.5);
+  }
+
+  /* anchored sections land below the sticky nav instead of underneath it */
+  #features, #how, #security, #generate { scroll-margin-top: 86px; }
+
+  /* keyboard focus ring, gold to match the theme */
+  a:focus-visible, button:focus-visible, .doctype-option:focus-within {
+    outline: 2px solid var(--gold); outline-offset: 3px; border-radius: 10px;
+  }
+
+  /* themed scrollbar */
+  html { scrollbar-color: #33290f var(--bg); }
+  ::-webkit-scrollbar { width: 11px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: #33290f; border-radius: 100px; border: 3px solid var(--bg); }
+  ::-webkit-scrollbar-thumb:hover { background: #55441a; }
 
   /* ===================== HERO ===================== */
   .hero { padding: 96px 0 60px; }
@@ -196,7 +223,9 @@
   .stat {
     text-align: center; padding: 30px 18px; border-radius: var(--r);
     background: var(--glass); border: 1px solid var(--border); position: relative; overflow: hidden;
+    transition: transform .3s, border-color .3s;
   }
+  .stat:hover { transform: translateY(-4px); border-color: var(--border-strong); }
   .stat::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--grad); opacity: .8; }
   .stat .num { font-size: 2.7rem; font-weight: 800; letter-spacing: -.04em; background: var(--grad-soft); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; line-height: 1; }
   .stat .lbl { color: var(--muted); font-size: .9rem; margin-top: 9px; font-weight: 500; }
@@ -230,7 +259,8 @@
   /* ===================== HOW IT WORKS ===================== */
   .how { padding: 30px 0 100px; }
   .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; position: relative; }
-  .step { position: relative; padding: 28px 22px; border-radius: 18px; background: var(--panel); border: 1px solid var(--border); }
+  .step { position: relative; padding: 28px 22px; border-radius: 18px; background: var(--panel); border: 1px solid var(--border); transition: transform .3s, border-color .3s, box-shadow .3s; }
+  .step:hover { transform: translateY(-4px); border-color: var(--border-strong); box-shadow: 0 22px 44px -26px rgba(201,151,27,.45); }
   .step .n { width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; font-weight: 800; font-size: 1.05rem; color: var(--ink); background: var(--grad); margin-bottom: 18px; box-shadow: 0 10px 24px -10px rgba(201,151,27,.75); }
   .step h4 { font-size: 1.05rem; font-weight: 700; margin-bottom: 8px; }
   .step p { color: var(--muted); font-size: .88rem; }
@@ -411,7 +441,18 @@
     .steps { grid-template-columns: 1fr 1fr; }
     .step .arrow { display: none; }
     .stat-grid { grid-template-columns: 1fr 1fr; }
-    .nav-links a:not(.nav-cta) { display: none; }
+    .menu-toggle { display: grid; }
+    .nav-links {
+      display: none; position: absolute; top: 70px; left: 0; right: 0;
+      flex-direction: column; align-items: stretch; gap: 2px;
+      padding: 10px 24px 18px; background: #0a0a0a;
+      border-bottom: 1px solid var(--border);
+      box-shadow: 0 24px 40px -18px rgba(0,0,0,.8);
+      animation: fadeUp .25s ease;
+    }
+    .nav-links.open { display: flex; }
+    .nav-links a { padding: 12px 14px; }
+    .nav-cta { margin: 8px 0 0; text-align: center; }
   }
   @media (max-width: 560px) {
     .stat-grid, .steps { grid-template-columns: 1fr; }
@@ -422,6 +463,7 @@
 </head>
 <body>
 
+<div class="scroll-progress" id="scroll-progress"></div>
 <div class="bg"></div>
 <div class="grid-overlay"></div>
 <canvas id="stars"></canvas>
@@ -436,12 +478,15 @@
       </span>
       <span class="name">PBI<b>Compass</b></span>
     </div>
-    <div class="nav-links">
+    <div class="nav-links" id="nav-links">
       <a href="#features">Features</a>
       <a href="#how">How it works</a>
       <a href="#security">Security</a>
       <a href="#generate" class="nav-cta">Generate docs</a>
     </div>
+    <button class="menu-toggle" id="menu-toggle" aria-label="Open menu" aria-expanded="false" aria-controls="nav-links">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
   </div>
 </nav>
 
@@ -773,9 +818,27 @@
 
 <script>
 /* ============ AMBIENT EFFECTS ============ */
-// nav shadow on scroll
+// nav shadow + top progress bar on scroll
 const navEl = document.getElementById("nav");
-addEventListener("scroll", () => navEl.classList.toggle("scrolled", scrollY > 12), { passive: true });
+const progressEl = document.getElementById("scroll-progress");
+function onScroll() {
+  navEl.classList.toggle("scrolled", scrollY > 12);
+  const max = document.documentElement.scrollHeight - innerHeight;
+  progressEl.style.width = (max > 0 ? (scrollY / max) * 100 : 0) + "%";
+}
+addEventListener("scroll", onScroll, { passive: true });
+onScroll();
+
+// mobile menu
+const menuToggle = document.getElementById("menu-toggle");
+const navLinks = document.getElementById("nav-links");
+function setMenu(open) {
+  navLinks.classList.toggle("open", open);
+  menuToggle.setAttribute("aria-expanded", open);
+  menuToggle.setAttribute("aria-label", open ? "Close menu" : "Open menu");
+}
+menuToggle.addEventListener("click", () => setMenu(!navLinks.classList.contains("open")));
+navLinks.querySelectorAll("a").forEach(a => a.addEventListener("click", () => setMenu(false)));
 
 // starfield canvas
 (function () {
