@@ -1,6 +1,6 @@
 """Phase 1 tests: the deterministic audit rule engine.
 
-Every function in ``pbidoc.agents.audit_rules`` is a pure function of a
+Every function in ``pbicompass.agents.audit_rules`` is a pure function of a
 parsed ``SemanticModel`` — these tests assert determinism (same model in,
 same findings out, across repeated calls) and specific fixture-driven
 findings we know the SampleSales model should produce.
@@ -11,9 +11,9 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from pbidoc.agents import audit_rules
-from pbidoc.agents.usage import used_column_names, used_measure_names
-from pbidoc.parsers import detect_and_parse
+from pbicompass.agents import audit_rules
+from pbicompass.agents.usage import used_column_names, used_measure_names
+from pbicompass.parsers import detect_and_parse
 
 FIXTURE = Path(__file__).parent / "fixtures" / "SampleSales" / "SampleSales.pbip"
 
@@ -70,7 +70,7 @@ class DaxFindingsTest(unittest.TestCase):
                          {"Avg Order Value", "Total Revenue", "Revenue YTD", "Orphan Margin"})
 
     def test_duplicate_logic_detected(self):
-        from pbidoc.schemas.model import Measure
+        from pbicompass.schemas.model import Measure
         measures = [
             Measure(name="A", expression="SUM(Sales[Amount])", table="Sales"),
             Measure(name="B", expression="sum ( Sales[Amount] )", table="Sales"),
@@ -81,7 +81,7 @@ class DaxFindingsTest(unittest.TestCase):
         self.assertEqual(duplicates, {"A", "B"})
 
     def test_very_long_expression_flagged(self):
-        from pbidoc.schemas.model import Measure
+        from pbicompass.schemas.model import Measure
         long_expr = "SUM(Sales[Amount])" + " + 0" * 200
         measures = [Measure(name="Long", expression=long_expr, table="Sales", description="has one")]
         findings = audit_rules.find_dax_findings(measures)
@@ -112,7 +112,7 @@ class BestPracticesTest(unittest.TestCase):
         self.assertTrue(checks["circular_dependency_risk"].passed)
 
     def test_actual_cycle_among_active_relationships_is_flagged(self):
-        from pbidoc.schemas.model import Relationship, SemanticModel, Table
+        from pbicompass.schemas.model import Relationship, SemanticModel, Table
 
         model = SemanticModel(
             report_name="CycleTest",
@@ -143,7 +143,7 @@ class PerformanceRisksTest(unittest.TestCase):
             self.assertIn("heuristic", r.detail.lower())
 
     def test_heavy_dax_detects_nested_iterators(self):
-        from pbidoc.schemas.model import Measure, SemanticModel, Table
+        from pbicompass.schemas.model import Measure, SemanticModel, Table
         expr = "SUMX(FILTER(Sales, TRUE), CALCULATE(SUM(Sales[Amount])))"
         measures = [Measure(name="Heavy", expression=expr, table="Sales")]
         model = SemanticModel(report_name="R", tables=[Table(name="Sales", measures=measures)])
@@ -161,7 +161,7 @@ class GovernanceTest(unittest.TestCase):
         self.assertFalse(any(f.area == "ownership" for f in findings))
 
     def test_sensitive_column_names_flagged(self):
-        from pbidoc.schemas.model import Column, SemanticModel, Table
+        from pbicompass.schemas.model import Column, SemanticModel, Table
         model = SemanticModel(
             report_name="R",
             tables=[Table(name="Customer", columns=[Column(name="Email", data_type="string")])],
@@ -212,7 +212,7 @@ class RecommendationsTest(unittest.TestCase):
             self.assertTrue(r.issue and r.why_it_matters and r.suggested_fix and r.expected_benefit)
 
     def test_empty_findings_yield_no_recommendations(self):
-        from pbidoc.schemas.audit_document import UnusedAssets
+        from pbicompass.schemas.audit_document import UnusedAssets
         recs = audit_rules.build_recommendations([], [], [], [], UnusedAssets())
         self.assertEqual(recs, [])
 

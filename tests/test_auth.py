@@ -14,12 +14,12 @@ import zipfile
 from pathlib import Path
 from unittest import mock
 
-from pbidoc.service.accounts import AccountStore
+from pbicompass.service.accounts import AccountStore
 
 try:
     from fastapi.testclient import TestClient
 
-    from pbidoc.service import JobStore, create_app
+    from pbicompass.service import JobStore, create_app
     _HAVE_SERVICE = True
 except Exception:  # pragma: no cover
     _HAVE_SERVICE = False
@@ -45,10 +45,10 @@ class AccountStoreTest(unittest.TestCase):
         store = AccountStore(":memory:")
         self.addCleanup(store.close)
         acct, key = store.create_account("acme", name="Acme BI", plan="pro")
-        self.assertTrue(key.startswith("pbidoc_sk_"))
+        self.assertTrue(key.startswith("pbicompass_sk_"))
         self.assertEqual(store.verify(key).tenant, "acme")
         self.assertEqual(store.verify(key).plan, "pro")
-        self.assertIsNone(store.verify("pbidoc_sk_wrong"))
+        self.assertIsNone(store.verify("pbicompass_sk_wrong"))
         self.assertIsNone(store.verify(None))
 
     def test_unknown_plan_rejected(self):
@@ -58,7 +58,7 @@ class AccountStoreTest(unittest.TestCase):
             store.create_account("x", plan="ultra")
 
     def test_quota_increments_and_blocks(self):
-        with mock.patch.dict("pbidoc.service.accounts.PLAN_LIMITS",
+        with mock.patch.dict("pbicompass.service.accounts.PLAN_LIMITS",
                              {"free": 2, "pro": 200, "enterprise": 100000}, clear=True):
             store = AccountStore(":memory:")
             self.addCleanup(store.close)
@@ -72,7 +72,7 @@ class AccountStoreTest(unittest.TestCase):
 @unittest.skipUnless(_HAVE_SERVICE, "service extras not installed")
 class AuthApiTest(unittest.TestCase):
     def setUp(self):
-        self._root = tempfile.mkdtemp(prefix="pbidoc_authsb_")
+        self._root = tempfile.mkdtemp(prefix="pbicompass_authsb_")
         self.accounts = AccountStore(":memory:")
         self.addCleanup(self.accounts.close)
         _, self.key_a = self.accounts.create_account("tenant-a", plan="enterprise")
@@ -101,7 +101,7 @@ class AuthApiTest(unittest.TestCase):
     def test_requires_valid_key(self):
         self.assertEqual(self.client.post("/jobs", files={"file": ("a.zip", b"x", "application/zip")}).status_code, 401)
         bad = self.client.post("/jobs", files={"file": ("a.zip", b"x", "application/zip")},
-                               headers=_h("pbidoc_sk_nope"))
+                               headers=_h("pbicompass_sk_nope"))
         self.assertEqual(bad.status_code, 401)
 
     def test_me_reports_plan_and_quota(self):
@@ -128,7 +128,7 @@ class AuthApiTest(unittest.TestCase):
         )
 
     def test_quota_returns_429(self):
-        with mock.patch.dict("pbidoc.service.accounts.PLAN_LIMITS",
+        with mock.patch.dict("pbicompass.service.accounts.PLAN_LIMITS",
                              {"free": 1, "pro": 200, "enterprise": 100000}, clear=True):
             accounts = AccountStore(":memory:")
             self.addCleanup(accounts.close)

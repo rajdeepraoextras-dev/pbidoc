@@ -38,7 +38,11 @@ _STATIC = Path(__file__).parent / "static"
 
 
 def _max_upload_bytes() -> int:
-    return int(os.environ.get("PBIDOC_MAX_UPLOAD_MB", "100")) * 1024 * 1024
+    return int(os.environ.get("PBICOMPASS_MAX_UPLOAD_MB", "100")) * 1024 * 1024
+
+
+def _job_timeout_seconds() -> int:
+    return int(os.environ.get("PBICOMPASS_JOB_TIMEOUT_SECONDS", "600"))
 
 
 def _safe_basename(filename: str) -> str:
@@ -61,14 +65,14 @@ def create_app(
     account_store: AccountStore | None = None,
     require_auth: bool | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="pbidoc — Power BI Documentation Generator", version="0.1.0")
+    app = FastAPI(title="PBICompass — Power BI Documentation Generator", version="0.1.0")
     if require_auth is None:
-        require_auth = os.environ.get("PBIDOC_REQUIRE_AUTH", "").lower() in ("1", "true", "yes")
+        require_auth = os.environ.get("PBICOMPASS_REQUIRE_AUTH", "").lower() in ("1", "true", "yes")
     owns_account_store = account_store is None and require_auth
     if owns_account_store:
-        account_store = AccountStore(os.environ.get("PBIDOC_DB", "pbidoc.db"))
+        account_store = AccountStore(os.environ.get("PBICOMPASS_DB", "pbicompass.db"))
 
-    app.state.store = store or JobStore()
+    app.state.store = store or JobStore(processing_timeout_seconds=_job_timeout_seconds())
     app.state.accounts = account_store
     app.state.require_auth = require_auth
     index_html = (_STATIC / "index.html").read_text(encoding="utf-8")

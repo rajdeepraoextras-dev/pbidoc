@@ -16,8 +16,8 @@ from pathlib import Path
 try:
     from fastapi.testclient import TestClient
 
-    from pbidoc.service import JobStore, create_app
-    from pbidoc.service.ingest import _safe_extract
+    from pbicompass.service import JobStore, create_app
+    from pbicompass.service.ingest import _safe_extract
     _HAVE_SERVICE = True
 except Exception:  # pragma: no cover - depends on environment
     _HAVE_SERVICE = False
@@ -37,7 +37,7 @@ def _zip_fixture() -> bytes:
 @unittest.skipUnless(_HAVE_SERVICE, "service extras (fastapi/httpx/multipart) not installed")
 class ServiceTest(unittest.TestCase):
     def setUp(self):
-        self._root = tempfile.mkdtemp(prefix="pbidoc_sbroot_")
+        self._root = tempfile.mkdtemp(prefix="pbicompass_sbroot_")
         self.client = TestClient(create_app(JobStore(), sandbox_root=self._root))
 
     def _run_job(self, filename="SampleSales.zip", content=None, provider="none"):
@@ -86,7 +86,7 @@ class ServiceTest(unittest.TestCase):
     def test_sandbox_is_shredded(self):
         job_id = self._run_job().json()["job_id"]
         self.assertEqual(self._wait(job_id)["status"], "done")
-        leftover = list(Path(self._root).glob("pbidoc_*"))
+        leftover = list(Path(self._root).glob("pbicompass_*"))
         self.assertEqual(leftover, [], f"sandbox not cleaned: {leftover}")
 
     def test_rejects_unsupported_type(self):

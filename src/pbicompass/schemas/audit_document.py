@@ -1,6 +1,6 @@
 """The ``audit_document.json`` contract — an evaluation of the model, not a
 description of it. Populated entirely by deterministic rules
-(:mod:`pbidoc.agents.audit_rules`), except ``narrative_overview`` which
+(:mod:`pbicompass.agents.audit_rules`), except ``narrative_overview`` which
 optionally goes through an LLM with a deterministic fallback.
 
 Audience: BI architects, technical leads, governance teams, managers.

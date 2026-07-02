@@ -216,10 +216,13 @@ def _measure_catalog(model: SemanticModel, client, warn) -> MeasureCatalog:
 
     translations = None
     if client is not None:
-        data = _call(client, io.DAX_TRANSLATOR_SYSTEM, io.dax_translator_input(model),
-                     io.DAX_TRANSLATOR_SCHEMA, warn, "DAX Translator")
-        if data:
-            translations = {t["name"]: t for t in data.get("translations", [])}
+        merged: dict[str, dict] = {}
+        for batch in io.dax_translator_batches(model):
+            data = _call(client, io.DAX_TRANSLATOR_SYSTEM, batch,
+                         io.DAX_TRANSLATOR_SCHEMA, warn, "DAX Translator")
+            if data:
+                merged.update({t["name"]: t for t in data.get("translations", [])})
+        translations = merged or None
 
     for entry, measure in zip(entries, measures):
         t = translations.get(entry.name) if translations else None
@@ -443,7 +446,7 @@ def _infer_glossary(model: SemanticModel, measure_catalog: MeasureCatalog, col_d
 
 
 class TechnicalDocumentationGenerator:
-    """Assembles the 17-section :class:`Document` — the original pbidoc
+    """Assembles the 17-section :class:`Document` — the original pbicompass
     documentation output, unchanged, for BI developers/data engineers/
     consultants/support engineers."""
 

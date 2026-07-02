@@ -931,15 +931,15 @@ tabs.forEach(tab => {
 
 // Account API key persistence (hosted accounts/quotas — unrelated to the LLM engine key)
 const apikey = $("apikey");
-apikey.value = localStorage.getItem("pbidoc_key") || "";
-apikey.addEventListener("change", () => localStorage.setItem("pbidoc_key", apikey.value.trim()));
+apikey.value = localStorage.getItem("pbicompass_key") || "";
+apikey.addEventListener("change", () => localStorage.setItem("pbicompass_key", apikey.value.trim()));
 const authHeaders = () => { const k = (apikey.value || "").trim(); return k ? { "Authorization": "Bearer " + k } : {}; };
 
 // Engine (Claude/Gemini) API key persistence — sent as a form field per job,
 // never as an auth header, never stored server-side.
 const providerApikey = $("provider-apikey");
-providerApikey.value = localStorage.getItem("pbidoc_provider_key") || "";
-providerApikey.addEventListener("change", () => localStorage.setItem("pbidoc_provider_key", providerApikey.value.trim()));
+providerApikey.value = localStorage.getItem("pbicompass_provider_key") || "";
+providerApikey.addEventListener("change", () => localStorage.setItem("pbicompass_provider_key", providerApikey.value.trim()));
 
 // Effort only applies to the Claude engine — hide it otherwise; the engine
 // key field only makes sense once an LLM engine is selected.

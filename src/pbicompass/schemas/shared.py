@@ -1,5 +1,5 @@
 """Metadata shared across the non-technical document types (audit, executive,
-user guide). Deliberately independent from :class:`~pbidoc.schemas.document.
+user guide). Deliberately independent from :class:`~pbicompass.schemas.document.
 DocumentMetadata` — that dataclass belongs to the technical document and stays
 untouched for backward compatibility. This is a small, separate contract.
 """

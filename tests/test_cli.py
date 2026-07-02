@@ -1,6 +1,6 @@
 """Phase 1 tests: the CLI ``generate`` subcommand's ``--document`` flag.
 
-Runs ``pbidoc.cli.main()`` in-process (no subprocess) so these tests are fast
+Runs ``pbicompass.cli.main()`` in-process (no subprocess) so these tests are fast
 and need no installed console script.
 """
 
@@ -14,8 +14,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pbidoc import cli
-from pbidoc.agents.generators import DOCUMENT_TYPES
+from pbicompass import cli
+from pbicompass.agents.generators import DOCUMENT_TYPES
 
 FIXTURE = Path(__file__).parent / "fixtures" / "SampleSales" / "SampleSales.pbip"
 
@@ -23,7 +23,7 @@ _TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+\+00:00")
 
 
 def _without_timestamps(text: str) -> str:
-    """Each ``pbidoc generate`` invocation re-parses the fixture, so
+    """Each ``pbicompass generate`` invocation re-parses the fixture, so
     ``meta.generated_at`` legitimately differs run to run — strip it before
     comparing two generations for structural equality."""
     return _TIMESTAMP.sub("<TS>", text)

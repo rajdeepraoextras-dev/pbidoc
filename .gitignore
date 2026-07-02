@@ -9,12 +9,18 @@ dist/
 venv/
 .pytest_cache/
 
+# Local secrets — never commit real API keys (see .env.example)
+.env
+.env.local
+
 # Local job sandboxes / outputs (NEVER commit customer data or generated docs)
 /tmp_jobs/
 *.model.json
 *.document.json
 *.document.md
 out/
+*.db
+*.db-journal
 
 # Power BI source files — never commit customer artifacts
 *.pbix

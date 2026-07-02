@@ -41,8 +41,13 @@ class Job:
 
 
 class JobStore:
-    def __init__(self, ttl_seconds: int = 3600) -> None:
+    def __init__(self, ttl_seconds: int = 3600, processing_timeout_seconds: int = 600) -> None:
         self.ttl = ttl_seconds
+        # Watchdog ceiling: a job stuck in PROCESSING longer than this is
+        # force-failed by ``sweep`` (called on every status poll). Without
+        # this, a hung render/LLM call would leave the job "processing"
+        # forever with nothing to ever mark it done or failed.
+        self.processing_timeout = processing_timeout_seconds
         self._jobs: dict[str, Job] = {}
         self._outputs: dict[str, dict] = {}  # id -> {"data": {fmt: bytes}, "expires": float}
         self._lock = threading.Lock()
@@ -93,9 +98,19 @@ class JobStore:
             return entry["data"].get(fmt) if entry else None
 
     def sweep(self) -> None:
-        """Drop expired outputs and the job records that go with them."""
+        """Drop expired outputs and the job records that go with them; force-fail
+        any job stuck in PROCESSING past the watchdog timeout."""
         now = time.time()
         with self._lock:
+            for job in self._jobs.values():
+                if (job.status is JobStatus.PROCESSING and job.started_at is not None
+                        and (now - job.started_at) > self.processing_timeout):
+                    job.status = JobStatus.FAILED
+                    job.finished_at = now
+                    job.error = (
+                        "Generation timed out. Try a smaller file, a lower AI "
+                        "effort level, or the offline engine."
+                    )
             expired = [jid for jid, e in self._outputs.items() if e["expires"] < now]
             for jid in expired:
                 self._outputs.pop(jid, None)

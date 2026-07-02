@@ -5,7 +5,7 @@ and intermediate render artifacts live here and **only** here, and the whole
 tree is shredded when the job ends (success or failure) — the core of the
 zero-retention guarantee.
 
-Set ``PBIDOC_SANDBOX_ROOT`` to place sandboxes on a RAM-backed filesystem
+Set ``PBICOMPASS_SANDBOX_ROOT`` to place sandboxes on a RAM-backed filesystem
 (tmpfs) in production so nothing touches a physical disk.
 """
 
@@ -22,9 +22,9 @@ _OVERWRITE_CAP = 64 * 1024 * 1024
 
 class JobSandbox:
     def __init__(self, job_id: str, root: str | None = None) -> None:
-        base = root or os.environ.get("PBIDOC_SANDBOX_ROOT") or tempfile.gettempdir()
+        base = root or os.environ.get("PBICOMPASS_SANDBOX_ROOT") or tempfile.gettempdir()
         os.makedirs(base, exist_ok=True)
-        self.dir = Path(tempfile.mkdtemp(prefix=f"pbidoc_{job_id}_", dir=base))
+        self.dir = Path(tempfile.mkdtemp(prefix=f"pbicompass_{job_id}_", dir=base))
 
     def path(self, name: str) -> Path:
         return self.dir / name

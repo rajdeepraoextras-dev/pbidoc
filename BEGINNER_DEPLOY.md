@@ -1,4 +1,4 @@
-# Deploy pbidoc — beginner step-by-step
+# Deploy PBICompass — beginner step-by-step
 
 This gets your app live on the internet so anyone can open a web page, upload a
 Power BI file, and download documentation. No servers to manage. We'll use
@@ -52,28 +52,28 @@ git config --global user.email "you@example.com"
 ```bash
 git init
 git add .
-git commit -m "pbidoc initial version"
+git commit -m "pbicompass initial version"
 ```
 - `git init` starts tracking this folder.
 - `git add .` stages every file (your `.gitignore` automatically skips the big
   `.venv` folder and other junk — good).
-- `git commit` saves a snapshot called "pbidoc initial version".
+- `git commit` saves a snapshot called "pbicompass initial version".
 
 ### Step 1.4 — Create an empty repository on GitHub
 
 1. Go to https://github.com/new
-2. **Repository name:** `pbidoc` (or any name).
+2. **Repository name:** `pbicompass` (or any name).
 3. Choose **Private** (recommended) or Public.
 4. **Do NOT** tick "Add a README", ".gitignore", or "license" — leave them off.
 5. Click **Create repository**.
 6. GitHub shows you a page with a URL like
-   `https://github.com/yourname/pbidoc.git`. Copy it.
+   `https://github.com/yourname/pbicompass.git`. Copy it.
 
 ### Step 1.5 — Push your code to GitHub
 
 Back in Git Bash (replace the URL with yours):
 ```bash
-git remote add origin https://github.com/yourname/pbidoc.git
+git remote add origin https://github.com/yourname/pbicompass.git
 git branch -M main
 git push -u origin main
 ```
@@ -85,13 +85,13 @@ git push -u origin main
 
 1. Go to your **Render dashboard** (https://dashboard.render.com).
 2. Click **New +** (top right) → **Web Service**.
-3. Render lists your GitHub repos. Find **pbidoc** → click **Connect**.
+3. Render lists your GitHub repos. Find **pbicompass** → click **Connect**.
    - If you don't see it: click **"Configure account"** / **"Configure GitHub"**
      and grant Render access to the repo, then come back.
 4. Render reads your project and should show **Language: Docker** (it found the
    Dockerfile). If it asks, choose **Docker**.
 5. Fill in:
-   - **Name:** `pbidoc` (this becomes part of your URL).
+   - **Name:** `pbicompass` (this becomes part of your URL).
    - **Region:** pick the one nearest you.
    - **Branch:** `main`.
    - **Instance Type:** **Free** (fine for testing).
@@ -102,8 +102,8 @@ git push -u origin main
 - Render now builds the Docker image and starts it. Watch the **Logs** tab —
   it takes about **3–6 minutes**. You're looking for a line like
   `Uvicorn running on http://0.0.0.0:...` and the status turning **"Live"** (green).
-- At the top you'll see your public URL, e.g. **`https://pbidoc.onrender.com`**.
-- Click it. You should see your dark pbidoc homepage. 🎉
+- At the top you'll see your public URL, e.g. **`https://pbicompass.onrender.com`**.
+- Click it. You should see your dark PBICompass homepage. 🎉
 
 > **Free-tier note:** free services "go to sleep" after ~15 minutes of no use.
 > The next visit takes ~30–60 seconds to wake up. That's normal. Upgrade to the
@@ -182,22 +182,22 @@ which on Render requires a **paid instance** (Starter, ~$7/mo).
 2. **Add a disk:** **Settings → Disks → Add Disk** → Name: `data`, **Mount Path:
    `/data`**, Size: `1 GB` → Save.
 3. **Add environment variables** (Environment tab):
-   - `PBIDOC_DB` = `/data/pbidoc.db`
-   - `PBIDOC_REQUIRE_AUTH` = `1`
-   - `PBIDOC_SANDBOX_ROOT` = `/tmp/pbidoc`
+   - `PBICOMPASS_DB` = `/data/pbicompass.db`
+   - `PBICOMPASS_REQUIRE_AUTH` = `1`
+   - `PBICOMPASS_SANDBOX_ROOT` = `/tmp/pbicompass`
    Save (Render redeploys).
 4. **Create your first account:** dashboard → your service → **Shell** tab
    (available on paid instances) → type:
    ```bash
-   pbidoc account create --tenant acme --name "Acme BI" --plan pro
+   pbicompass account create --tenant acme --name "Acme BI" --plan pro
    ```
-   It prints an **API key** like `pbidoc_sk_...` **once** — copy it now.
+   It prints an **API key** like `pbicompass_sk_...` **once** — copy it now.
 5. Give that key to a user. In the web UI they expand **"Add report details"**,
    paste the key into the **API key** field, and generate as normal. Without a
    valid key, requests are rejected.
 
 Plans/limits: `free` 10/day, `pro` 200/day, `enterprise` 100,000/day.
-`pbidoc account list` shows accounts.
+`pbicompass account list` shows accounts.
 
 ---
 

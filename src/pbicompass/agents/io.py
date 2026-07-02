@@ -149,6 +149,43 @@ def dax_translator_input(model: SemanticModel) -> dict:
     }
 
 
+# Batch caps for the DAX Translator prompt. A real-world model can have
+# hundreds of measures with long DAX expressions; packing them all into one
+# call makes the prompt (and the response) huge and slow, risking a timeout
+# on the whole job. Each batch stays under both a measure-count and a total
+# DAX-length budget.
+DAX_TRANSLATOR_BATCH_SIZE = 25
+DAX_TRANSLATOR_BATCH_CHARS = 8000
+
+
+def dax_translator_batches(model: SemanticModel) -> list[dict]:
+    """Split all measures into bounded batches, each shaped like
+    :func:`dax_translator_input`'s return value, so a large model is
+    translated across several smaller, bounded LLM calls instead of one."""
+    batches: list[dict] = []
+    batch: list[dict] = []
+    batch_chars = 0
+    for m in model.all_measures():
+        entry = {
+            "name": m.name,
+            "table": m.table,
+            "expression": m.expression,
+            "format_string": m.format_string,
+        }
+        entry_chars = len(m.expression or "")
+        if batch and (
+            len(batch) >= DAX_TRANSLATOR_BATCH_SIZE
+            or batch_chars + entry_chars > DAX_TRANSLATOR_BATCH_CHARS
+        ):
+            batches.append({"measures": batch})
+            batch, batch_chars = [], 0
+        batch.append(entry)
+        batch_chars += entry_chars
+    if batch:
+        batches.append({"measures": batch})
+    return batches
+
+
 # --------------------------------------------------------------------------
 # Data Modeler Agent  (-> Semantic Model narrative, §IV)
 # --------------------------------------------------------------------------

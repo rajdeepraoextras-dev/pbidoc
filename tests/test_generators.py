@@ -1,5 +1,5 @@
 """Phase 1 + 2 + 3 tests: the document generators layer
-(``pbidoc.agents.generators``) — ``AuditReportGenerator``,
+(``pbicompass.agents.generators``) — ``AuditReportGenerator``,
 ``ExecutiveSummaryGenerator``, and ``BusinessGuideGenerator`` end-to-end,
 plus the ``TechnicalDocumentationGenerator`` compatibility shim.
 
@@ -12,18 +12,18 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from pbidoc.agents import generate_document
-from pbidoc.agents.generators import (
+from pbicompass.agents import generate_document
+from pbicompass.agents.generators import (
     DOCUMENT_TYPES,
     AuditReportGenerator,
     BusinessGuideGenerator,
     ExecutiveSummaryGenerator,
     TechnicalDocumentationGenerator,
 )
-from pbidoc.parsers import detect_and_parse
-from pbidoc.schemas.audit_document import AuditDocument
-from pbidoc.schemas.executive_document import ExecutiveDocument
-from pbidoc.schemas.user_guide_document import UserGuideDocument
+from pbicompass.parsers import detect_and_parse
+from pbicompass.schemas.audit_document import AuditDocument
+from pbicompass.schemas.executive_document import ExecutiveDocument
+from pbicompass.schemas.user_guide_document import UserGuideDocument
 
 FIXTURE = Path(__file__).parent / "fixtures" / "SampleSales" / "SampleSales.pbip"
 

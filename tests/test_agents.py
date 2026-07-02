@@ -10,10 +10,10 @@ import json
 import unittest
 from pathlib import Path
 
-from pbidoc.agents import generate_document
-from pbidoc.agents.deterministic import translate_dax
-from pbidoc.parsers import detect_and_parse
-from pbidoc.render import render_markdown
+from pbicompass.agents import generate_document
+from pbicompass.agents.deterministic import translate_dax
+from pbicompass.parsers import detect_and_parse
+from pbicompass.render import render_markdown
 
 FIXTURE = Path(__file__).parent / "fixtures" / "SampleSales" / "SampleSales.pbip"
 
@@ -116,7 +116,7 @@ class DeterministicOrchestratorTest(unittest.TestCase):
     def test_audit_matches_table_prefixed_measure_refs(self):
         # Power BI references measures as "HomeTable.Measure" — the audit must
         # match the trailing segment, else everything looks orphaned.
-        from pbidoc.schemas.model import Measure, Page, SemanticModel, Table, Visual
+        from pbicompass.schemas.model import Measure, Page, SemanticModel, Table, Visual
         model = SemanticModel(
             report_name="X",
             tables=[Table(name="MT", measures=[
@@ -196,17 +196,17 @@ class DaxTranslatorUnitTest(unittest.TestCase):
 
 class ClientFactoryTest(unittest.TestCase):
     def test_offline_returns_none(self):
-        from pbidoc.agents.llm import get_client
+        from pbicompass.agents.llm import get_client
         self.assertIsNone(get_client("none"))
         self.assertIsNone(get_client(None))
 
     def test_unknown_provider_raises(self):
-        from pbidoc.agents.llm import get_client
+        from pbicompass.agents.llm import get_client
         with self.assertRaises(ValueError):
             get_client("frobnicate")
 
     def test_gemini_routes_and_needs_package(self):
-        from pbidoc.agents.llm import get_client
+        from pbicompass.agents.llm import get_client
         try:
             import google.genai  # noqa: F401
             self.skipTest("google-genai installed; ImportError path not exercised")
@@ -216,7 +216,7 @@ class ClientFactoryTest(unittest.TestCase):
                 get_client("gemini", model="claude-opus-4-8")
 
     def test_gemini_schema_strips_additional_properties(self):
-        from pbidoc.agents.llm import _gemini_schema
+        from pbicompass.agents.llm import _gemini_schema
         schema = {
             "type": "object", "additionalProperties": False, "required": ["a"],
             "properties": {"a": {"type": "array", "items": {

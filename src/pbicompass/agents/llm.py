@@ -5,7 +5,7 @@
 calls Claude through the official ``anthropic`` SDK with structured outputs
 (``output_config.format``), so responses are schema-valid JSON.
 
-The ``anthropic`` import is lazy — the rest of ``pbidoc`` (and the deterministic
+The ``anthropic`` import is lazy — the rest of ``pbicompass`` (and the deterministic
 pipeline) works without the dependency installed.
 """
 
@@ -26,6 +26,14 @@ class LLMClient(Protocol):
 EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
 
 
+# Hard ceiling on a single LLM call. Without this, a slow/huge prompt or a
+# network hiccup on the host can block the calling thread indefinitely — the
+# job then sits in "processing" forever since nothing else marks it failed.
+# ``call_llm`` (agents/generators/base.py) catches the resulting timeout
+# exception and falls back to the deterministic engine for that agent.
+_DEFAULT_TIMEOUT_SECONDS = 180.0
+
+
 class AnthropicClient:
     """Claude-backed client using structured outputs.
 
@@ -43,6 +51,7 @@ class AnthropicClient:
         api_key: Optional[str] = None,
         effort: str = "high",
         max_tokens: int = 16000,
+        timeout: float = _DEFAULT_TIMEOUT_SECONDS,
     ) -> None:
         if effort not in EFFORT_LEVELS:
             raise ValueError(f"Unknown effort level {effort!r}. Choose from {EFFORT_LEVELS}.")
@@ -54,10 +63,14 @@ class AnthropicClient:
                 "Install it with: pip install -e \".[agents]\""
             ) from exc
         self._anthropic = anthropic
-        self._client = anthropic.Anthropic(api_key=api_key) if api_key else anthropic.Anthropic()
+        self._client = (
+            anthropic.Anthropic(api_key=api_key, timeout=timeout)
+            if api_key else anthropic.Anthropic(timeout=timeout)
+        )
         self.model = model
         self.effort = effort
         self.max_tokens = max_tokens
+        self.timeout = timeout
 
     def complete_json(self, system: str, user: str, schema: dict) -> dict:
         response = self._client.messages.create(
@@ -95,13 +108,14 @@ class GeminiClient:
 
     Defaults to Gemini 3.5 Flash. Reads the API key from ``GEMINI_API_KEY`` (or
     ``GOOGLE_API_KEY``) — never hardcode it. Lazy-imports ``google-genai`` so the
-    rest of ``pbidoc`` works without the dependency.
+    rest of ``pbicompass`` works without the dependency.
     """
 
     def __init__(self, model: str = "gemini-3.5-flash", *, api_key: Optional[str] = None,
-                 max_output_tokens: int = 16000) -> None:
+                 max_output_tokens: int = 16000, timeout: float = _DEFAULT_TIMEOUT_SECONDS) -> None:
         try:
             from google import genai  # noqa: PLC0415 (intentional lazy import)
+            from google.genai import types  # noqa: PLC0415
         except ImportError as exc:  # pragma: no cover - depends on environment
             raise ImportError(
                 "The 'google-genai' package is required for the Gemini provider. "
@@ -109,7 +123,12 @@ class GeminiClient:
             ) from exc
         self._genai = genai
         key = api_key or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-        self._client = genai.Client(api_key=key) if key else genai.Client()
+        # HttpOptions.timeout is milliseconds.
+        http_options = types.HttpOptions(timeout=int(timeout * 1000))
+        self._client = (
+            genai.Client(api_key=key, http_options=http_options)
+            if key else genai.Client(http_options=http_options)
+        )
         self.model = model
         self.max_output_tokens = max_output_tokens
 

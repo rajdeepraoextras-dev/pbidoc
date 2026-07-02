@@ -12,9 +12,9 @@ import unittest
 import zipfile
 from pathlib import Path
 
-from pbidoc.adapters import build_model_from_frames
-from pbidoc.parsers import detect_and_parse
-from pbidoc.parsers.pbip import _assemble
+from pbicompass.adapters import build_model_from_frames
+from pbicompass.parsers import detect_and_parse
+from pbicompass.parsers.pbip import _assemble
 
 
 def _sample_frames() -> dict:

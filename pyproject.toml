@@ -3,13 +3,13 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pbidoc"
+name = "pbicompass"
 version = "0.1.0"
 description = "Enterprise Power BI Documentation Generator — metadata-only parser and AI documentation pipeline."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "Proprietary" }
-authors = [{ name = "pbidoc" }]
+license = { text = "MIT" }
+authors = [{ name = "Rajdeep Rao" }]
 # Phase 0 core is intentionally ZERO-DEPENDENCY (stdlib only).
 # This keeps the parser portable, easy to audit, and minimises the number of
 # third-party libraries that ever touch customer metadata (zero-data-leakage).
@@ -26,10 +26,10 @@ docs = ["jinja2"]
 dev = ["pytest", "httpx"]  # httpx backs FastAPI's TestClient
 
 [project.scripts]
-pbidoc = "pbidoc.cli:main"
+pbicompass = "pbicompass.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-"pbidoc.service" = ["static/*.html"]
+"pbicompass.service" = ["static/*.html"]

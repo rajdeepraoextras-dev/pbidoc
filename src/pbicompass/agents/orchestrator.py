@@ -1,11 +1,11 @@
 """Backward-compatible entry point: ``SemanticModel`` -> ``Document``.
 
 The technical-document generation logic that used to live in this module has
-moved to :mod:`pbidoc.agents.generators.technical` (``TechnicalDocumentation
+moved to :mod:`pbicompass.agents.generators.technical` (``TechnicalDocumentation
 Generator``), alongside the new document-type generators (Audit & Health
 Report, and more to follow). ``generate_document`` is kept here, unchanged in
 signature and behavior, as a one-line delegate — any existing caller
-(``pbidoc.cli``, the web service, direct imports) keeps working exactly as
+(``pbicompass.cli``, the web service, direct imports) keeps working exactly as
 before.
 """
 

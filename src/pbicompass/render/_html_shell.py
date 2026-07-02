@@ -506,7 +506,7 @@ def page_shell(
     o.append('<div class="sidebar">')
     o.append('<div class="sidebar-logo">')
     o.append(_LOGO_SVG)
-    o.append('<span>pbidoc</span>')
+    o.append('<span>PBICompass</span>')
     o.append('</div>')
     o.append('<ul class="toc-list">')
     for sec_id, sec_title in toc:

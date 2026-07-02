@@ -1,4 +1,4 @@
-# pbidoc — Enterprise Power BI Documentation Generator
+# PBICompass — Enterprise Power BI Documentation Generator
 
 AI-powered pipeline that ingests Power BI files (`.pbip` / `.pbix`), extracts
 **metadata only**, and generates enterprise-grade documentation for both
@@ -14,36 +14,36 @@ architecture and phased roadmap.
 The foundation is in place and tested (61 tests passing):
 
 - **Canonical schemas** — the `model.json` and `document.json` contracts that
-  every parser and AI agent keys off ([src/pbidoc/schemas](src/pbidoc/schemas)).
+  every parser and AI agent keys off ([src/pbicompass/schemas](src/pbicompass/schemas)).
 - **`.pbip` parser** — extracts the semantic model (TMDL **and** TMSL/`model.bim`)
   and the report layout (PBIR enhanced **and** legacy) into `model.json`
-  ([src/pbidoc/parsers](src/pbidoc/parsers)).
+  ([src/pbicompass/parsers](src/pbicompass/parsers)).
 - **`.pbix` adapter** — legacy binary files via a `pbixray` adapter that reads
   metadata frames only (never the VertiPaq `DataModel` rows), plus report layout
   from the ZIP. Degrades gracefully to layout-only if `pbixray` is unavailable
-  ([src/pbidoc/adapters](src/pbidoc/adapters)).
+  ([src/pbicompass/adapters](src/pbicompass/adapters)).
 - **AI agents** — Business Analyst, DAX Translator, and Data Modeler agents plus
   a deterministic Auditor turn `model.json` into the 7-section `document.json`
-  ([src/pbidoc/agents](src/pbidoc/agents)). A **deterministic offline engine**
+  ([src/pbicompass/agents](src/pbicompass/agents)). A **deterministic offline engine**
   produces the full document with no API key; pass `--provider anthropic` to use
   Claude (Opus 4.8, structured outputs) for the prose agents.
 - **Renderers** — `document.json` → **Markdown, HTML, and DOCX** with no external
   tools (the styled HTML prints to PDF from any browser; the `.docx` is
   hand-written OOXML — no `python-docx`/`lxml`), plus **PDF** via an optional
   Pandoc adapter that degrades gracefully when Pandoc is absent
-  ([src/pbidoc/render](src/pbidoc/render)).
+  ([src/pbicompass/render](src/pbicompass/render)).
 - **Zero-retention web service** — a FastAPI app: upload a `.pbix` or a zipped
   `.pbip`, it processes inside a per-job sandbox (shredded in a `finally` block)
   and serves the rendered docs for a short TTL. Single-page upload UI at `/`,
   async jobs via a queue-agnostic worker (Celery-ready), zip-slip guard, no
-  customer metadata persisted ([src/pbidoc/service](src/pbidoc/service)).
+  customer metadata persisted ([src/pbicompass/service](src/pbicompass/service)).
 - **Auth & multi-tenancy** — optional API-key auth (SQLite-backed accounts —
   **no new dependency**), per-tenant job isolation, and per-plan freemium daily
   quotas (HTTP 429 when exceeded). Off by default (self-hosted/local); enable
-  with `PBIDOC_REQUIRE_AUTH=1`
-  ([src/pbidoc/service/accounts.py](src/pbidoc/service/accounts.py)).
-- **CLI** — `pbidoc parse`, `pbidoc generate`, `pbidoc serve`, and `pbidoc account`
-  ([src/pbidoc/cli.py](src/pbidoc/cli.py)).
+  with `PBICOMPASS_REQUIRE_AUTH=1`
+  ([src/pbicompass/service/accounts.py](src/pbicompass/service/accounts.py)).
+- **CLI** — `pbicompass parse`, `pbicompass generate`, `pbicompass serve`, and `pbicompass account`
+  ([src/pbicompass/cli.py](src/pbicompass/cli.py)).
 - **Tests** — end-to-end + unit tests against synthetic fixtures
   ([tests/](tests/)), including the LLM path via an in-process fake client.
 
@@ -77,40 +77,40 @@ No install required (src layout + `PYTHONPATH`):
 ```bash
 # Windows PowerShell
 $env:PYTHONPATH = "src"
-python -m pbidoc parse "tests\fixtures\SampleSales\SampleSales.pbip" -o model.json
+python -m pbicompass parse "tests\fixtures\SampleSales\SampleSales.pbip" -o model.json
 
 # bash
-PYTHONPATH=src python -m pbidoc parse tests/fixtures/SampleSales/SampleSales.pbip -o model.json
+PYTHONPATH=src python -m pbicompass parse tests/fixtures/SampleSales/SampleSales.pbip -o model.json
 ```
 
-Or install as a package to get the `pbidoc` command:
+Or install as a package to get the `pbicompass` command:
 
 ```bash
 pip install -e .
-pbidoc parse path/to/Project.pbip -o model.json
+pbicompass parse path/to/Project.pbip -o model.json
 ```
 
 ### Generate documentation
 
 ```bash
 # Deterministic, offline, no API key — Markdown to stdout or a file
-PYTHONPATH=src python -m pbidoc generate tests/fixtures/SampleSales/SampleSales.pbip -o report.md
+PYTHONPATH=src python -m pbicompass generate tests/fixtures/SampleSales/SampleSales.pbip -o report.md
 
 # Emit the structured document.json instead
-PYTHONPATH=src python -m pbidoc generate path/to/Project.pbip -o report.document.json
+PYTHONPATH=src python -m pbicompass generate path/to/Project.pbip -o report.document.json
 
 # AI-written prose (needs pip install -e ".[agents]" and the provider's key in the environment):
-PYTHONPATH=src python -m pbidoc generate path/to/Project.pbip --provider anthropic -o report.md   # ANTHROPIC_API_KEY
-PYTHONPATH=src python -m pbidoc generate path/to/Project.pbip --provider gemini    -o report.md   # GEMINI_API_KEY
+PYTHONPATH=src python -m pbicompass generate path/to/Project.pbip --provider anthropic -o report.md   # ANTHROPIC_API_KEY
+PYTHONPATH=src python -m pbicompass generate path/to/Project.pbip --provider gemini    -o report.md   # GEMINI_API_KEY
 ```
 
 Output format is inferred from the `-o` extension (or forced with `--format`):
 
 ```bash
-PYTHONPATH=src python -m pbidoc generate Project.pbip -o report.html   # styled HTML (print → PDF)
-PYTHONPATH=src python -m pbidoc generate Project.pbip -o report.docx   # Word, no external tools
-PYTHONPATH=src python -m pbidoc generate Project.pbip -o report.pdf    # needs Pandoc + a PDF engine
-PYTHONPATH=src python -m pbidoc generate Project.pbip --format md      # Markdown to stdout
+PYTHONPATH=src python -m pbicompass generate Project.pbip -o report.html   # styled HTML (print → PDF)
+PYTHONPATH=src python -m pbicompass generate Project.pbip -o report.docx   # Word, no external tools
+PYTHONPATH=src python -m pbicompass generate Project.pbip -o report.pdf    # needs Pandoc + a PDF engine
+PYTHONPATH=src python -m pbicompass generate Project.pbip --format md      # Markdown to stdout
 ```
 
 `md`, `json`, `html`, and `docx` need nothing beyond the standard library; `pdf`
@@ -126,7 +126,7 @@ orphaned-measure audit is always deterministic (a set difference, never a guess)
 
 ```bash
 pip install -e ".[service]"
-PYTHONPATH=src python -m pbidoc serve            # http://127.0.0.1:8000
+PYTHONPATH=src python -m pbicompass serve            # http://127.0.0.1:8000
 ```
 
 Open the URL, drop a `.pbix` or a `.zip` of a `.pbip` project, choose the engine,
@@ -144,11 +144,11 @@ By default the service is open (the `public` tenant, no limits) — ideal for
 self-hosting. To run it as a multi-tenant SaaS, enable auth and mint keys:
 
 ```bash
-export PBIDOC_DB=pbidoc.db
-pbidoc account create --tenant acme --name "Acme BI" --plan pro   # prints the API key once
+export PBICOMPASS_DB=pbicompass.db
+pbicompass account create --tenant acme --name "Acme BI" --plan pro   # prints the API key once
 
-export PBIDOC_REQUIRE_AUTH=1
-pbidoc serve
+export PBICOMPASS_REQUIRE_AUTH=1
+pbicompass serve
 ```
 
 Then every request needs `Authorization: Bearer <key>` (or `X-API-Key`). Jobs
@@ -170,7 +170,7 @@ $env:PYTHONPATH = "src"; python -m unittest discover -s tests -v
 ## Project layout
 
 ```
-src/pbidoc/
+src/pbicompass/
   schemas/
     model.py      # the model.json contract (extracted metadata)
     document.py   # the document.json contract (assembled docs, 7 sections)
@@ -211,7 +211,7 @@ tests/                  # 52 tests across parser, adapter, agents, renderers, se
 
 ```bash
 pip install -e ".[pbix]"     # installs pbixray (needs Python <= 3.13)
-pbidoc parse path/to/Report.pbix -o model.json
+pbicompass parse path/to/Report.pbix -o model.json
 ```
 
 `pbixray` reads the semantic model (schema, DAX measures/columns/tables,
@@ -247,3 +247,20 @@ multi-tenancy with freemium quotas**. Remaining for scale/commercial:
 > The `.pbip` / `.pbix` parsers are a pragmatic v0 covering the common ~95% of
 > real exports. Unrecognised constructs are recorded in `meta.warnings` rather
 > than raised, so a single odd object never aborts a whole document build.
+
+---
+
+## Documentation index
+
+| Doc | Covers |
+|---|---|
+| [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) | Full architecture, agent prompts, and phased roadmap |
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Production deployment (Render/Fly.io/VM), env vars, zero-retention checklist |
+| [BEGINNER_DEPLOY.md](BEGINNER_DEPLOY.md) | Click-by-click deploy guide for a first-time host |
+| [SECURITY.md](SECURITY.md) | Data-handling model, zero-leakage guarantees, reporting a vulnerability |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Dev setup, test workflow, ground rules for changes |
+| [.env.example](.env.example) | Every environment variable the app reads, with defaults |
+
+## License
+
+[MIT](LICENSE) © Rajdeep Rao

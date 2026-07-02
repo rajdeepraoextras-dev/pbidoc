@@ -1,4 +1,4 @@
-"""pbidoc — Enterprise Power BI Documentation Generator.
+"""PBICompass — Enterprise Power BI Documentation Generator.
 
 Phase 0 deliverable: the canonical metadata schema (``schemas``) and a
 metadata-only ``.pbip`` / ``.pbix`` parser (``parsers``).

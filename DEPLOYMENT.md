@@ -1,4 +1,4 @@
-# Deploying pbidoc to production
+# Deploying PBICompass to production
 
 ## TL;DR — what you need (and don't)
 
@@ -27,11 +27,13 @@ That's it. No managed database, no message broker, no third-party auth provider.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `PBIDOC_REQUIRE_AUTH` | _(off)_ | Set `1` to require API keys (hosted SaaS). Off = open `public` tenant. |
-| `PBIDOC_DB` | `pbidoc.db` | SQLite path for accounts. Point at the persistent volume, e.g. `/data/pbidoc.db`. |
-| `PBIDOC_SANDBOX_ROOT` | system temp | Per-job working dir. Point at a tmpfs (RAM) for strict zero-retention. |
-| `PBIDOC_MAX_UPLOAD_MB` | `100` | Max upload size. |
+| `PBICOMPASS_REQUIRE_AUTH` | _(off)_ | Set `1` to require API keys (hosted SaaS). Off = open `public` tenant. |
+| `PBICOMPASS_DB` | `pbicompass.db` | SQLite path for accounts. Point at the persistent volume, e.g. `/data/pbicompass.db`. |
+| `PBICOMPASS_SANDBOX_ROOT` | system temp | Per-job working dir. Point at a tmpfs (RAM) for strict zero-retention. |
+| `PBICOMPASS_MAX_UPLOAD_MB` | `100` | Max upload size. |
+| `PBICOMPASS_JOB_TIMEOUT_SECONDS` | `600` | Watchdog: force-fail a job stuck in "processing" longer than this (hung LLM call, oversized file). |
 | `ANTHROPIC_API_KEY` | — | Enables the Claude engine (install the `agents` extra too). |
+| `GEMINI_API_KEY` | — | Enables the Gemini engine (install the `agents` extra too; `GOOGLE_API_KEY` also works). |
 
 ---
 
@@ -44,8 +46,8 @@ repo already has a `Dockerfile`.
 2. Create a new **Web Service from a Dockerfile** on your platform.
 3. Add a **persistent disk/volume** mounted at `/data` (1 GB is plenty).
 4. Set environment variables:
-   - `PBIDOC_DB=/data/pbidoc.db`
-   - `PBIDOC_REQUIRE_AUTH=1` (for a hosted SaaS) — or leave unset to run open.
+   - `PBICOMPASS_DB=/data/pbicompass.db`
+   - `PBICOMPASS_REQUIRE_AUTH=1` (for a hosted SaaS) — or leave unset to run open.
    - `ANTHROPIC_API_KEY=...` (optional, for Claude).
 5. The platform builds the image, runs the `CMD`, assigns a URL, and terminates
    TLS for you. Health check path: `/healthz`.
@@ -58,7 +60,7 @@ volume:
 fly launch --no-deploy            # detects the Dockerfile
 fly volumes create data --size 1
 # in fly.toml: [mounts] source="data" destination="/data"
-fly secrets set PBIDOC_REQUIRE_AUTH=1 ANTHROPIC_API_KEY=sk-...
+fly secrets set PBICOMPASS_REQUIRE_AUTH=1 ANTHROPIC_API_KEY=sk-...
 fly deploy
 ```
 
@@ -70,19 +72,19 @@ On any VPS (Hetzner, DigitalOcean, EC2, …) with a domain pointed at it:
 
 ```bash
 # 1. Build
-git clone <your-repo> pbidoc && cd pbidoc
-docker build -t pbidoc .
+git clone <your-repo> pbicompass && cd pbicompass
+docker build -t pbicompass .
 
 # 2. Run (persistent /data volume, tmpfs sandbox for RAM-only zero-retention)
-docker run -d --name pbidoc \
+docker run -d --name pbicompass \
   -p 127.0.0.1:8000:8000 \
-  -v pbidoc-data:/data \
-  --tmpfs /tmp/pbidoc:rw,size=512m \
-  -e PBIDOC_DB=/data/pbidoc.db \
-  -e PBIDOC_REQUIRE_AUTH=1 \
+  -v pbicompass-data:/data \
+  --tmpfs /tmp/pbicompass:rw,size=512m \
+  -e PBICOMPASS_DB=/data/pbicompass.db \
+  -e PBICOMPASS_REQUIRE_AUTH=1 \
   -e ANTHROPIC_API_KEY=sk-...   `# optional` \
   --restart unless-stopped \
-  pbidoc
+  pbicompass
 ```
 
 Put **Caddy** in front for automatic HTTPS (one file, `Caddyfile`):
@@ -100,21 +102,21 @@ docker run -d --name caddy --restart unless-stopped \
 Caddy fetches and renews a Let's Encrypt certificate automatically. Done.
 
 > Prefer systemd over Docker? Install with `pip install ".[service]"` into a venv
-> and run `uvicorn pbidoc.service.app:app --host 127.0.0.1 --port 8000` under a
+> and run `uvicorn pbicompass.service.app:app --host 127.0.0.1 --port 8000` under a
 > systemd unit, with Caddy/nginx in front. Same env vars apply.
 
 ---
 
 ## Enabling auth & creating accounts
 
-With `PBIDOC_REQUIRE_AUTH=1`, every request needs `Authorization: Bearer <key>`.
-Create accounts with the CLI (runs inside the container/host, same `PBIDOC_DB`):
+With `PBICOMPASS_REQUIRE_AUTH=1`, every request needs `Authorization: Bearer <key>`.
+Create accounts with the CLI (runs inside the container/host, same `PBICOMPASS_DB`):
 
 ```bash
-# inside the running container (e.g. `docker exec -it pbidoc bash`)
-pbidoc account create --tenant acme --name "Acme BI" --plan pro
+# inside the running container (e.g. `docker exec -it pbicompass bash`)
+pbicompass account create --tenant acme --name "Acme BI" --plan pro
 #   -> prints the API key ONCE — copy it and give it to the customer
-pbidoc account list
+pbicompass account list
 ```
 
 Plans and daily quotas: `free` 10, `pro` 200, `enterprise` 100k docs/day. Users
@@ -125,10 +127,10 @@ API. Tenants only ever see their own jobs.
 
 ## Zero-retention in production
 
-- Set `PBIDOC_SANDBOX_ROOT` to a **tmpfs** mount (RAM) so uploads never touch a
+- Set `PBICOMPASS_SANDBOX_ROOT` to a **tmpfs** mount (RAM) so uploads never touch a
   physical disk. The per-job sandbox is shredded in a `finally` block regardless.
 - The only persisted state is **accounts + per-day usage counts** in
-  `PBIDOC_DB` — never report metadata. Generated documents live in memory with a
+  `PBICOMPASS_DB` — never report metadata. Generated documents live in memory with a
   short TTL.
 - Logs contain job IDs and statuses only — no model content.
 
@@ -138,8 +140,8 @@ API. Tenants only ever see their own jobs.
 
 - [ ] `GET /healthz` returns `{"ok": true}` through your HTTPS domain.
 - [ ] `/data` is a **persistent** volume (accounts survive a restart/redeploy).
-- [ ] `PBIDOC_SANDBOX_ROOT` is a tmpfs (recommended) and has room for `PBIDOC_MAX_UPLOAD_MB`.
-- [ ] Auth: `PBIDOC_REQUIRE_AUTH=1` set, and at least one account created.
+- [ ] `PBICOMPASS_SANDBOX_ROOT` is a tmpfs (recommended) and has room for `PBICOMPASS_MAX_UPLOAD_MB`.
+- [ ] Auth: `PBICOMPASS_REQUIRE_AUTH=1` set, and at least one account created.
 - [ ] Upload the bundled `tests/fixtures/SampleSales` (zipped) through the UI and
       download the HTML — confirms the full pipeline end-to-end.
 - [ ] Single instance / `--workers 1` (until the Celery/Redis swap).

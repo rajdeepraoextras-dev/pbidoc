@@ -26,7 +26,7 @@ from typing import Optional
 
 # Daily document quota per plan (jobs accepted per UTC day).
 PLAN_LIMITS = {"free": 10, "pro": 200, "enterprise": 100_000}
-KEY_PREFIX = "pbidoc_sk_"
+KEY_PREFIX = "pbicompass_sk_"
 
 
 def _hash_key(raw: str) -> str:

@@ -126,7 +126,7 @@ def render_markdown(doc: AuditDocument) -> str:
 
     out.append(f"\n## {_SECTION_TITLES[6]}\n")
     out.append(_table(["Asset Type", "Count", "Items"], _unused_rows(doc.unused_assets)))
-    out.append("\n_Hierarchies and calculation groups are not yet parsed by pbidoc, so they are "
+    out.append("\n_Hierarchies and calculation groups are not yet parsed by PBICompass, so they are "
                "excluded from this audit._\n")
 
     out.append(f"\n## {_SECTION_TITLES[7]}\n")
@@ -217,7 +217,7 @@ def render_html(doc: AuditDocument) -> str:
     o.append(f'<h2 id="sec7">{_e(_SECTION_TITLES[6])}</h2>')
     o.append(_html_table(["Asset Type", "Count", "Items"],
                          [[_e(row[0]), _e(row[1]), _e(row[2])] for row in _unused_rows(doc.unused_assets)]))
-    o.append('<p class="caveat">Hierarchies and calculation groups are not yet parsed by pbidoc, '
+    o.append('<p class="caveat">Hierarchies and calculation groups are not yet parsed by PBICompass, '
              'so they are excluded from this audit.</p>')
 
     o.append(f'<h2 id="sec8">{_e(_SECTION_TITLES[7])}</h2>')
@@ -291,7 +291,7 @@ def render_docx(doc: AuditDocument, out_path) -> Path:
 
     d.heading(1, _SECTION_TITLES[6])
     d.table(["Asset Type", "Count", "Items"], _t(_unused_rows(doc.unused_assets)))
-    d.para([d._run("Hierarchies and calculation groups are not yet parsed by pbidoc, so they are "
+    d.para([d._run("Hierarchies and calculation groups are not yet parsed by PBICompass, so they are "
                    "excluded from this audit.", italic=True)])
 
     d.heading(1, _SECTION_TITLES[7])

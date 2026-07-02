@@ -1,5 +1,5 @@
 """Document generators — one per document type, all fanning out from the
-same parsed :class:`~pbidoc.schemas.model.SemanticModel`.
+same parsed :class:`~pbicompass.schemas.model.SemanticModel`.
 
 ``DOCUMENT_TYPES`` is the registry the CLI (and, in later phases, the web
 service) consults to resolve a ``--document`` choice to a generator.

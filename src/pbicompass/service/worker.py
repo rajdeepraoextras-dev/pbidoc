@@ -28,7 +28,7 @@ from .ingest import ingest_to_model
 from .jobs import JobStore
 from .sandbox import JobSandbox
 
-log = logging.getLogger("pbidoc.service")
+log = logging.getLogger("pbicompass.service")
 
 # Friendly, content-free messages keyed by failure mode (no metadata leaks into logs/UI).
 _FRIENDLY = {

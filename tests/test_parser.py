@@ -10,9 +10,9 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from pbidoc.parsers import detect_and_parse
-from pbidoc.parsers.tmsl import parse_semantic_model_tmsl
-from pbidoc.schemas.model import SemanticModel
+from pbicompass.parsers import detect_and_parse
+from pbicompass.parsers.tmsl import parse_semantic_model_tmsl
+from pbicompass.schemas.model import SemanticModel
 
 FIXTURE = Path(__file__).parent / "fixtures" / "SampleSales" / "SampleSales.pbip"
 
@@ -145,7 +145,7 @@ class TmslPipelineTest(unittest.TestCase):
 
 class TmdlFenceTest(unittest.TestCase):
     def test_strips_triple_backtick_fences(self):
-        from pbidoc.parsers.tmdl import parse_tmdl_text
+        from pbicompass.parsers.tmdl import parse_tmdl_text
         agg = {"tables": [], "relationships": [], "roles": [], "expressions": [], "model_name": None}
         text = "table T\n\tmeasure M = ```\n\t\tRANKX ( ALL ( x ), [y] )\n\t\t```\n"
         parse_tmdl_text(text, agg, [])

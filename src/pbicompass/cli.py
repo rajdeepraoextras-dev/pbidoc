@@ -1,6 +1,6 @@
 """Command-line interface.
 
-    pbidoc parse <file.pbip | project_dir | file.pbix> [-o model.json]
+    pbicompass parse <file.pbip | project_dir | file.pbix> [-o model.json]
 
 Prints a human-readable summary and optionally writes the canonical
 ``model.json``.
@@ -71,7 +71,7 @@ def main(argv: list[str] | None = None) -> int:
         except (AttributeError, ValueError):
             pass
 
-    parser = argparse.ArgumentParser(prog="pbidoc", description=__doc__)
+    parser = argparse.ArgumentParser(prog="pbicompass", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_parse = sub.add_parser("parse", help="Extract metadata to the canonical model.json")
@@ -123,9 +123,9 @@ def main(argv: list[str] | None = None) -> int:
     p_ac.add_argument("--tenant", required=True, help="Tenant identifier")
     p_ac.add_argument("--name", default="", help="Human-readable name")
     p_ac.add_argument("--plan", default="free", help="Plan: free, pro, or enterprise")
-    p_ac.add_argument("--db", help="SQLite path (default: $PBIDOC_DB or pbidoc.db)")
+    p_ac.add_argument("--db", help="SQLite path (default: $PBICOMPASS_DB or pbicompass.db)")
     p_al = acct_sub.add_parser("list", help="List accounts")
-    p_al.add_argument("--db", help="SQLite path (default: $PBIDOC_DB or pbidoc.db)")
+    p_al.add_argument("--db", help="SQLite path (default: $PBICOMPASS_DB or pbicompass.db)")
 
     args = parser.parse_args(argv)
 
@@ -242,13 +242,13 @@ def main(argv: list[str] | None = None) -> int:
             print('error: the web service needs extra deps. Install with: '
                   'pip install -e ".[service]"', file=sys.stderr)
             return 1
-        print(f"pbidoc service running on http://{args.host}:{args.port}", file=sys.stderr)
-        uvicorn.run("pbidoc.service.app:app", host=args.host, port=args.port, reload=args.reload)
+        print(f"PBICompass service running on http://{args.host}:{args.port}", file=sys.stderr)
+        uvicorn.run("pbicompass.service.app:app", host=args.host, port=args.port, reload=args.reload)
         return 0
 
     if args.command == "account":
         from .service.accounts import AccountStore
-        db = args.db or os.environ.get("PBIDOC_DB", "pbidoc.db")
+        db = args.db or os.environ.get("PBICOMPASS_DB", "pbicompass.db")
         accounts = AccountStore(db)
         try:
             if args.account_cmd == "create":

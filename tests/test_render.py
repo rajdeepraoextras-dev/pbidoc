@@ -13,14 +13,14 @@ import xml.dom.minidom as minidom
 import zipfile
 from pathlib import Path
 
-from pbidoc.agents import generate_document
-from pbidoc.agents.generators import (
+from pbicompass.agents import generate_document
+from pbicompass.agents.generators import (
     AuditReportGenerator,
     BusinessGuideGenerator,
     ExecutiveSummaryGenerator,
 )
-from pbidoc.parsers import detect_and_parse
-from pbidoc.render import (
+from pbicompass.parsers import detect_and_parse
+from pbicompass.render import (
     pandoc,
     render_audit_docx,
     render_audit_html,
@@ -35,7 +35,7 @@ from pbidoc.render import (
     render_user_guide_html,
     render_user_guide_markdown,
 )
-from pbidoc.render import registry as render_registry
+from pbicompass.render import registry as render_registry
 
 FIXTURE = Path(__file__).parent / "fixtures" / "SampleSales" / "SampleSales.pbip"
 

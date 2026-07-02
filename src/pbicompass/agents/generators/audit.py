@@ -1,7 +1,7 @@
 """Audit & Health Report generator — ``SemanticModel`` -> ``AuditDocument``.
 
 Everything except ``narrative_overview`` is fully deterministic
-(:mod:`pbidoc.agents.audit_rules`) — no LLM call is on the critical path for
+(:mod:`pbicompass.agents.audit_rules`) — no LLM call is on the critical path for
 the score, complexity, findings, or recommendations. ``narrative_overview``
 optionally goes through an LLM for polished prose, with a deterministic
 templated-paragraph fallback so the document is always complete offline.
