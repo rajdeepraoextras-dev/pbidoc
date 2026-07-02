@@ -29,14 +29,16 @@ def used_measure_names(model: SemanticModel) -> set[str]:
                 leaves.add(f.split(".")[-1])
     used = {n for n in measure_names if n in leaves}
     expr = {m.name: (m.expression or "") for m in model.all_measures()}
-    changed = True
-    while changed:
-        changed = False
-        for um in list(used):
-            for ref in re.findall(r"\[([^\]]+)\]", expr.get(um, "")):
-                if ref in measure_names and ref not in used:
-                    used.add(ref)
-                    changed = True
+    # Worklist over newly-added measures only — each measure's expression is
+    # scanned exactly once, instead of re-scanning the whole (growing) `used`
+    # set every round, which goes O(n^2) on models with many chained measures.
+    queue = list(used)
+    while queue:
+        um = queue.pop()
+        for ref in re.findall(r"\[([^\]]+)\]", expr.get(um, "")):
+            if ref in measure_names and ref not in used:
+                used.add(ref)
+                queue.append(ref)
     return used
 
 

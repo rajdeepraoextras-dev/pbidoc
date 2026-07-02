@@ -76,8 +76,18 @@ def _call_args(expr: str, func: str):
     return [a for a in args if a]
 
 
+# ``(?<!\w)`` pins the bare-name branch to the start of an identifier run,
+# so a run with no closing bracket after it fails once in O(1) instead of
+# being rescanned from every offset — which goes quadratic on a long
+# identifier run (e.g. a malformed/minified DAX expression). A \w+ match
+# can never start mid-run anyway (any earlier start would have consumed
+# through this position), so the lookbehind changes no results.
+_COLUMN_REF_RE = re.compile(r"(?:'[^']+'|(?<!\w)\w+)\[[^\]]+\]")
+
+
 def _column_refs(expr: str) -> list[str]:
-    return re.findall(r"(?:'[^']+'|\w+)\[[^\]]+\]", expr)
+    """Find ``Table[Column]`` / ``'Table Name'[Column]`` references."""
+    return _COLUMN_REF_RE.findall(expr)
 
 
 def _measure_refs(expr: str) -> list[str]:
