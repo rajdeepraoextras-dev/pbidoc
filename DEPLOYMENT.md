@@ -70,7 +70,58 @@ fly deploy
 
 ## Option B — Your own VM with Docker + Caddy (auto-HTTPS)
 
-On any VPS (Hetzner, DigitalOcean, EC2, …) with a domain pointed at it:
+Works on any VPS (Hetzner, DigitalOcean, EC2, …) with a domain pointed at it.
+The steps below are identical regardless of provider — only VM provisioning
+differs.
+
+### Provisioning a free VM — Google Cloud Compute Engine (Always Free)
+
+Google's Always Free tier includes one **e2-micro** instance (2 shared vCPU,
+1 GB RAM) + 30 GB standard persistent disk, forever free, with no time limit
+— comfortably enough for this app (jobs are short and I/O-bound).
+
+1. Sign up at console.cloud.google.com and create a project.
+2. **Compute Engine → VM instances → Create Instance.**
+3. **Region:** must be one of the three Always-Free-eligible regions —
+   `us-west1`, `us-central1`, or `us-east1`. Any other region is billed.
+4. **Machine type:** series **E2**, type **e2-micro**.
+5. **Boot disk:** Ubuntu 22.04 LTS, disk type **Standard persistent disk**
+   (not SSD/Balanced — those aren't free-tier eligible), size **30 GB**.
+6. **Firewall:** check **Allow HTTP traffic** and **Allow HTTPS traffic**.
+7. Create, then note the **External IP**. Connect via the **SSH** button in
+   the console (browser-based, no key setup needed), or `gcloud compute ssh`.
+8. `sudo apt-get update && sudo apt-get install -y docker.io git` (or follow
+   Docker's official install docs), then continue with the steps below.
+9. **Add ~2 GB of swap** — e2-micro's 1 GB RAM is tight for a Python process
+   doing parsing + multi-format rendering in memory; swap is cheap insurance
+   against an OOM kill (which `--restart unless-stopped` would silently
+   "fix" by restarting the container and wiping the in-memory job store —
+   surfacing to users as a job that never finishes):
+   ```bash
+   sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile
+   sudo mkswap /swapfile && sudo swapon /swapfile
+   echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+   ```
+
+Point your domain's DNS `A` record at the External IP before running Caddy,
+so it can issue a Let's Encrypt certificate.
+
+> **Real-world gotcha:** the "Allow HTTP traffic" checkbox creates a firewall
+> rule scoped to a network tag, and in practice this didn't always end up
+> applied to the instance — symptom was `ERR_CONNECTION_REFUSED` from an
+> external browser even though `curl http://localhost/healthz` worked fine
+> *on* the VM (i.e. the app was healthy, only external routing was broken).
+> If you hit this, skip debugging the auto-created rule and just add your
+> own: **VPC network → Firewall → Create Firewall Rule** → Targets: **All
+> instances in the network** → Source: `0.0.0.0/0` → Protocol/ports: `tcp:80,443`.
+
+> **e2-micro has only 1 GB RAM.** The `--tmpfs ... size=512m` sandbox below
+> only consumes RAM for what's actually uploaded (not reserved upfront), and
+> the default `PBICOMPASS_MAX_UPLOAD_MB=100` keeps any single job well under
+> that — fine for typical use. If you raise the upload limit substantially,
+> lower the tmpfs size, add more swap, or upgrade the machine type.
+
+### Build and run
 
 ```bash
 # 1. Build
@@ -78,11 +129,15 @@ git clone <your-repo> pbicompass && cd pbicompass
 docker build -t pbicompass .
 
 # 2. Run (persistent /data volume, tmpfs sandbox for RAM-only zero-retention)
+#    PBICOMPASS_SANDBOX_ROOT must match the --tmpfs mount path below, or the
+#    app silently falls back to the container's regular (disk-backed) /tmp —
+#    it'll still work, just without the RAM-only zero-retention guarantee.
 docker run -d --name pbicompass \
   -p 127.0.0.1:8000:8000 \
   -v pbicompass-data:/data \
   --tmpfs /tmp/pbicompass:rw,size=512m \
   -e PBICOMPASS_DB=/data/pbicompass.db \
+  -e PBICOMPASS_SANDBOX_ROOT=/tmp/pbicompass \
   -e PBICOMPASS_ADMIN_TOKEN=...  \
   -e PBICOMPASS_REQUIRE_AUTH=1 \
   -e ANTHROPIC_API_KEY=sk-...   `# optional` \

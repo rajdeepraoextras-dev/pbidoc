@@ -1088,10 +1088,30 @@ $("form").addEventListener("submit", async (e) => {
 
 async function poll(jobId) {
   setStatus("Generating your documents...");
+  // Client-side safety net: if the server-side watchdog (PBICOMPASS_JOB_TIMEOUT_SECONDS,
+  // default 600s) somehow never resolves the job, don't poll forever either.
+  const deadline = Date.now() + 15 * 60 * 1000;
   for (;;) {
+    if (Date.now() > deadline) {
+      setStatus("Generation is taking unusually long and timed out client-side. It may still finish — check /jobs/" + jobId + " later, or try again.", "err");
+      finishProgress(false);
+      setBusy(false);
+      return;
+    }
     await new Promise(r => setTimeout(r, 1200));
-    let job;
-    try { job = await (await fetch("/jobs/" + jobId, { headers: authHeaders() })).json(); } catch { continue; }
+    let res, job;
+    try {
+      res = await fetch("/jobs/" + jobId, { headers: authHeaders() });
+      job = await res.json();
+    } catch { continue; }
+    if (!res.ok) {
+      // e.g. 404 if the job record vanished (container restart, expired TTL),
+      // 401 if the key stopped working mid-poll — either way, stop looping.
+      setStatus("Error: " + (job.detail || ("Request failed (" + res.status + ")")), "err");
+      finishProgress(false);
+      setBusy(false);
+      return;
+    }
     if (job.status === "done") {
       const hasWarnings = Array.isArray(job.warnings) && job.warnings.length > 0;
       setStatus(
