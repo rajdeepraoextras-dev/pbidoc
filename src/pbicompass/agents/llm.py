@@ -164,8 +164,9 @@ class CohereClient:
     ``additionalProperties``, so the schemas pass through unmodified.
     """
 
+    # Command A models cap output at 8192 tokens; sending more 400s the request.
     def __init__(self, model: str = "command-a-03-2025", *, api_key: Optional[str] = None,
-                 max_tokens: int = 16000, timeout: float = _DEFAULT_TIMEOUT_SECONDS) -> None:
+                 max_tokens: int = 8192, timeout: float = _DEFAULT_TIMEOUT_SECONDS) -> None:
         try:
             import cohere  # noqa: PLC0415 (intentional lazy import)
         except ImportError as exc:  # pragma: no cover - depends on environment
