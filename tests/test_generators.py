@@ -180,13 +180,28 @@ class ExecutiveGeneratorDeterministicTest(unittest.TestCase):
         self.assertEqual(self.doc.report_statistics["visible_pages"], 2)
 
     def test_known_risks_are_business_framed(self):
-        # SampleSales has a known bidirectional Sales<->Date relationship,
-        # surfaced here in business language rather than the technical
-        # document's DAX-flavored risk text.
-        self.assertTrue(any("two-way filtering" in r for r in self.doc.known_risks))
+        # SampleSales has a known bidirectional Sales<->Date relationship —
+        # the same finding the Audit & Health Report and technical document
+        # surface (1.10), minus the "dax"-category findings whose issue text
+        # names DAX constructs directly.
+        self.assertTrue(any("bidirectional cross-filtering" in r for r in self.doc.known_risks))
         for risk in self.doc.known_risks:
             self.assertNotIn("DAX", risk)
             self.assertNotIn("USERELATIONSHIP", risk)
+
+    def test_known_risks_match_audit_engine_severity_order(self):
+        # 1.10: exec known_risks are a filtered subset of the same
+        # recommendation list the audit/technical docs show, in the same
+        # severity order — never independently re-derived.
+        order = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
+        severities = [r.split("]", 1)[0].lstrip("[") for r in self.doc.known_risks]
+        ranks = [order[s] for s in severities]
+        self.assertEqual(ranks, sorted(ranks))
+
+    def test_key_kpis_exclude_text_measures_and_carry_a_meaning(self):
+        # Real usage-based selection (1.6): each KPI names its own meaning.
+        for kpi in self.doc.key_kpis:
+            self.assertIn(" — ", kpi)
 
     def test_future_recommendations_have_no_implementation_detail(self):
         for rec in self.doc.future_recommendations:
@@ -311,6 +326,38 @@ class BusinessGuideGeneratorDeterministicTest(unittest.TestCase):
         self.assertIn('"document_type": "user-guide"', text)
         self.assertIn('"introduction"', text)
         self.assertIn('"glossary"', text)
+
+    def test_no_mad_libs_questions_or_generic_scenarios(self):
+        # 1.1: the deterministic path must never echo a lowercased measure
+        # name into a "What is our X?" question, and never emit the generic
+        # "Use this page when you want to check..." filler — the whole
+        # common_scenarios section is deterministic-offline empty until an
+        # LLM polishes it (1.3's chart-pair questions replace it instead).
+        for page in self.doc.pages:
+            for q in page.business_questions_answered:
+                self.assertNotIn("what is our", q.lower())
+            self.assertEqual(page.common_scenarios, [])
+
+    def test_business_questions_grounded_in_chart_pairs(self):
+        # 1.3: every question names a metric+dimension pair actually charted
+        # together, phrased by the dimension's kind (time/geo/other).
+        source = next(p for p in self.doc.pages if p.page_title == "Sales Overview")
+        for q in source.business_questions_answered:
+            self.assertTrue(q.startswith(("How has ", "How does ", "How is ")))
+
+    def test_glossary_reuses_dax_translation_not_generic_bucket(self):
+        # 1.5: no measure with a real DAX-derived definition should fall
+        # back to the old generic "a custom metric specific to this report"
+        # bucket text.
+        by_term = {g.term: g.plain_definition for g in self.doc.glossary}
+        self.assertNotEqual(by_term["Total Revenue"], "A custom metric specific to this report.")
+        self.assertTrue(by_term["Total Revenue"])
+
+    def test_no_duplicate_filter_bullets(self):
+        # 1.7: a page's filter list never repeats the same field name twice,
+        # even if two slicer visuals are bound to it.
+        for page in self.doc.pages:
+            self.assertEqual(len(page.filters), len(set(page.filters)))
 
 
 class BusinessGuideGeneratorLlmTest(unittest.TestCase):

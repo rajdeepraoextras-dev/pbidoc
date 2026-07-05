@@ -36,7 +36,7 @@ from ..schemas.audit_document import (
 )
 from ..schemas.model import Measure, SemanticModel
 from .deterministic import schema_shape
-from .report_facts import calc_columns, report_pages
+from .report_facts import calc_columns, detect_hardcoded_years, local_path_sources, report_pages
 from .usage import used_column_names, used_measure_names
 
 _SEVERITY_COST = {"Critical": 15, "High": 8, "Medium": 4, "Low": 1}
@@ -51,6 +51,8 @@ _NAME_TYPOS = {
     "seperate": "separate", "occured": "occurred",
 }
 _GENERIC_NAME = re.compile(r"^(measure|calc|calculation|table|query|sheet)\s*\d*$", re.IGNORECASE)
+# Dev-only scaffolding that occasionally ships to production untouched.
+_DEV_LEFTOVER_NAME = re.compile(r"^(test|tmp|temp|copy of|backup|sheet\d+|table\d+)\b", re.IGNORECASE)
 _SENSITIVE_NAME = re.compile(r"(ssn|social.?security|passport|password|salary|dob|date.?of.?birth|"
                              r"credit.?card|phone|email|address)", re.IGNORECASE)
 _ID_LIKE_NAME = re.compile(r"(id|key|guid|email|phone|address)$", re.IGNORECASE)
@@ -262,6 +264,14 @@ def find_dax_findings(measures: list[Measure]) -> list[DaxFinding]:
                 measure=m.name, table=m.table, kind="repeated_pattern",
                 detail=repeated, severity="Medium",
             ))
+        years = detect_hardcoded_years(expr)
+        if years:
+            findings.append(DaxFinding(
+                measure=m.name, table=m.table, kind="hardcoded_year",
+                detail=f"Contains hardcoded year value(s) ({', '.join(years)}) — this measure stops "
+                       f"reflecting current data at the next year boundary.",
+                severity="Critical",
+            ))
     return findings
 
 
@@ -406,6 +416,27 @@ def check_best_practices(model: SemanticModel) -> list[BestPracticeCheck]:
                 else "No circular relationship paths detected."),
     ))
 
+    related = {r.from_table for r in model.relationships} | {r.to_table for r in model.relationships}
+    disconnected = [t.name for t in model.tables if t.kind in ("fact", "dimension") and t.name not in related]
+    checks.append(BestPracticeCheck(
+        id="disconnected_tables", name="No disconnected fact/dimension tables", passed=not disconnected,
+        category="modeling",
+        detail=(f"{len(disconnected)} fact/dimension table(s) have no relationships and won't filter "
+                f"or summarize with the rest of the model: {', '.join(disconnected)}." if disconnected
+                else "Every fact/dimension table participates in at least one relationship."),
+    ))
+
+    dev_leftover = [t.name for t in model.tables if _DEV_LEFTOVER_NAME.match(t.name.strip())]
+    for t in model.tables:
+        dev_leftover += [f"{t.name}[{c.name}]" for c in t.columns if _DEV_LEFTOVER_NAME.match(c.name.strip())]
+    checks.append(BestPracticeCheck(
+        id="dev_leftover_naming", name="No development leftovers in production model", passed=not dev_leftover,
+        category="naming",
+        detail=(f"Object name(s) look like development leftovers, not production content: "
+                f"{', '.join(dev_leftover)}." if dev_leftover
+                else "No table/column names match common development-leftover patterns."),
+    ))
+
     return checks
 
 
@@ -545,6 +576,14 @@ def check_governance(
             severity="Low",
         ))
 
+    local_paths = local_path_sources(model)
+    if local_paths:
+        findings.append(GovernanceFinding(
+            area="hardcoded_paths",
+            detail=f"Hardcoded local file path(s) in data sources: {'; '.join(local_paths)}.",
+            severity="High",
+        ))
+
     return findings
 
 
@@ -610,6 +649,11 @@ _DAX_TEMPLATES = {
         "Repeated sub-expressions are recalculated redundantly and are harder to maintain consistently.",
         "Extract the repeated pattern into a VAR.",
         "Clearer, and potentially faster, DAX."),
+    "hardcoded_year": ("Critical",
+        "Some measures contain a hardcoded year value in their DAX.",
+        "The affected measures stop reflecting current data at the next year boundary — the report silently shows stale results.",
+        "Replace the literal year with dynamic logic such as YEAR(TODAY()) or a relative-period filter on the date table.",
+        "Calculations stay correct every year without manual edits."),
 }
 
 _PRACTICE_TEMPLATES = {
@@ -673,6 +717,16 @@ _PRACTICE_TEMPLATES = {
         "More than one filter path between the same tables risks ambiguous or double-counted results that are hard to debug.",
         "Remove or deactivate one of the relationships forming the cycle.",
         "Deterministic, single-path filter propagation."),
+    "disconnected_tables": ("High",
+        "Some fact or dimension tables have no relationships to the rest of the model.",
+        "A disconnected table won't filter or summarize with the rest of the report — any visual built from it shows unrelated or misleading totals.",
+        "Add a relationship connecting the table to the model, or remove it if it's not needed.",
+        "Every table in the model filters and aggregates correctly with the rest of the report."),
+    "dev_leftover_naming": ("Medium",
+        "Some table or column names look like development leftovers (e.g. 'test', 'tmp', 'Copy of ...').",
+        "Development scaffolding that ships to production confuses report authors and signals the model wasn't cleaned up before handover.",
+        "Rename to reflect the object's real content, or remove it if it was only ever a working copy.",
+        "A production model that only contains intentional, clearly-named objects."),
 }
 
 _PERF_TEMPLATES = {
@@ -739,6 +793,11 @@ _GOVERNANCE_TEMPLATES = {
         "Mixed Import/DirectQuery modes complicate refresh behavior and can produce inconsistent performance across the report.",
         "Standardize on one storage mode where practical, or document why a mixed configuration is intentional.",
         "More predictable refresh and query performance."),
+    "hardcoded_paths": ("High",
+        "Some data sources use a hardcoded local file path.",
+        "Refresh fails as soon as the report runs on any machine or service other than the author's.",
+        "Replace the literal path with a Power Query parameter, or move the source behind a gateway/shared location.",
+        "Refresh works after deployment to the Power BI Service."),
 }
 
 
@@ -748,23 +807,26 @@ _GOVERNANCE_TEMPLATES = {
 _EFFORT_BY_KIND = {
     # DAX findings
     "missing_description": "Low", "naming_issue": "Low", "repeated_pattern": "Low",
+    "hardcoded_year": "Low",
     # best-practice checks
     "star_schema": "High", "fact_dimension_separation": "High",
     "naming_conventions": "Low", "display_folder_usage": "Low",
     "description_coverage": "Low", "hidden_technical_columns": "Low",
     "unused_calculated_columns": "Low", "inactive_relationships": "Low",
+    "dev_leftover_naming": "Low",
     # performance risks
     "high_cardinality_signal": "Low", "large_text_column": "Low",
     "slow_slicer_signal": "Low",
     # governance
-    "descriptions": "Low", "ownership": "Low",
+    "descriptions": "Low", "ownership": "Low", "hardcoded_paths": "Low",
 }
 
 
 def _recommendation(priority: str, issue: str, why: str, fix: str, benefit: str,
-                    effort: str = "Medium") -> Recommendation:
+                    effort: str = "Medium", category: str = "modeling") -> Recommendation:
     return Recommendation(priority=priority, issue=issue, why_it_matters=why,
-                          suggested_fix=fix, expected_benefit=benefit, effort=effort)
+                          suggested_fix=fix, expected_benefit=benefit, effort=effort,
+                          category=category)
 
 
 def build_recommendations(
@@ -779,28 +841,34 @@ def build_recommendations(
     testable."""
     recs: list[Recommendation] = []
 
-    seen_dax = {f.kind for f in dax_findings}
+    # dict.fromkeys() dedupes while preserving first-seen order — a plain
+    # {set comprehension} would too, but Python randomizes string hash seeds
+    # per process, so a bare set's iteration order (and therefore the order
+    # same-priority recommendations end up in after the stable sort below)
+    # would silently differ run to run on an unchanged model, contradicting
+    # the "reproducible, not an AI guess" claim these documents make.
+    seen_dax = dict.fromkeys(f.kind for f in dax_findings)
     for kind in seen_dax:
         if kind in _DAX_TEMPLATES:
             recs.append(_recommendation(*_DAX_TEMPLATES[kind],
-                                        effort=_EFFORT_BY_KIND.get(kind, "Medium")))
+                                        effort=_EFFORT_BY_KIND.get(kind, "Medium"), category="dax"))
 
     for check in best_practices:
         if not check.passed and check.id in _PRACTICE_TEMPLATES:
             recs.append(_recommendation(*_PRACTICE_TEMPLATES[check.id],
-                                        effort=_EFFORT_BY_KIND.get(check.id, "Medium")))
+                                        effort=_EFFORT_BY_KIND.get(check.id, "Medium"), category="modeling"))
 
-    seen_perf = {f.kind for f in performance_risks}
+    seen_perf = dict.fromkeys(f.kind for f in performance_risks)
     for kind in seen_perf:
         if kind in _PERF_TEMPLATES:
             recs.append(_recommendation(*_PERF_TEMPLATES[kind],
-                                        effort=_EFFORT_BY_KIND.get(kind, "Medium")))
+                                        effort=_EFFORT_BY_KIND.get(kind, "Medium"), category="performance"))
 
-    seen_gov = {f.area for f in governance}
+    seen_gov = dict.fromkeys(f.area for f in governance)
     for area in seen_gov:
         if area in _GOVERNANCE_TEMPLATES:
             recs.append(_recommendation(*_GOVERNANCE_TEMPLATES[area],
-                                        effort=_EFFORT_BY_KIND.get(area, "Medium")))
+                                        effort=_EFFORT_BY_KIND.get(area, "Medium"), category="governance"))
 
     unused_total = (
         len(unused_assets.measures) + len(unused_assets.columns)
@@ -815,7 +883,7 @@ def build_recommendations(
             "Unused assets add to model size, refresh time, and cognitive load for anyone maintaining the report.",
             "Remove unused assets, or confirm they're intentionally kept for a documented reason (e.g. future use, RLS support).",
             "A leaner, easier-to-maintain model.",
-            effort="Low",
+            effort="Low", category="unused_assets",
         ))
 
     recs.sort(key=lambda r: _PRIORITY_ORDER.get(r.priority, 4))

@@ -1,7 +1,7 @@
 """Render an :class:`ExecutiveDocument` to Markdown, HTML, and DOCX.
 
 Concise and non-technical by design: no DAX, no table/column inventories,
-no relationship diagrams. Twelve short sections, mostly prose with a couple
+no relationship diagrams. Eleven short sections, mostly prose with a couple
 of small stat tables — readable in under ten minutes, matching the
 document's purpose. Reuses the same low-level primitives as the other
 renderers (``_shared``, ``_html_shell``, ``_docx_writer``).
@@ -14,6 +14,7 @@ from pathlib import Path
 from ..schemas.executive_document import ExecutiveDocument
 from ._docx_writer import _Docx
 from ._html_shell import page_shell
+from ._shared import format_timestamp as _fmt_ts
 from ._shared import html_e as _e
 from ._shared import html_table as _html_table
 from ._shared import md_table as _table
@@ -28,9 +29,8 @@ _SECTION_TITLES = [
     "7. Model & Report Statistics",
     "8. Business Value",
     "9. Known Risks",
-    "10. Dependencies",
-    "11. Maintenance Overview",
-    "12. Future Recommendations",
+    "10. Maintenance Overview",
+    "11. Future Recommendations",
 ]
 
 _STAT_LABELS = {
@@ -45,11 +45,20 @@ def _stat_label(key: str) -> str:
     return _STAT_LABELS.get(key, key.replace("_", " ").title())
 
 
+def _extra_dependencies(doc: ExecutiveDocument) -> list[str]:
+    """``doc.dependencies`` is a superset of ``doc.data_sources_summary``
+    (data sources + parameters) — return only the entries not already shown
+    in the Data Sources bullet list, so the two no longer render as two
+    byte-identical sections (1.9)."""
+    sources = set(doc.data_sources_summary)
+    return [d for d in doc.dependencies if d not in sources]
+
+
 # -- Markdown -------------------------------------------------------------------
 def render_markdown(doc: ExecutiveDocument) -> str:
     md = doc.metadata
     out: list[str] = [f"# {md.report_name} — Executive Summary\n"]
-    out.append(f"_{md.target_audience or ''} · generated {md.generated_at or ''}_\n")
+    out.append(f"_{md.target_audience or ''} · generated {_fmt_ts(md.generated_at)}_\n")
 
     out.append(f"\n## {_SECTION_TITLES[0]}\n")
     out.append(doc.business_purpose + "\n")
@@ -68,6 +77,9 @@ def render_markdown(doc: ExecutiveDocument) -> str:
             out.append(f"- {s}")
     else:
         out.append("_No external data sources detected._")
+    extra_deps = _extra_dependencies(doc)
+    if extra_deps:
+        out.append(f"\n**Also depends on:** {', '.join(extra_deps)}.")
     out.append("")
 
     out.append(f"\n## {_SECTION_TITLES[3]}\n")
@@ -100,17 +112,9 @@ def render_markdown(doc: ExecutiveDocument) -> str:
     out.append("")
 
     out.append(f"\n## {_SECTION_TITLES[9]}\n")
-    if doc.dependencies:
-        for d in doc.dependencies:
-            out.append(f"- {d}")
-    else:
-        out.append("_No external dependencies detected._")
-    out.append("")
-
-    out.append(f"\n## {_SECTION_TITLES[10]}\n")
     out.append(doc.maintenance_overview + "\n")
 
-    out.append(f"\n## {_SECTION_TITLES[11]}\n")
+    out.append(f"\n## {_SECTION_TITLES[10]}\n")
     if doc.future_recommendations:
         for r in doc.future_recommendations:
             out.append(f"- {r}")
@@ -128,8 +132,13 @@ def _bullet_list(items: list[str], empty: str) -> str:
     return "<ul>" + "".join(f"<li>{_e(i)}</li>" for i in items) + "</ul>"
 
 
-def render_html(doc: ExecutiveDocument) -> str:
+def render_html(
+    doc: ExecutiveDocument, *,
+    doc_links: list[tuple[str, str]] | None = None,
+    sibling_hrefs: dict[str, str] | None = None,
+) -> str:
     md = doc.metadata
+    audit_href = (sibling_hrefs or {}).get("audit")
 
     toc = [(f"sec{i+1}", title.split(". ", 1)[1]) for i, title in enumerate(_SECTION_TITLES)]
     kpis = [
@@ -148,6 +157,9 @@ def render_html(doc: ExecutiveDocument) -> str:
 
     o.append(f'<h2 id="sec3">{_e(_SECTION_TITLES[2])}</h2>')
     o.append(_bullet_list(doc.data_sources_summary, "No external data sources detected."))
+    extra_deps = _extra_dependencies(doc)
+    if extra_deps:
+        o.append(f'<p><strong>Also depends on:</strong> {_e(", ".join(extra_deps))}.</p>')
 
     o.append(f'<h2 id="sec4">{_e(_SECTION_TITLES[3])}</h2>')
     o.append(f"<p>{_e(doc.refresh_schedule) if doc.refresh_schedule else '<span class=\"muted\">Not documented.</span>'}</p>")
@@ -172,22 +184,27 @@ def render_html(doc: ExecutiveDocument) -> str:
     o.append(f"<p>{_e(doc.business_value)}</p>")
 
     o.append(f'<h2 id="sec9">{_e(_SECTION_TITLES[8])}</h2>')
-    o.append(_bullet_list(doc.known_risks, "No known modeling risks."))
+    if doc.known_risks:
+        # Every risk here is sourced from the audit engine's recommendations
+        # (1.10) — link to the full write-up there when audit was generated
+        # in the same job, never a dead link otherwise (2.7).
+        suffix = f' — <a href="{_e(audit_href)}#sec8">full detail</a>' if audit_href else ""
+        o.append("<ul>" + "".join(f"<li>{_e(r)}{suffix}</li>" for r in doc.known_risks) + "</ul>")
+    else:
+        o.append('<p class="muted">No known modeling risks.</p>')
 
     o.append(f'<h2 id="sec10">{_e(_SECTION_TITLES[9])}</h2>')
-    o.append(_bullet_list(doc.dependencies, "No external dependencies detected."))
-
-    o.append(f'<h2 id="sec11">{_e(_SECTION_TITLES[10])}</h2>')
     o.append(f"<p>{_e(doc.maintenance_overview)}</p>")
 
-    o.append(f'<h2 id="sec12">{_e(_SECTION_TITLES[11])}</h2>')
+    o.append(f'<h2 id="sec11">{_e(_SECTION_TITLES[10])}</h2>')
     o.append(_bullet_list(doc.future_recommendations,
                           "No open recommendations — the latest audit found nothing to act on."))
 
     return page_shell(
         title=f"{md.report_name} — Executive Summary",
-        subtitle=f"{md.target_audience or ''} · generated {md.generated_at or ''}",
-        toc=toc, kpis=kpis, body_html="\n".join(o),
+        subtitle=f"{md.target_audience or ''} · generated {_fmt_ts(md.generated_at)}",
+        toc=toc, kpis=kpis, body_html="\n".join(o), doc_links=doc_links,
+        owner=md.owner, version=md.version, status=md.status,
     )
 
 
@@ -199,7 +216,7 @@ def render_docx(doc: ExecutiveDocument, out_path) -> Path:
     md = doc.metadata
 
     d.heading(0, f"{md.report_name} — Executive Summary")
-    d.para([d._run(f"{md.target_audience or ''} · generated {md.generated_at or ''}", italic=True)])
+    d.para([d._run(f"{md.target_audience or ''} · generated {_fmt_ts(md.generated_at)}", italic=True)])
 
     def _t(rows):
         return [[str(cell) for cell in row] for row in rows]
@@ -219,6 +236,9 @@ def render_docx(doc: ExecutiveDocument, out_path) -> Path:
 
     d.heading(1, _SECTION_TITLES[2])
     _bullets_or_none(doc.data_sources_summary, "No external data sources detected.")
+    extra_deps = _extra_dependencies(doc)
+    if extra_deps:
+        d.para([d._run("Also depends on: ", bold=True), d._run(", ".join(extra_deps) + ".")])
 
     d.heading(1, _SECTION_TITLES[3])
     d.para(doc.refresh_schedule or "Not documented.")
@@ -242,12 +262,9 @@ def render_docx(doc: ExecutiveDocument, out_path) -> Path:
     _bullets_or_none(doc.known_risks, "No known modeling risks.")
 
     d.heading(1, _SECTION_TITLES[9])
-    _bullets_or_none(doc.dependencies, "No external dependencies detected.")
-
-    d.heading(1, _SECTION_TITLES[10])
     d.para(doc.maintenance_overview)
 
-    d.heading(1, _SECTION_TITLES[11])
+    d.heading(1, _SECTION_TITLES[10])
     _bullets_or_none(doc.future_recommendations,
                      "No open recommendations — the latest audit found nothing to act on.")
 

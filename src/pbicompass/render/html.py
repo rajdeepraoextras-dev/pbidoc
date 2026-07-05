@@ -4,6 +4,13 @@ Follows the structure of a proper enterprise BI documentation template: every
 section that can be extracted from the file is auto-filled; sections that require
 human input are populated from user metadata or emitted as placeholders.
 
+Builds only its own section-body HTML (Document Control through Appendix &
+Sign-off) and hands it to the shared :func:`_html_shell.page_shell` — the
+doctype, fonts/CSS, sidebar TOC, header card, KPI strip, and scroll-spy
+script are the same scaffold every other document-type HTML renderer
+(audit, executive, user-guide) uses, so a presentation change is written
+once instead of once per renderer (A2-2).
+
 Stdlib only. Opens in any browser and prints cleanly to PDF.
 """
 
@@ -13,427 +20,17 @@ import math
 import re
 
 from ..schemas.document import Document
+from ._dax_highlight import highlight_dax
+from ._html_shell import page_shell
 from ._shared import HEALTH_COMPONENT_LABELS
+from ._shared import anchor_slug
+from ._shared import format_timestamp as _fmt_ts
 from ._shared import html_e as _e
 from ._shared import html_table as _table
 from ._shared import html_todo as _todo
 from ._shared import is_local_path as _is_local_path
 from ._shared import non_data_note as _non_data_note
-
-_CSS = """
-:root {
-  --font-sans: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-  --bg-main: #f8fafc;
-  --bg-card: #ffffff;
-  --text-main: #0f172a;
-  --text-muted: #475569;
-  --text-faint: #94a3b8;
-  --border-color: #e2e8f0;
-  --primary: #4f46e5;
-  --primary-hover: #4338ca;
-  --primary-light: #eef2ff;
-  --secondary: #0ea5e9;
-  --success: #10b981;
-  --success-light: #ecfdf5;
-  --warning: #f59e0b;
-  --warning-light: #fef3c7;
-  --danger: #ef4444;
-  --danger-light: #fef2f2;
-  --code-bg: #0f172a;
-  --sidebar-w: 280px;
-}
-
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body {
-  font-family: var(--font-sans);
-  color: var(--text-main);
-  background-color: var(--bg-main);
-  line-height: 1.6;
-  display: flex;
-  min-height: 100vh;
-}
-
-/* Sidebar styling */
-.sidebar {
-  width: var(--sidebar-w);
-  background: var(--bg-card);
-  border-right: 1px solid var(--border-color);
-  padding: 32px 20px;
-  position: fixed;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  overflow-y: auto;
-  z-index: 100;
-}
-.sidebar-logo {
-  font-weight: 800;
-  font-size: 1.3rem;
-  color: var(--primary);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 28px;
-  letter-spacing: -0.02em;
-}
-.sidebar-logo svg {
-  width: 26px;
-  height: 26px;
-  fill: currentColor;
-}
-.toc-list {
-  list-style: none;
-}
-.toc-item {
-  margin-bottom: 4px;
-}
-.toc-link {
-  display: block;
-  padding: 8px 12px;
-  color: var(--text-muted);
-  text-decoration: none;
-  font-size: 0.85rem;
-  font-weight: 500;
-  border-radius: 6px;
-  transition: all 0.15s ease;
-}
-.toc-link:hover {
-  background: var(--primary-light);
-  color: var(--primary);
-}
-.toc-link.active {
-  background: var(--primary-light);
-  color: var(--primary);
-  font-weight: 600;
-}
-
-/* Main Content Area */
-.content-wrapper {
-  margin-left: var(--sidebar-w);
-  flex-grow: 1;
-  padding: 48px 56px;
-  max-width: calc(100vw - var(--sidebar-w));
-}
-.main-content {
-  max-width: 900px;
-  margin: 0 auto;
-}
-
-/* Header Cards */
-.header-card {
-  background: linear-gradient(135deg, #1e1b4b 0%, #311042 100%);
-  color: #ffffff;
-  border-radius: 16px;
-  padding: 44px;
-  margin-bottom: 32px;
-  position: relative;
-  overflow: hidden;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
-}
-.header-card::before {
-  content: '';
-  position: absolute;
-  top: -50%;
-  right: -20%;
-  width: 350px;
-  height: 350px;
-  background: radial-gradient(circle, rgba(79, 70, 229, 0.3) 0%, rgba(0,0,0,0) 70%);
-  border-radius: 50%;
-  pointer-events: none;
-}
-.header-card h1 {
-  font-size: 2.2rem;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  margin-bottom: 8px;
-  line-height: 1.2;
-}
-.header-card .subtitle {
-  color: rgba(255, 255, 255, 0.75);
-  font-size: 0.98rem;
-  margin: 0;
-  font-weight: 400;
-}
-
-/* KPIs / Stats grid */
-.kpis {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
-  gap: 16px;
-  margin-bottom: 36px;
-}
-.kpi {
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
-  padding: 16px;
-  text-align: left;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-.kpi:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-}
-.kpi .n {
-  font-size: 1.8rem;
-  font-weight: 700;
-  color: var(--primary);
-  line-height: 1.2;
-}
-.kpi .l {
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-top: 4px;
-}
-
-/* Typography & Section Styles */
-h2 {
-  font-size: 1.4rem;
-  font-weight: 700;
-  color: var(--text-main);
-  margin: 44px 0 18px;
-  padding-bottom: 8px;
-  border-bottom: 2px solid var(--border-color);
-  letter-spacing: -0.02em;
-  scroll-margin-top: 24px;
-}
-h3 {
-  font-size: 1.08rem;
-  font-weight: 600;
-  color: var(--text-main);
-  margin: 24px 0 12px;
-}
-p {
-  margin-bottom: 16px;
-  color: var(--text-muted);
-  font-size: 0.94rem;
-}
-ul, ol {
-  margin-left: 20px;
-  margin-bottom: 16px;
-  color: var(--text-muted);
-  font-size: 0.94rem;
-}
-li {
-  margin-bottom: 6px;
-}
-
-/* Card-style Containers */
-.card-section {
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
-  padding: 24px;
-  margin-bottom: 24px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.02);
-}
-
-/* Tables */
-table {
-  width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
-  margin: 16px 0 24px;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  overflow: hidden;
-}
-th, td {
-  padding: 10px 14px;
-  text-align: left;
-  vertical-align: middle;
-  font-size: 0.86rem;
-}
-th {
-  background-color: #f8fafc;
-  font-weight: 600;
-  color: var(--text-main);
-  border-bottom: 1px solid var(--border-color);
-  text-transform: uppercase;
-  font-size: 0.72rem;
-  letter-spacing: 0.05em;
-}
-td {
-  border-bottom: 1px solid var(--border-color);
-  color: var(--text-muted);
-  background: var(--bg-card);
-}
-tr:last-child td {
-  border-bottom: none;
-}
-tr:hover td {
-  background-color: #fafbfd;
-}
-td.num {
-  font-family: monospace;
-  font-weight: 500;
-}
-
-/* Code & Pre */
-pre {
-  background: var(--code-bg);
-  color: #e2e8f0;
-  border-radius: 8px;
-  padding: 14px;
-  overflow-x: auto;
-  margin: 12px 0 20px;
-}
-code {
-  font-family: Consolas, "SF Mono", Menlo, monospace;
-  font-size: 0.82rem;
-  background: #f1f5f9;
-  color: #0f172a;
-  padding: 2px 6px;
-  border-radius: 4px;
-}
-pre code {
-  background: transparent;
-  color: inherit;
-  padding: 0;
-}
-
-/* Badges & Pills */
-.pill {
-  display: inline-block;
-  background: var(--primary-light);
-  color: var(--primary);
-  font-size: 0.7rem;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  vertical-align: middle;
-  margin-left: 6px;
-}
-
-/* Todo items */
-.todo {
-  border: 1px dashed #fbbf24;
-  background-color: #fffbeb;
-  color: #b45309;
-  border-radius: 8px;
-  padding: 12px 16px;
-  font-size: 0.86rem;
-  margin: 16px 0;
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-}
-.todo b {
-  font-weight: 700;
-}
-
-/* Risk / Warning Alerts */
-.risk {
-  background-color: #fef2f2;
-  border-left: 4px solid var(--danger);
-  border-radius: 4px;
-  padding: 12px 16px;
-  margin: 12px 0;
-  font-size: 0.86rem;
-  color: #991b1b;
-}
-
-/* Caveat / Notes */
-.caveat {
-  font-size: 0.82rem;
-  color: var(--text-muted);
-  background: #f1f5f9;
-  border-left: 3px solid var(--text-faint);
-  padding: 6px 12px;
-  border-radius: 0 4px 4px 0;
-  margin: 8px 0;
-}
-
-/* Diagram styling */
-.diagram {
-  background: #ffffff;
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
-  padding: 16px;
-  margin: 16px 0;
-}
-.legend {
-  font-size: 0.72rem;
-  color: var(--text-muted);
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  margin-top: 12px;
-}
-.legend span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.swatch {
-  width: 12px;
-  height: 12px;
-  border-radius: 3px;
-  display: inline-block;
-}
-
-/* Measure catalog entries */
-.measure {
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: 10px;
-  padding: 20px;
-  margin-bottom: 20px;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.01);
-}
-.measure h3 {
-  margin: 0 0 10px;
-  font-size: 1.1rem;
-}
-.usedon {
-  font-size: 0.76rem;
-  color: var(--text-faint);
-  margin-top: 6px;
-  margin-bottom: 12px;
-}
-
-/* Responsiveness & Print settings */
-@media (max-width: 1024px) {
-  .sidebar {
-    display: none;
-  }
-  .content-wrapper {
-    margin-left: 0;
-    max-width: 100%;
-    padding: 32px 24px;
-  }
-}
-
-@media print {
-  body {
-    background-color: #ffffff;
-    display: block;
-  }
-  .sidebar {
-    display: none;
-  }
-  .content-wrapper {
-    margin-left: 0;
-    padding: 0;
-    max-width: 100%;
-  }
-  h2 {
-    page-break-before: always;
-  }
-  h2:first-of-type {
-    page-break-before: avoid;
-  }
-  pre, table, .measure, .diagram, .card-section {
-    page-break-inside: avoid;
-  }
-}
-"""
+from ._shared import slicer_field_label as _slicer_label
 
 _FACT_FILL, _FACT_LINE = "#eef2ff", "#6366f1"
 _DIM_FILL, _DIM_LINE = "#ffffff", "#cbd5e1"
@@ -485,13 +82,18 @@ def _diagram(tables: list[dict], edges: list[dict]) -> str:
     if not facts:
         pos = {t["name"]: pos[t["name"]] for t in tables}
 
-    svg = [f'<svg viewBox="0 0 {W} {H}" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="inherit">']
+    table_names = ", ".join(t["name"] for t in tables)
+    svg = [f'<svg viewBox="0 0 {W} {H}" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="inherit" '
+           f'role="img" aria-labelledby="model-diagram-title">']
+    svg.append(f'<title id="model-diagram-title">Data model diagram: {_e(table_names)}, connected by '
+               f'{len(edges)} relationship(s)</title>')
     svg.append('<defs><marker id="arr" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">'
                '<path d="M0,0 L7,3 L0,6 Z" fill="#94a3b8"/></marker>'
                '<marker id="arro" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">'
                '<path d="M0,0 L7,3 L0,6 Z" fill="#d97706"/></marker></defs>')
 
-    # edges first
+    # edges first — grouped so hover-highlight/tooltip JS can target one edge
+    # by its endpoints (data-from/data-to) without re-deriving geometry.
     for ed in edges:
         a, b = pos.get(ed.get("from")), pos.get(ed.get("to"))
         if not a or not b:
@@ -500,14 +102,21 @@ def _diagram(tables: list[dict], edges: list[dict]) -> str:
         color = "#d97706" if both else "#94a3b8"
         dash = ' stroke-dasharray="5 4"' if not ed.get("is_active", True) else ""
         marker = "arro" if both else "arr"
+        join = ""
+        if ed.get("from_column") and ed.get("to_column"):
+            join = (f'{ed["from"]}[{ed["from_column"]}] → {ed["to"]}[{ed["to_column"]}]')
+        svg.append(f'<g class="dm-edge" data-from="{_e(ed.get("from"))}" data-to="{_e(ed.get("to"))}">')
+        if join:
+            svg.append(f"<title>{_e(join)}</title>")
         svg.append(f'<line x1="{a[0]:.0f}" y1="{a[1]:.0f}" x2="{b[0]:.0f}" y2="{b[1]:.0f}" '
                    f'stroke="{color}" stroke-width="1.6"{dash} marker-end="url(#{marker})"/>')
         mx, my = (a[0] + b[0]) / 2, (a[1] + b[1]) / 2
         card = f'{"∞" if ed.get("from_card")=="many" else "1"}:{"1" if ed.get("to_card")=="one" else "∞"}'
         svg.append(f'<text x="{mx:.0f}" y="{my-3:.0f}" font-size="10" fill="{color}" '
                    f'text-anchor="middle">{card}</text>')
+        svg.append("</g>")
 
-    # boxes on top
+    # boxes on top — each a clickable, hoverable node keyed by table name.
     for t in tables:
         x, y = pos[t["name"]]
         kind = t.get("kind", "")
@@ -520,12 +129,15 @@ def _diagram(tables: list[dict], edges: list[dict]) -> str:
         rx, ry = x - bw / 2, y - bh / 2
         name = t["name"] if len(t["name"]) <= 20 else t["name"][:19] + "…"
         sub = f'{t.get("columns",0)} col · {t.get("measures",0)} meas'
+        svg.append(f'<g class="dm-node" data-table="{_e(t["name"])}">')
+        svg.append(f"<title>{_e(t['name'])} — {_e(sub)} (click to jump to its row)</title>")
         svg.append(f'<rect x="{rx:.0f}" y="{ry:.0f}" width="{bw}" height="{bh}" rx="9" '
                    f'fill="{fill}" stroke="{line}" stroke-width="1.6"/>')
         svg.append(f'<text x="{x:.0f}" y="{y-4:.0f}" font-size="12.5" font-weight="600" '
                    f'text-anchor="middle" fill="#1f2933">{_e(name)}</text>')
         svg.append(f'<text x="{x:.0f}" y="{y+12:.0f}" font-size="9.5" text-anchor="middle" '
                    f'fill="#8a94a3">{_e(sub)}</text>')
+        svg.append("</g>")
     svg.append("</svg>")
 
     legend = (
@@ -536,12 +148,18 @@ def _diagram(tables: list[dict], edges: list[dict]) -> str:
         '<span><i class="swatch" style="background:#94a3b8"></i>Single-direction</span>'
         '<span><i class="swatch" style="background:#d97706"></i>Bi-directional</span>'
         '<span>– – – inactive</span></div>'
+        '<p class="muted diagram-hint">Scroll/pinch to zoom, drag to pan. '
+        'Hover a table to highlight its relationships; click it to jump to its row below.</p>'
     )
     return f'<div class="diagram">{"".join(svg)}</div>{legend}'
 
 
 # -- main ---------------------------------------------------------------------
-def render_html(doc: Document) -> str:
+def render_html(
+    doc: Document, *,
+    doc_links: list[tuple[str, str]] | None = None,
+    sibling_hrefs: dict[str, str] | None = None,
+) -> str:
     md = doc.metadata
     s = doc.stats
 
@@ -566,41 +184,14 @@ def render_html(doc: Document) -> str:
         ("sec18", "Appendix & Sign-off"),
     ]
 
-    o: list[str] = ["<!DOCTYPE html>", '<html lang="en"><head><meta charset="utf-8">']
-    o.append(f"<title>{_e(md.report_name)} — Documentation</title>")
-    o.append('<link rel="preconnect" href="https://fonts.googleapis.com">')
-    o.append('<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>')
-    o.append('<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">')
-    o.append(f"<style>{_CSS}</style></head><body>")
+    kpis = [
+        (label, s.get(key, 0))
+        for label, key in (("Tables", "tables"), ("Columns", "columns"), ("Measures", "measures"),
+                          ("Relationships", "relationships"), ("Pages", "pages"),
+                          ("Visuals", "visuals"), ("Sources", "data_sources"))
+    ]
 
-    # Render Sidebar TOC
-    o.append('<div class="sidebar">')
-    o.append('<div class="sidebar-logo">')
-    o.append('<svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>')
-    o.append('<span>PBICompass</span>')
-    o.append('</div>')
-    o.append('<ul class="toc-list">')
-    for sec_id, title in TOC:
-        o.append(f'<li class="toc-item"><a href="#{sec_id}" class="toc-link">{_e(title)}</a></li>')
-    o.append('</ul></div>')
-
-    # Main wrapper
-    o.append('<div class="content-wrapper">')
-    o.append('<div class="main-content">')
-
-    # Header card
-    o.append('<div class="header-card">')
-    o.append(f"<h1>{_e(md.report_name)}</h1>")
-    o.append(f'<p class="subtitle">{_e(md.target_audience or "BI developers and business stakeholders")} · generated {_e(md.generated_at or "")}</p>')
-    o.append("</div>")
-
-    # At-a-glance stats
-    o.append('<div class="kpis">')
-    for label, key in (("Tables", "tables"), ("Columns", "columns"), ("Measures", "measures"),
-                       ("Relationships", "relationships"), ("Pages", "pages"),
-                       ("Visuals", "visuals"), ("Sources", "data_sources")):
-        o.append(f'<div class="kpi"><div class="n">{_e(s.get(key, 0))}</div><div class="l">{_e(label)}</div></div>')
-    o.append("</div>")
+    o: list[str] = []
 
     # 1. Document Control
     o.append('<h2 id="sec1">1. Document Control</h2>')
@@ -615,7 +206,7 @@ def render_html(doc: Document) -> str:
         ["Classification", _e(md.classification) if md.classification else '<span class="muted">not specified</span>'],
         ["Target audience", _e(md.target_audience or "")],
         ["Refresh schedule", _e(md.refresh_schedule) if md.refresh_schedule else '<span class="muted">not specified</span>'],
-        ["Generated", _e(md.generated_at or "")],
+        ["Generated", _e(_fmt_ts(md.generated_at))],
     ]
     o.append(_table(["Field", "Value"], doc_control))
     
@@ -698,9 +289,17 @@ def render_html(doc: Document) -> str:
         o.append("<h3>Model diagram</h3>")
         o.append(_diagram(sm.tables, sm.relationship_edges))
     o.append("<h3>Key tables</h3>")
-    o.append(_table(["Table", "Type", "Columns", "Measures"],
-                    [[_e(t["name"]), _e(t.get("kind", "")), f'<span class="num">{t.get("columns", 0)}</span>',
-                      f'<span class="num">{t.get("measures", 0)}</span>'] for t in sm.tables]))
+    if sm.tables:
+        head = "".join(f"<th>{h}</th>" for h in ("Table", "Type", "Columns", "Measures"))
+        rows = "".join(
+            f'<tr id="table-{_e(anchor_slug(t["name"]))}"><td>{_e(t["name"])}</td><td>{_e(t.get("kind", ""))}</td>'
+            f'<td><span class="num">{_e(t.get("columns", 0))}</span></td>'
+            f'<td><span class="num">{_e(t.get("measures", 0))}</span></td></tr>'
+            for t in sm.tables
+        )
+        o.append(f"<table><thead><tr>{head}</tr></thead><tbody>{rows}</tbody></table>")
+    else:
+        o.append('<p class="muted">None.</p>')
     o.append("<h3>Relationships</h3>")
     o.append(_table(["From", "To", "Cardinality", "Cross-filter", "Active"],
                     [[_e(ed["from"]), _e(ed["to"]),
@@ -717,7 +316,7 @@ def render_html(doc: Document) -> str:
     for m in doc.measure_catalog.measures:
         home = f" · {_e(m.table)}" if m.table else ""
         cat = f'<span class="pill">{_e(m.category)}</span>' if m.category else ""
-        o.append('<div class="measure">')
+        o.append(f'<div class="measure" id="measure-{_e(anchor_slug(m.name))}">')
         o.append(f"<h3>{_e(m.name)}{home}{cat}</h3>")
         o.append(f"<p>{_e(m.plain_english)}</p>")
         if m.calculation_logic and m.calculation_logic != m.plain_english:
@@ -732,13 +331,21 @@ def render_html(doc: Document) -> str:
         if m.confidence and m.confidence != "High":
             suffix = " — review with the business owner" if m.confidence == "Low" else ""
             o.append(f'<p class="caveat">Confidence in inferred business meaning: {_e(m.confidence)}{_e(suffix)}.</p>')
-        o.append(f"<pre><code>{_e(m.dax)}</code></pre>")
+        code_block = ('<div class="code-block">'
+                     '<button type="button" class="copy-btn">Copy</button>'
+                     f"<pre><code>{highlight_dax(m.dax)}</code></pre></div>")
+        line_count = (m.dax or "").count("\n") + 1
+        if line_count > 10:
+            o.append(f'<details class="collapsible"><summary>{_e(m.name)} — '
+                     f"{line_count} lines (click to expand)</summary>{code_block}</details>")
+        else:
+            o.append(code_block)
         o.append("</div>")
     if doc.calculated_columns:
         o.append("<h3>Calculated columns</h3>")
         o.append(_table(["Table", "Column", "Expression"],
                         [[_e(c.get("table", "")), _e(c.get("column", "")),
-                          f'<code>{_e(c.get("expression", ""))}</code>'] for c in doc.calculated_columns]))
+                          f'<code>{highlight_dax(c.get("expression", ""))}</code>'] for c in doc.calculated_columns]))
 
     # 8. Report Pages & Visuals
     o.append('<h2 id="sec8">8. Report Pages &amp; Visuals</h2>')
@@ -781,7 +388,7 @@ def render_html(doc: Document) -> str:
     if es.navigation_guide:
         o.append("<ul>" + "".join(f"<li>{_e(x)}</li>" for x in es.navigation_guide) + "</ul>")
     o.append(_table(["Slicer field", "Page"],
-                    [[_e(s_["field"]), _e(s_["page"])] for s_ in doc.slicers],
+                    [[_e(_slicer_label(s_)), _e(s_["page"])] for s_ in doc.slicers],
                     "No slicers found."))
     drill = [p["name"] for p in doc.report_pages if p.get("drillthrough")]
     if drill:
@@ -794,7 +401,7 @@ def render_html(doc: Document) -> str:
     if sec.roles:
         rows = []
         for r in sec.roles:
-            rules = "<br>".join(f"<code>{_e(f)}</code>" for f in r.get("filters", [])) or '<span class="muted">—</span>'
+            rules = "<br>".join(f"<code>{highlight_dax(f)}</code>" for f in r.get("filters", [])) or '<span class="muted">—</span>'
             members = ", ".join(r.get("members", [])) or '<span class="muted">—</span>'
             rows.append([_e(r.get("name", "")), rules, members])
         o.append(_table(["Role", "Rule (DAX filter)", "Members"], rows))
@@ -892,6 +499,10 @@ def render_html(doc: Document) -> str:
 
     # 16. Model Health & AI Recommendations
     o.append('<h2 id="sec16">16. Model Health &amp; AI Recommendations</h2>')
+    audit_href = (sibling_hrefs or {}).get("audit")
+    if audit_href:
+        o.append(f'<p class="muted">Same deterministic rule engine as the full '
+                 f'<a href="{_e(audit_href)}">Audit &amp; Health Report</a> for this model.</p>')
     hs = doc.health_score or {}
     if hs:
         o.append(f'<h3>Health Score: {_e(hs.get("overall", 0))} / 100 ({_e(hs.get("band", ""))})</h3>')
@@ -945,29 +556,19 @@ def render_html(doc: Document) -> str:
     o.append(_table(["Sign-off Role", "Name", "Title / Role", "Date"], sign_off_rows))
     o.append('<p class="caveat"><strong>Reminder:</strong> Obtain sign-off before sharing with stakeholders.</p>')
 
-    o.append("</div></div>")
-    
-    # Active Link Highlighter Script
-    o.append("""
-<script>
-document.addEventListener('DOMContentLoaded', () => {
-  const links = document.querySelectorAll('.toc-link');
-  const sections = document.querySelectorAll('h2[id]');
-  
-  function changeActiveLink() {
-    let index = sections.length;
-    while(--index && window.scrollY + 100 < sections[index].offsetTop) {}
-    links.forEach((link) => link.classList.remove('active'));
-    if (sections[index]) {
-      const activeLink = document.querySelector(`.toc-link[href="#${sections[index].id}"]`);
-      if (activeLink) activeLink.classList.add('active');
-    }
-  }
-  
-  changeActiveLink();
-  window.addEventListener('scroll', changeActiveLink);
-});
-</script>
-""")
-    o.append("</body></html>")
-    return "\n".join(o)
+    search_index = [{"title": title, "type": "section", "anchor": sec_id} for sec_id, title in TOC]
+    search_index += [
+        {"title": m.name, "type": "measure", "anchor": f"measure-{anchor_slug(m.name)}"}
+        for m in doc.measure_catalog.measures
+    ]
+    search_index += [
+        {"title": t["name"], "type": "table", "anchor": f"table-{anchor_slug(t['name'])}"}
+        for t in sm.tables
+    ]
+
+    return page_shell(
+        title=md.report_name,
+        subtitle=f'{md.target_audience or "BI developers and business stakeholders"} · generated {_fmt_ts(md.generated_at)}',
+        toc=TOC, kpis=kpis, body_html="\n".join(o), search_index=search_index, doc_links=doc_links,
+        owner=md.owner, version=md.version, status=md.status, classification=md.classification,
+    )

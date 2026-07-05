@@ -15,6 +15,7 @@ from pathlib import Path
 from ..schemas.user_guide_document import UserGuideDocument
 from ._docx_writer import _Docx
 from ._html_shell import page_shell
+from ._shared import format_timestamp as _fmt_ts
 from ._shared import html_e as _e
 from ._shared import html_table as _html_table
 from ._shared import md_table as _table
@@ -31,7 +32,7 @@ _SECTION_TITLES = [
 def render_markdown(doc: UserGuideDocument) -> str:
     md = doc.metadata
     out: list[str] = [f"# {md.report_name} — Business User Guide\n"]
-    out.append(f"_{md.target_audience or ''} · generated {md.generated_at or ''}_\n")
+    out.append(f"_{md.target_audience or ''} · generated {_fmt_ts(md.generated_at)}_\n")
 
     out.append(f"\n## {_SECTION_TITLES[0]}\n")
     out.append(doc.introduction + "\n")
@@ -114,7 +115,11 @@ def _bullet_list(items: list[str]) -> str:
     return "<ul>" + "".join(f"<li>{_e(i)}</li>" for i in items) + "</ul>"
 
 
-def render_html(doc: UserGuideDocument) -> str:
+def render_html(
+    doc: UserGuideDocument, *,
+    doc_links: list[tuple[str, str]] | None = None,
+    sibling_hrefs: dict[str, str] | None = None,  # noqa: ARG001 - kept for call-site consistency across renderers
+) -> str:
     md = doc.metadata
 
     toc = [("sec1", "Introduction"), ("sec2", "Getting Started"), ("sec3", "Report Pages"),
@@ -182,8 +187,9 @@ def render_html(doc: UserGuideDocument) -> str:
 
     return page_shell(
         title=f"{md.report_name} — Business User Guide",
-        subtitle=f"{md.target_audience or ''} · generated {md.generated_at or ''}",
-        toc=toc, kpis=kpis, body_html="\n".join(o),
+        subtitle=f"{md.target_audience or ''} · generated {_fmt_ts(md.generated_at)}",
+        toc=toc, kpis=kpis, body_html="\n".join(o), doc_links=doc_links,
+        owner=md.owner, version=md.version, status=md.status,
     )
 
 
@@ -195,7 +201,7 @@ def render_docx(doc: UserGuideDocument, out_path) -> Path:
     md = doc.metadata
 
     d.heading(0, f"{md.report_name} — Business User Guide")
-    d.para([d._run(f"{md.target_audience or ''} · generated {md.generated_at or ''}", italic=True)])
+    d.para([d._run(f"{md.target_audience or ''} · generated {_fmt_ts(md.generated_at)}", italic=True)])
 
     def _bullets(items: list[str]) -> None:
         for item in items:

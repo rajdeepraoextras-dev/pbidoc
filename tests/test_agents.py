@@ -175,6 +175,67 @@ class LLMOrchestratorTest(unittest.TestCase):
         self.assertTrue(any("fallback" in w for w in warnings))
 
 
+class _BusinessAnalystOneBatchFailsClient:
+    """Only answers the Business Analyst agent; raises for any batch whose
+    pages include ``poison_title`` (simulating one bad/invalid LLM response),
+    so 1.4's per-batch retry-then-fallback path can be exercised without a
+    real network dependency. Other agents (DAX Translator, Data Modeler,
+    Column Describer) fall back to their deterministic path via the same
+    raise, same as ``FailingClient`` elsewhere in this file."""
+
+    def __init__(self, poison_title: str):
+        self.poison_title = poison_title
+        self.calls = 0
+
+    def complete_json(self, system: str, user: str, schema: dict) -> dict:
+        self.calls += 1
+        if "Business Analyst" not in system and "BI consultant" not in system:
+            raise RuntimeError("this fake only supports the Business Analyst agent")
+        payload = json.loads(user)
+        titles = [p["display_name"] for p in payload["pages"]]
+        if self.poison_title in titles:
+            raise RuntimeError("simulated bad batch response")
+        return {
+            "core_purpose": "FAKE_PURPOSE",
+            "pages": [{"page_title": t, "summary": "FAKE_SUMMARY"} for t in titles],
+            "navigation_guide": [],
+            "complex_visual_explainers": [],
+        }
+
+
+class BusinessAnalystBatchFailureTest(unittest.TestCase):
+    """1.4: a bad LLM response for one page-batch degrades only that
+    batch's pages, not the whole Executive Summary, and the warning names
+    exactly the affected pages."""
+
+    @staticmethod
+    def _model_with_pages(n: int):
+        from pbicompass.schemas.model import Measure, Page, SemanticModel, Table, Visual
+        table = Table(name="Sales", measures=[Measure(name="Metric1", expression="SUM(Sales[Amount])", table="Sales")])
+        pages = [
+            Page(id=f"p{i}", display_name=f"Page {i}",
+                 visuals=[Visual(id=f"v{i}", type="card", fields=["Sales.Metric1"])])
+            for i in range(1, n + 1)
+        ]
+        return SemanticModel(report_name="BatchTest", tables=[table], pages=pages)
+
+    def test_one_bad_batch_degrades_only_its_pages(self):
+        # BUSINESS_ANALYST_BATCH_SIZE is 6, so 7 pages split into batches of
+        # [Page 1..6] and [Page 7] — poisoning "Page 7" isolates the failure
+        # to the second batch.
+        model = self._model_with_pages(7)
+        client = _BusinessAnalystOneBatchFailsClient(poison_title="Page 7")
+        warnings: list[str] = []
+        doc = generate_document(model, client, on_warning=warnings.append)
+
+        by_title = {p.page_title: p for p in doc.executive_summary.pages}
+        self.assertEqual(len(by_title), 7)
+        for i in range(1, 7):
+            self.assertEqual(by_title[f"Page {i}"].summary, "FAKE_SUMMARY")
+        self.assertNotEqual(by_title["Page 7"].summary, "FAKE_SUMMARY")
+        self.assertTrue(any("Page 7" in w for w in warnings))
+
+
 class DaxTranslatorUnitTest(unittest.TestCase):
     def test_sumx_with_filter(self):
         en, caveats, cat = translate_dax(

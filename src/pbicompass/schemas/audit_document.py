@@ -97,6 +97,7 @@ class Recommendation:
     suggested_fix: str
     expected_benefit: str
     effort: str = "Medium"  # estimated implementation effort: Low | Medium | High
+    category: str = "modeling"  # dax | modeling | performance | governance | unused_assets
 
 
 @dataclass

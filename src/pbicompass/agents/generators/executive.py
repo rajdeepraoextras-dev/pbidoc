@@ -2,16 +2,18 @@
 
 Reuses deterministic building blocks already computed elsewhere in the
 pipeline (model statistics, schema shape, data-source summaries, and the
-full audit rule engine for the maintenance note) rather than re-deriving
-them — the "Knowledge Generation Layer" fanning out from one parsed model.
-Known risks and future recommendations are deliberately *not* pulled
-verbatim from the technical/audit text: that prose is written for BI
-developers (DAX, USERELATIONSHIP(), CROSSFILTER()) and would violate this
-document's "no implementation details" requirement, so they're re-framed in
-business language from the same underlying facts instead. Only
-``business_purpose``, ``business_value``, and ``maintenance_overview``
-optionally go through an LLM for polished prose, with deterministic
-templated fallbacks so the document is always complete offline.
+full audit rule engine for KPI selection, known risks, the maintenance note,
+and recommendations) rather than re-deriving them — the "Knowledge
+Generation Layer" fanning out from one parsed model. Known risks and future
+recommendations pull the *same* ``priority``/``issue``/``why_it_matters``
+text the Audit & Health Report and technical document show (never re-derived
+independently — that was the earlier source of the three documents
+disagreeing on risk counts and ordering), just filtered to drop the "dax"
+category, whose issue text names DAX constructs directly and belongs in the
+developer-facing documents, not here. Only ``business_purpose``,
+``business_value``, and ``maintenance_overview`` optionally go through an
+LLM for polished prose, with deterministic templated fallbacks so the
+document is always complete offline.
 """
 
 from __future__ import annotations
@@ -21,9 +23,10 @@ from typing import Optional
 from ...schemas.executive_document import ExecutiveDocument
 from .. import audit_rules
 from .. import io
-from ..deterministic import business_analyst_deterministic, schema_shape
+from .. import usage
+from ..deterministic import business_analyst_deterministic, schema_shape, translate_dax
 from ..llm import LLMClient
-from ..report_facts import data_source_summaries
+from ..report_facts import data_source_summaries, declassify, first_sentence
 from .base import Warn, build_core_metadata, call_llm
 
 
@@ -34,32 +37,73 @@ def _deterministic_business_purpose(model) -> str:
     return business_analyst_deterministic(model).core_purpose
 
 
-def _business_risk_summaries(model) -> list[str]:
-    """Business-framed risk summaries — same underlying facts as the
-    technical document's Data Model risks, but phrased with no DAX/
-    implementation detail (no USERELATIONSHIP(), no bracket notation), since
-    the executive document explicitly excludes implementation detail."""
-    risks: list[str] = []
-    bidirectional = [r for r in model.relationships if r.cross_filter == "both"]
-    if bidirectional:
-        risks.append(
-            f"{len(bidirectional)} relationship(s) use two-way filtering, which can slow down "
-            f"the report and produce ambiguous results if not carefully managed."
-        )
-    inactive = [r for r in model.relationships if not r.is_active]
-    if inactive:
-        risks.append(
-            f"{len(inactive)} relationship(s) are inactive by default and only apply in specific "
-            f"calculations — a nuance worth documenting for whoever maintains this report."
-        )
-    related = {r.from_table for r in model.relationships} | {r.to_table for r in model.relationships}
-    disconnected = [t.name for t in model.tables if t.kind in ("fact", "dimension") and t.name not in related]
-    if disconnected:
-        risks.append(
-            f"{len(disconnected)} table(s) are not connected to the rest of the model and may not "
-            f"filter or summarize as expected: {', '.join(disconnected)}."
-        )
-    return risks
+def _measure_visual_counts(model) -> dict[str, int]:
+    """Measure name -> number of distinct visuals that bind it (not pages —
+    ``usage.measure_usage`` already covers pages). Drives KPI selection."""
+    measure_names = {m.name for m in model.all_measures()}
+    counts: dict[str, int] = {}
+    for p in model.pages:
+        for v in p.visuals:
+            seen_in_visual: set[str] = set()
+            for f in v.fields:
+                leaf = f.split(".")[-1]
+                if leaf in measure_names and leaf not in seen_in_visual:
+                    seen_in_visual.add(leaf)
+                    counts[leaf] = counts.get(leaf, 0) + 1
+    return counts
+
+
+def _key_kpis(model, limit: int = 5) -> list[str]:
+    """Top measures by real usage — (#visuals using it) x (#pages it appears
+    on) — rather than the first N in model order, which can surface a
+    title/text-label measure as a "KPI". Excludes hidden measures, orphaned
+    measures (never bound to a visual), and Text-category measures. Each
+    entry carries a one-line meaning from the same source as the glossary
+    (1.5): the measure's own description if set, else the deterministic DAX
+    translation."""
+    usage_pages = usage.measure_usage(model)
+    used = usage.used_measure_names(model)
+    visual_counts = _measure_visual_counts(model)
+
+    scored = []
+    for i, m in enumerate(model.all_measures()):
+        if m.is_hidden or m.name not in used:
+            continue
+        english, _, category = translate_dax(m.name, m.expression, m.format_string)
+        if category == "Text":
+            continue
+        score = visual_counts.get(m.name, 0) * len(usage_pages.get(m.name, []))
+        meaning = first_sentence(m.description) if m.description else declassify(first_sentence(english))
+        scored.append((score, i, m.name, meaning))
+
+    scored.sort(key=lambda t: (-t[0], t[1]))
+    return [f"{name} — {meaning}" for _, _, name, meaning in scored[:limit]]
+
+
+_IMPLEMENTATION_JARGON = ("DAX", "CROSSFILTER", "USERELATIONSHIP", "VAR")
+
+
+def _known_risks(recommendations, limit: int = 5) -> list[str]:
+    """Executive-safe known risks: the same deterministic recommendation
+    engine behind the Audit & Health Report and the technical document's
+    Model Health section (`audit_rules.build_recommendations`), filtered to
+    drop the "dax" category outright (its issue text names DAX constructs
+    directly) and, defensively, any other recommendation whose issue/
+    why-it-matters text happens to name a DAX construct (e.g. a governance
+    or modeling finding that explains itself in developer terms) — belongs
+    in the technical/audit documents, not here. Capped to the top
+    severities. Keeps the three documents' risk lists consistent — same
+    underlying findings, same severity order — without re-deriving risk
+    detection here."""
+    safe = []
+    for r in recommendations:
+        if r.category == "dax":
+            continue
+        text = f"{r.issue} {r.why_it_matters}"
+        if any(term in text for term in _IMPLEMENTATION_JARGON):
+            continue
+        safe.append(r)
+    return [f"[{r.priority}] {r.issue} {r.why_it_matters}" for r in safe[:limit]]
 
 
 def _report_statistics(model) -> dict[str, int]:
@@ -145,12 +189,9 @@ class ExecutiveSummaryGenerator:
         warn = on_warning or (lambda _msg: None)
         model.compute_counts()
 
-        key_measures = [m.name for m in model.all_measures() if not m.is_hidden][:5]
-        model_risks = _business_risk_summaries(model)
-
         # Reuse the full deterministic audit engine (Phase 1) for the
-        # maintenance note and recommendations, rather than re-deriving
-        # best-practice/governance logic here.
+        # maintenance note, known risks, and recommendations, rather than
+        # re-deriving best-practice/governance logic here.
         measures = model.all_measures()
         dax_findings = audit_rules.find_dax_findings(measures)
         best_practices = audit_rules.check_best_practices(model)
@@ -162,8 +203,12 @@ class ExecutiveSummaryGenerator:
         )
         failed_practice_count = sum(1 for c in best_practices if not c.passed)
 
+        key_kpis = _key_kpis(model)
+        key_kpi_names = [k.split(" — ", 1)[0] for k in key_kpis]
+        model_risks = _known_risks(recommendations)
+
         business_purpose = _deterministic_business_purpose(model)
-        business_value = _business_value(key_measures, audience)
+        business_value = _business_value(key_kpi_names, audience)
         maintenance_overview = _maintenance_overview(
             refresh, owner, failed_practice_count, len(governance),
         )
@@ -173,7 +218,7 @@ class ExecutiveSummaryGenerator:
                 client, io.EXECUTIVE_WRITER_SYSTEM,
                 io.executive_writer_input(
                     business_purpose_draft=business_purpose,
-                    key_kpis=key_measures,
+                    key_kpis=key_kpi_names,
                     model_statistics=dict(model.meta.counts),
                     report_statistics=_report_statistics(model),
                     known_risks=model_risks,
@@ -192,7 +237,7 @@ class ExecutiveSummaryGenerator:
                 owner=owner, audience=audience, refresh=refresh, version=version, status=status,
             ),
             business_purpose=business_purpose,
-            key_kpis=key_measures,
+            key_kpis=key_kpis,
             data_sources_summary=data_source_summaries(model),
             refresh_schedule=refresh,
             security_overview=_security_overview(model),

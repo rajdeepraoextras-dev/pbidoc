@@ -1,0 +1,1360 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<title>SampleSales — Documentation</title>
+
+<script>
+(function () {
+  try {
+    var saved = localStorage.getItem('pbicompass-theme');
+    if (saved === 'dark' || saved === 'light') {
+      document.documentElement.setAttribute('data-theme', saved);
+    }
+  } catch (e) {}
+})();
+</script>
+
+<style>
+:root {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  --bg-main: #f8fafc;
+  --bg-card: #ffffff;
+  --bg-hover: #fafbfd;
+  --bg-code-inline: #f1f5f9;
+  --text-main: #0f172a;
+  --text-muted: #475569;
+  --text-faint: #64748b;
+  --border-color: #e2e8f0;
+  --primary: #4f46e5;
+  --primary-hover: #4338ca;
+  --primary-light: #eef2ff;
+  --secondary: #0ea5e9;
+  --success: #10b981;
+  --success-light: #ecfdf5;
+  --warning: #f59e0b;
+  --warning-light: #fef3c7;
+  --danger: #ef4444;
+  --danger-light: #fef2f2;
+  --code-bg: #0f172a;
+  --code-text: #e2e8f0;
+  --sidebar-w: 280px;
+}
+
+/* Dark mode: system preference by default, explicit override via the
+   sidebar toggle (persisted to localStorage as data-theme on <html>). Print
+   always forces light regardless (see the @media print block below). */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg-main: #0b1220;
+    --bg-card: #16213a;
+    --bg-hover: #1c2942;
+    --bg-code-inline: #1c2942;
+    --text-main: #e2e8f0;
+    --text-muted: #94a3b8;
+    --text-faint: #64748b;
+    --border-color: #2a3a56;
+    --code-text: #e2e8f0;
+  }
+}
+:root[data-theme="dark"] {
+  --bg-main: #0b1220;
+  --bg-card: #16213a;
+  --bg-hover: #1c2942;
+  --bg-code-inline: #1c2942;
+  --text-main: #e2e8f0;
+  --text-muted: #94a3b8;
+  --text-faint: #64748b;
+  --border-color: #2a3a56;
+  --code-text: #e2e8f0;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--font-sans);
+  color: var(--text-main);
+  background-color: var(--bg-main);
+  line-height: 1.6;
+  display: flex;
+  min-height: 100vh;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.skip-link {
+  position: absolute;
+  top: -50px;
+  left: 12px;
+  z-index: 300;
+  background: var(--primary);
+  color: #ffffff;
+  padding: 10px 16px;
+  border-radius: 0 0 8px 8px;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.85rem;
+  transition: top 0.15s ease;
+}
+.skip-link:focus {
+  top: 0;
+}
+
+/* Sidebar styling */
+.sidebar {
+  width: var(--sidebar-w);
+  background: var(--bg-card);
+  border-right: 1px solid var(--border-color);
+  padding: 32px 20px;
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  overflow-y: auto;
+  z-index: 100;
+}
+.sidebar-logo {
+  font-weight: 800;
+  font-size: 1.3rem;
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 28px;
+  letter-spacing: -0.02em;
+}
+.sidebar-logo svg {
+  width: 26px;
+  height: 26px;
+  fill: currentColor;
+}
+.toc-list {
+  list-style: none;
+}
+.toc-item {
+  margin-bottom: 4px;
+}
+.toc-link {
+  display: block;
+  padding: 8px 12px;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 0.85rem;
+  font-weight: 500;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+}
+.toc-link:hover {
+  background: var(--primary-light);
+  color: var(--primary);
+}
+.toc-link.active {
+  background: var(--primary-light);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+/* Sidebar search */
+.search-box {
+  position: relative;
+  margin-bottom: 16px;
+}
+.search-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-main);
+  color: var(--text-main);
+  font-size: 0.82rem;
+  font-family: inherit;
+}
+.search-input:focus {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+.search-results {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 250;
+  list-style: none;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  max-height: 320px;
+  overflow-y: auto;
+}
+.search-result {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  color: var(--text-main);
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+}
+.search-result .type {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+.search-result:hover, .search-result.active {
+  background: var(--primary-light);
+  color: var(--primary);
+}
+.search-empty {
+  padding: 8px 12px;
+  font-size: 0.8rem;
+  color: var(--text-faint);
+}
+
+/* Doc-switcher — links to sibling documents (and the hub) generated in the
+   same job. Only rendered when there are siblings to link to. */
+.doc-switcher {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+.doc-switcher a {
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+.doc-switcher a:hover {
+  background: var(--primary-light);
+  color: var(--primary);
+}
+
+/* Main Content Area */
+.content-wrapper {
+  margin-left: var(--sidebar-w);
+  flex-grow: 1;
+  padding: 48px 56px;
+  max-width: calc(100vw - var(--sidebar-w));
+}
+.main-content {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+/* Header Cards */
+.header-card {
+  background: linear-gradient(135deg, #1e1b4b 0%, #311042 100%);
+  color: #ffffff;
+  border-radius: 16px;
+  padding: 44px;
+  margin-bottom: 32px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+}
+.header-card::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  right: -20%;
+  width: 350px;
+  height: 350px;
+  background: radial-gradient(circle, rgba(79, 70, 229, 0.3) 0%, rgba(0,0,0,0) 70%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+.header-card h1 {
+  font-size: 2.2rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  margin-bottom: 8px;
+  line-height: 1.2;
+}
+.header-card .subtitle {
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 0.98rem;
+  margin: 0;
+  font-weight: 400;
+}
+
+/* KPIs / Stats grid */
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 16px;
+  margin-bottom: 36px;
+}
+.kpi {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 16px;
+  text-align: left;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.kpi:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+.kpi .n {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--primary);
+  line-height: 1.2;
+}
+.kpi .l {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 4px;
+}
+
+/* Typography & Section Styles */
+h2 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--text-main);
+  margin: 44px 0 18px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--border-color);
+  letter-spacing: -0.02em;
+  scroll-margin-top: 24px;
+}
+h3 {
+  font-size: 1.08rem;
+  font-weight: 600;
+  color: var(--text-main);
+  margin: 24px 0 12px;
+}
+p {
+  margin-bottom: 16px;
+  color: var(--text-muted);
+  font-size: 0.94rem;
+}
+ul, ol {
+  margin-left: 20px;
+  margin-bottom: 16px;
+  color: var(--text-muted);
+  font-size: 0.94rem;
+}
+li {
+  margin-bottom: 6px;
+}
+
+/* Card-style Containers */
+.card-section {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 24px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+}
+
+/* Tables */
+table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin: 16px 0 24px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+}
+th, td {
+  padding: 10px 14px;
+  text-align: left;
+  vertical-align: middle;
+  font-size: 0.86rem;
+}
+th {
+  background-color: var(--bg-main);
+  font-weight: 600;
+  color: var(--text-main);
+  border-bottom: 1px solid var(--border-color);
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  letter-spacing: 0.05em;
+}
+td {
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-muted);
+  background: var(--bg-card);
+}
+tr:last-child td {
+  border-bottom: none;
+}
+tr:hover td {
+  background-color: var(--bg-hover);
+}
+td.num {
+  font-family: monospace;
+  font-weight: 500;
+}
+
+/* Code & Pre */
+pre {
+  background: var(--code-bg);
+  color: var(--code-text);
+  border-radius: 8px;
+  padding: 14px;
+  overflow-x: auto;
+  margin: 12px 0 20px;
+}
+code {
+  font-family: Consolas, "SF Mono", Menlo, monospace;
+  font-size: 0.82rem;
+  background: var(--bg-code-inline);
+  color: var(--text-main);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+}
+
+/* DAX/M syntax highlighting — fixed palette against the always-dark
+   --code-bg, independent of page theme. */
+.tok-keyword { color: #c4b5fd; font-weight: 700; }
+.tok-string { color: #86efac; }
+.tok-number { color: #fca5a5; }
+.tok-ref { color: #7dd3fc; }
+.tok-comment { color: #64748b; font-style: italic; }
+
+/* Copy-to-clipboard button on each code block */
+.code-block {
+  position: relative;
+}
+.code-block .copy-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.code-block .copy-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+/* Collapsible long content (>10-line DAX, full M queries, unused-asset
+   groups) — collapsed by default on screen; forced open for print/PDF via
+   JS (window.onbeforeprint) with a no-JS CSS fallback below. */
+details.collapsible {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  margin: 12px 0 20px;
+  background: var(--bg-card);
+}
+details.collapsible > summary {
+  cursor: pointer;
+  padding: 10px 14px;
+  color: var(--text-main);
+  font-size: 0.86rem;
+  font-weight: 600;
+  list-style: none;
+}
+details.collapsible > summary::-webkit-details-marker {
+  display: none;
+}
+details.collapsible > summary::before {
+  content: '▶ ';
+  color: var(--text-faint);
+}
+details.collapsible[open] > summary::before {
+  content: '▼ ';
+}
+details.collapsible > summary:hover {
+  color: var(--primary);
+}
+details.collapsible > .code-block,
+details.collapsible > .collapsible-body {
+  margin: 0 14px 14px;
+}
+details.collapsible > .code-block pre {
+  margin: 0;
+}
+
+/* Badges & Pills */
+.pill {
+  display: inline-block;
+  background: var(--primary-light);
+  color: var(--primary);
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  vertical-align: middle;
+  margin-left: 6px;
+}
+.pill.pass { background: var(--success-light); color: #067647; }
+.pill.fail { background: var(--danger-light); color: #b42318; }
+.pill.critical { background: var(--danger-light); color: #b42318; }
+.pill.high { background: var(--warning-light); color: #b45309; }
+.pill.medium { background: var(--primary-light); color: var(--primary); }
+.pill.low { background: var(--bg-code-inline); color: var(--text-muted); }
+
+/* Todo items */
+.todo {
+  border: 1px dashed #fbbf24;
+  background-color: #fffbeb;
+  color: #b45309;
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-size: 0.86rem;
+  margin: 16px 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.todo b {
+  font-weight: 700;
+}
+
+/* Risk / Warning Alerts */
+.risk {
+  background-color: #fef2f2;
+  border-left: 4px solid var(--danger);
+  border-radius: 4px;
+  padding: 12px 16px;
+  margin: 12px 0;
+  font-size: 0.86rem;
+  color: #991b1b;
+}
+
+/* Caveat / Notes */
+.caveat {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  background: var(--bg-code-inline);
+  border-left: 3px solid var(--text-faint);
+  padding: 6px 12px;
+  border-radius: 0 4px 4px 0;
+  margin: 8px 0;
+}
+
+/* Diagram styling. The SVG's own box/text fills stay light-theme (readable
+   against the white canvas below) regardless of page theme — the canvas
+   itself is intentionally kept white so the diagram never needs a second
+   themed color set. */
+.diagram {
+  background: #ffffff;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 16px;
+  margin: 16px 0;
+  overflow: hidden;
+}
+.diagram svg {
+  cursor: grab;
+  touch-action: none;
+}
+.diagram svg:active {
+  cursor: grabbing;
+}
+.dm-node {
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+.dm-edge {
+  transition: opacity 0.15s ease;
+}
+.dm-node.dimmed, .dm-edge.dimmed {
+  opacity: 0.2;
+}
+.dm-edge.highlighted line {
+  stroke-width: 3;
+}
+.legend {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 12px;
+}
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  display: inline-block;
+}
+.diagram-hint {
+  width: 100%;
+  margin-top: 4px;
+  font-style: italic;
+}
+
+/* Print cover page + watermark — hidden on screen entirely; only exist for
+   @media print / print-to-PDF (2.8). */
+.print-cover, .print-watermark {
+  display: none;
+}
+.print-cover-mark {
+  font-weight: 800;
+  font-size: 1.1rem;
+  letter-spacing: -0.02em;
+  color: var(--primary);
+}
+.print-cover h1 {
+  font-size: 2.4rem;
+  font-weight: 800;
+  margin: 32px 0 8px;
+}
+.print-cover-subtitle {
+  color: var(--text-muted);
+  font-size: 1rem;
+  margin-bottom: 40px;
+}
+.print-cover-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 32px;
+  max-width: 480px;
+  font-size: 0.92rem;
+}
+.print-cover-meta dt {
+  color: var(--text-faint);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.print-cover-meta dd {
+  color: var(--text-main);
+  font-weight: 600;
+}
+.print-cover-classification {
+  display: inline-block;
+  margin-top: 32px;
+  padding: 6px 16px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: var(--danger-light);
+  color: #991b1b;
+}
+
+/* Measure catalog entries */
+.measure {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.01);
+}
+.measure h3 {
+  margin: 0 0 10px;
+  font-size: 1.1rem;
+}
+.usedon {
+  font-size: 0.76rem;
+  color: var(--text-faint);
+  margin-top: 6px;
+  margin-bottom: 12px;
+}
+
+/* Score ring / big number (audit report) */
+.score-hero {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  flex-wrap: wrap;
+}
+.score-big {
+  font-size: 3.2rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--primary);
+}
+.score-band {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Mobile TOC toggle — hidden on desktop, shown as a fixed hamburger button
+   below the 1024px breakpoint where the sidebar becomes an overlay. */
+.mobile-toc-toggle {
+  display: none;
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 200;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-main);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+/* Theme toggle — sits under the sidebar logo on desktop. */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 20px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-main);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.theme-toggle:hover {
+  color: var(--primary);
+  border-color: var(--primary-light);
+}
+
+/* Responsiveness & Print settings */
+@media (max-width: 1024px) {
+  .mobile-toc-toggle {
+    display: block;
+  }
+  .sidebar {
+    display: none;
+    position: fixed;
+    top: 0; bottom: 0; left: 0;
+    z-index: 150;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.25);
+  }
+  .sidebar.open {
+    display: block;
+  }
+  .sidebar-scrim {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    z-index: 140;
+  }
+  .sidebar-scrim.open {
+    display: block;
+  }
+  .content-wrapper {
+    margin-left: 0;
+    max-width: 100%;
+    padding: 32px 24px 32px 76px;
+  }
+}
+
+@page {
+  margin: 2cm;
+}
+
+@media print {
+  /* Force light regardless of on-screen theme (system preference or the
+     sidebar toggle) — a printed/PDF page is always read on paper. */
+  :root {
+    --bg-main: #f8fafc !important;
+    --bg-card: #ffffff !important;
+    --bg-hover: #fafbfd !important;
+    --bg-code-inline: #f1f5f9 !important;
+    --text-main: #0f172a !important;
+    --text-muted: #475569 !important;
+    --text-faint: #94a3b8 !important;
+    --border-color: #e2e8f0 !important;
+    --code-text: #e2e8f0 !important;
+  }
+  body {
+    background-color: #ffffff;
+    display: block;
+  }
+  .sidebar, .theme-toggle, .mobile-toc-toggle, .skip-link, .copy-btn {
+    display: none;
+  }
+  .content-wrapper {
+    margin-left: 0;
+    padding: 0;
+    max-width: 100%;
+  }
+  h2 {
+    page-break-before: always;
+  }
+  h2:first-of-type {
+    page-break-before: avoid;
+  }
+  pre, table, .measure, .diagram, .card-section {
+    page-break-inside: avoid;
+  }
+  /* No-JS fallback: force every collapsed <details> open for print, even
+     if the onbeforeprint handler below didn't run (script disabled). */
+  details.collapsible > summary::before {
+    content: '';
+  }
+  details.collapsible > .code-block,
+  details.collapsible > .collapsible-body {
+    display: block !important;
+  }
+
+  /* Cover page — a full page ahead of section 1, print-only. */
+  .print-cover {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-height: 90vh;
+    page-break-after: always;
+  }
+  /* Diagonal CONFIDENTIAL/RESTRICTED watermark, print-only, behind content. */
+  .print-watermark {
+    display: block;
+    position: fixed;
+    top: 45%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotate(-35deg);
+    font-size: 5rem;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    color: rgba(180, 30, 30, 0.16);
+    z-index: -1;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+}
+</style></head><body>
+<a href="#main-content" class="skip-link">Skip to content</a>
+<button type="button" class="mobile-toc-toggle" aria-label="Open table of contents" aria-expanded="false">&#9776;</button>
+<div class="sidebar-scrim"></div>
+<div class="print-cover">
+<div class="print-cover-mark">PBICompass</div>
+<h1>SampleSales</h1>
+<p class="print-cover-subtitle">BI developers and business stakeholders · generated TIMESTAMP</p>
+<dl class="print-cover-meta">
+<dt>Version</dt><dd>Not specified</dd>
+<dt>Status</dt><dd>Not specified</dd>
+<dt>Owner</dt><dd>Not specified</dd>
+</dl>
+</div>
+<script type="application/json" id="search-index">[{"title": "Document Control", "type": "section", "anchor": "sec1"}, {"title": "Executive Summary", "type": "section", "anchor": "sec2"}, {"title": "Business Requirements", "type": "section", "anchor": "sec3"}, {"title": "Audience & Stakeholders", "type": "section", "anchor": "sec4"}, {"title": "Data Sources", "type": "section", "anchor": "sec5"}, {"title": "Data Model", "type": "section", "anchor": "sec6"}, {"title": "Measures (DAX)", "type": "section", "anchor": "sec7"}, {"title": "Pages & Visuals", "type": "section", "anchor": "sec8"}, {"title": "Filters & Navigation", "type": "section", "anchor": "sec9"}, {"title": "Row-Level Security", "type": "section", "anchor": "sec10"}, {"title": "Refresh & Gateway", "type": "section", "anchor": "sec11"}, {"title": "Deployment & Environments", "type": "section", "anchor": "sec12"}, {"title": "Access & Permissions", "type": "section", "anchor": "sec13"}, {"title": "Glossary", "type": "section", "anchor": "sec14"}, {"title": "Issues & Assumptions", "type": "section", "anchor": "sec15"}, {"title": "Health & AI Recommendations", "type": "section", "anchor": "sec16"}, {"title": "Support & Maintenance", "type": "section", "anchor": "sec17"}, {"title": "Appendix & Sign-off", "type": "section", "anchor": "sec18"}, {"title": "Avg Order Value", "type": "measure", "anchor": "measure-avg-order-value"}, {"title": "Total Revenue", "type": "measure", "anchor": "measure-total-revenue"}, {"title": "Revenue YTD", "type": "measure", "anchor": "measure-revenue-ytd"}, {"title": "Orphan Margin", "type": "measure", "anchor": "measure-orphan-margin"}, {"title": "Customer", "type": "table", "anchor": "table-customer"}, {"title": "Date", "type": "table", "anchor": "table-date"}, {"title": "Key Measures", "type": "table", "anchor": "table-key-measures"}, {"title": "Sales", "type": "table", "anchor": "table-sales"}]</script>
+<nav class="sidebar" aria-label="Table of contents">
+<div class="sidebar-logo">
+<svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
+<span>PBICompass</span>
+</div>
+<button type="button" class="theme-toggle" aria-label="Toggle dark mode">🌙 Dark mode</button>
+<div class="search-box">
+<input type="text" class="search-input" placeholder="Search this document…" aria-label="Search this document" autocomplete="off">
+<ul class="search-results" hidden></ul>
+</div>
+<ul class="toc-list">
+<li class="toc-item"><a href="#sec1" class="toc-link">Document Control</a></li>
+<li class="toc-item"><a href="#sec2" class="toc-link">Executive Summary</a></li>
+<li class="toc-item"><a href="#sec3" class="toc-link">Business Requirements</a></li>
+<li class="toc-item"><a href="#sec4" class="toc-link">Audience &amp; Stakeholders</a></li>
+<li class="toc-item"><a href="#sec5" class="toc-link">Data Sources</a></li>
+<li class="toc-item"><a href="#sec6" class="toc-link">Data Model</a></li>
+<li class="toc-item"><a href="#sec7" class="toc-link">Measures (DAX)</a></li>
+<li class="toc-item"><a href="#sec8" class="toc-link">Pages &amp; Visuals</a></li>
+<li class="toc-item"><a href="#sec9" class="toc-link">Filters &amp; Navigation</a></li>
+<li class="toc-item"><a href="#sec10" class="toc-link">Row-Level Security</a></li>
+<li class="toc-item"><a href="#sec11" class="toc-link">Refresh &amp; Gateway</a></li>
+<li class="toc-item"><a href="#sec12" class="toc-link">Deployment &amp; Environments</a></li>
+<li class="toc-item"><a href="#sec13" class="toc-link">Access &amp; Permissions</a></li>
+<li class="toc-item"><a href="#sec14" class="toc-link">Glossary</a></li>
+<li class="toc-item"><a href="#sec15" class="toc-link">Issues &amp; Assumptions</a></li>
+<li class="toc-item"><a href="#sec16" class="toc-link">Health &amp; AI Recommendations</a></li>
+<li class="toc-item"><a href="#sec17" class="toc-link">Support &amp; Maintenance</a></li>
+<li class="toc-item"><a href="#sec18" class="toc-link">Appendix &amp; Sign-off</a></li>
+</ul></nav>
+<div class="content-wrapper">
+<main class="main-content" id="main-content">
+<div class="header-card">
+<h1>SampleSales</h1>
+<p class="subtitle">BI developers and business stakeholders · generated TIMESTAMP</p>
+</div>
+<div class="kpis">
+<div class="kpi"><div class="n">4</div><div class="l">Tables</div></div>
+<div class="kpi"><div class="n">18</div><div class="l">Columns</div></div>
+<div class="kpi"><div class="n">4</div><div class="l">Measures</div></div>
+<div class="kpi"><div class="n">3</div><div class="l">Relationships</div></div>
+<div class="kpi"><div class="n">3</div><div class="l">Pages</div></div>
+<div class="kpi"><div class="n">5</div><div class="l">Visuals</div></div>
+<div class="kpi"><div class="n">1</div><div class="l">Sources</div></div>
+</div>
+<h2 id="sec1">1. Document Control</h2>
+<table><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody><tr><td>Dashboard / Report Name</td><td>SampleSales</td></tr><tr><td>Source format</td><td>pbip-tmdl</td></tr><tr><td>Owner</td><td><span class="muted">not specified</span></td></tr><tr><td>Author</td><td><span class="muted">not specified</span></td></tr><tr><td>Reviewer / Approver</td><td><span class="muted">not specified</span></td></tr><tr><td>Version</td><td><span class="muted">not specified</span></td></tr><tr><td>Status</td><td><span class="muted">not specified</span></td></tr><tr><td>Classification</td><td><span class="muted">not specified</span></td></tr><tr><td>Target audience</td><td>BI developers and business stakeholders</td></tr><tr><td>Refresh schedule</td><td><span class="muted">not specified</span></td></tr><tr><td>Generated</td><td>TIMESTAMP</td></tr></tbody></table>
+<div class="todo"><b>✎ To complete:</b> Complete missing document control fields: Version, Status, Author, Reviewer, Classification</div>
+<h2 id="sec2">2. Executive Summary</h2>
+<div class="card-section">
+<p>&#x27;SampleSales&#x27; reports on Sales, tracking Avg Order Value, Total Revenue, Revenue YTD across Customer, Date. It spans 2 report page(s), documented individually below. This purpose statement is derived from the model contents alone — the business context requires confirmation from the report owner.</p>
+<p><strong>Headline metrics:</strong> Avg Order Value, Total Revenue, Revenue YTD, Orphan Margin.</p>
+</div>
+<div class="todo"><b>✎ To complete:</b> Specify the primary business decision this dashboard drives (e.g. weekly sales planning).</div>
+<h2 id="sec3">3. Business Requirements</h2>
+<table><thead><tr><th>ID</th><th>Inferred Requirement</th><th>Source Visual</th><th>Priority</th><th>Status</th></tr></thead><tbody><tr><td>REQ-01</td><td>Provide the &#x27;Sales Overview&#x27; analysis view (inferred from the page; confirm scope with the business owner).</td><td>Page: Sales Overview</td><td>TBC</td><td>Draft</td></tr><tr><td>REQ-02</td><td>Provide the &#x27;Region Detail&#x27; analysis view (inferred from the page; confirm scope with the business owner).</td><td>Page: Region Detail</td><td>TBC</td><td>Draft</td></tr><tr><td>REQ-03</td><td>Report &#x27;Revenue by Year&#x27; (inferred from the visual; confirm with the business owner).</td><td>Visual: Revenue by Year (Sales Overview)</td><td>TBC</td><td>Draft</td></tr><tr><td>REQ-04</td><td>Report &#x27;Revenue Breakdown&#x27; (inferred from the visual; confirm with the business owner).</td><td>Visual: Revenue Breakdown (Sales Overview)</td><td>TBC</td><td>Draft</td></tr><tr><td>REQ-05</td><td>Report &#x27;Revenue by Region&#x27; (inferred from the visual; confirm with the business owner).</td><td>Visual: Revenue by Region (Region Detail)</td><td>TBC</td><td>Draft</td></tr></tbody></table>
+<h2 id="sec4">4. Audience &amp; Stakeholders</h2>
+<table><thead><tr><th>Role</th><th>Name / Group</th><th>Access</th></tr></thead><tbody><tr><td>Business Owner</td><td><span class="muted">—</span></td><td>Edit / sign-off</td></tr><tr><td>Primary Users</td><td>BI developers and business stakeholders</td><td>View</td></tr><tr><td>Author / Creator</td><td><span class="muted">—</span></td><td>Modify / Publish</td></tr></tbody></table>
+<div class="todo"><b>✎ To complete:</b> Confirm other stakeholders (Data Owner, Developer/Maintainer, and per-group access levels).</div>
+<h2 id="sec5">5. Data Sources</h2>
+<ul><li>Sql.Database: prod-sql.contoso.com/SalesDW</li></ul>
+<h3>Power Query / ETL transformations</h3>
+<table><thead><tr><th>Object</th><th>Transformation</th></tr></thead><tbody><tr><td>Sales DW</td><td>Via Sql.Database.</td></tr><tr><td>Customer</td><td>Loads dbo.DimCustomer via Sql.Database.</td></tr><tr><td>Date</td><td>Loads dbo.DimDate via Sql.Database.</td></tr><tr><td>Key Measures</td><td>Calculated table defined in DAX.</td></tr><tr><td>Sales</td><td>Loads dbo.FactSales via Sql.Database.</td></tr></tbody></table>
+<div class="todo"><b>✎ To complete:</b> Specify per-source authentication method, owning team, and known data latency.</div>
+<h2 id="sec6">6. Data Model</h2>
+<p>The model is a star schema centred on the &#x27;Sales&#x27; fact table. It has 1 fact table(s) (Sales) and 2 dimension table(s) (Customer, Date), connected by 3 relationship(s).</p>
+<h3>Relationships of note &amp; risks</h3>
+<div class="risk">Sales ↔ Date uses bi-directional cross-filtering, which can create ambiguous filter paths and slow performance.</div>
+<div class="risk">Sales[ShipDateKey] → Date[DateKey] is inactive and only applies via USERELATIONSHIP() in DAX.</div>
+<h3>Model diagram</h3>
+<div class="diagram"><svg viewBox="0 0 880 520" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="inherit" role="img" aria-labelledby="model-diagram-title"><title id="model-diagram-title">Data model diagram: Customer, Date, Key Measures, Sales, connected by 3 relationship(s)</title><defs><marker id="arr" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#94a3b8"/></marker><marker id="arro" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#d97706"/></marker></defs><g class="dm-edge" data-from="Sales" data-to="Customer"><title>Sales[CustomerKey] → Customer[CustomerKey]</title><line x1="440" y1="260" x2="440" y2="95" stroke="#94a3b8" stroke-width="1.6" marker-end="url(#arr)"/><text x="440" y="174" font-size="10" fill="#94a3b8" text-anchor="middle">∞:1</text></g><g class="dm-edge" data-from="Sales" data-to="Date"><title>Sales[OrderDateKey] → Date[DateKey]</title><line x1="440" y1="260" x2="583" y2="342" stroke="#d97706" stroke-width="1.6" marker-end="url(#arro)"/><text x="511" y="298" font-size="10" fill="#d97706" text-anchor="middle">∞:1</text></g><g class="dm-edge" data-from="Sales" data-to="Date"><title>Sales[ShipDateKey] → Date[DateKey]</title><line x1="440" y1="260" x2="583" y2="342" stroke="#94a3b8" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arr)"/><text x="511" y="298" font-size="10" fill="#94a3b8" text-anchor="middle">∞:1</text></g><g class="dm-node" data-table="Customer"><title>Customer — 4 col · 0 meas (click to jump to its row)</title><rect x="365" y="70" width="150" height="50" rx="9" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.6"/><text x="440" y="91" font-size="12.5" font-weight="600" text-anchor="middle" fill="#1f2933">Customer</text><text x="440" y="107" font-size="9.5" text-anchor="middle" fill="#8a94a3">4 col · 0 meas</text></g><g class="dm-node" data-table="Date"><title>Date — 5 col · 0 meas (click to jump to its row)</title><rect x="508" y="318" width="150" height="50" rx="9" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.6"/><text x="583" y="338" font-size="12.5" font-weight="600" text-anchor="middle" fill="#1f2933">Date</text><text x="583" y="354" font-size="9.5" text-anchor="middle" fill="#8a94a3">5 col · 0 meas</text></g><g class="dm-node" data-table="Key Measures"><title>Key Measures — 1 col · 1 meas (click to jump to its row)</title><rect x="222" y="318" width="150" height="50" rx="9" fill="#f5f3ff" stroke="#a78bfa" stroke-width="1.6"/><text x="297" y="339" font-size="12.5" font-weight="600" text-anchor="middle" fill="#1f2933">Key Measures</text><text x="297" y="355" font-size="9.5" text-anchor="middle" fill="#8a94a3">1 col · 1 meas</text></g><g class="dm-node" data-table="Sales"><title>Sales — 8 col · 3 meas (click to jump to its row)</title><rect x="365" y="235" width="150" height="50" rx="9" fill="#eef2ff" stroke="#6366f1" stroke-width="1.6"/><text x="440" y="256" font-size="12.5" font-weight="600" text-anchor="middle" fill="#1f2933">Sales</text><text x="440" y="272" font-size="9.5" text-anchor="middle" fill="#8a94a3">8 col · 3 meas</text></g></svg></div><div class="legend"><span><i class="swatch" style="background:#eef2ff;border:1px solid #6366f1"></i>Fact</span><span><i class="swatch" style="background:#ffffff;border:1px solid #cbd5e1"></i>Dimension</span><span><i class="swatch" style="background:#f5f3ff;border:1px solid #a78bfa"></i>Calculated</span><span><i class="swatch" style="background:#94a3b8"></i>Single-direction</span><span><i class="swatch" style="background:#d97706"></i>Bi-directional</span><span>– – – inactive</span></div><p class="muted diagram-hint">Scroll/pinch to zoom, drag to pan. Hover a table to highlight its relationships; click it to jump to its row below.</p>
+<h3>Key tables</h3>
+<table><thead><tr><th>Table</th><th>Type</th><th>Columns</th><th>Measures</th></tr></thead><tbody><tr id="table-customer"><td>Customer</td><td>dimension</td><td><span class="num">4</span></td><td><span class="num">0</span></td></tr><tr id="table-date"><td>Date</td><td>dimension</td><td><span class="num">5</span></td><td><span class="num">0</span></td></tr><tr id="table-key-measures"><td>Key Measures</td><td>calculation</td><td><span class="num">1</span></td><td><span class="num">1</span></td></tr><tr id="table-sales"><td>Sales</td><td>fact</td><td><span class="num">8</span></td><td><span class="num">3</span></td></tr></tbody></table>
+<h3>Relationships</h3>
+<table><thead><tr><th>From</th><th>To</th><th>Cardinality</th><th>Cross-filter</th><th>Active</th></tr></thead><tbody><tr><td>Sales</td><td>Customer</td><td>many-to-one</td><td>single</td><td>Yes</td></tr><tr><td>Sales</td><td>Date</td><td>many-to-one</td><td>both</td><td>Yes</td></tr><tr><td>Sales</td><td>Date</td><td>many-to-one</td><td>single</td><td>No</td></tr></tbody></table>
+<h3>Data dictionary</h3>
+<table><thead><tr><th>Table</th><th>Column</th><th>Data Type</th><th>Description</th></tr></thead><tbody><tr><td>Customer</td><td>Customer Name</td><td>string</td><td>Unknown — requires business confirmation.</td></tr><tr><td>Customer</td><td>Region</td><td>string</td><td>Unknown — requires business confirmation.</td></tr><tr><td>Customer</td><td>Segment</td><td>string</td><td>Unknown — requires business confirmation.</td></tr><tr><td>Date</td><td>Date</td><td>dateTime</td><td>Unknown — requires business confirmation.</td></tr><tr><td>Date</td><td>Year</td><td>int64</td><td>Unknown — requires business confirmation.</td></tr><tr><td>Date</td><td>Month Name</td><td>string</td><td>Unknown — requires business confirmation.</td></tr><tr><td>Sales</td><td>CustomerKey</td><td>int64</td><td>Key identifier; used to join Sales to related tables.</td></tr><tr><td>Sales</td><td>OrderDateKey</td><td>int64</td><td>Key identifier; used to join Sales to related tables.</td></tr><tr><td>Sales</td><td>ShipDateKey</td><td>int64</td><td>Key identifier; used to join Sales to related tables.</td></tr><tr><td>Sales</td><td>Quantity</td><td>int64</td><td>Unknown — requires business confirmation.</td></tr><tr><td>Sales</td><td>UnitPrice</td><td>double</td><td>Unknown — requires business confirmation.</td></tr><tr><td>Sales</td><td>Status</td><td>string</td><td>Unknown — requires business confirmation.</td></tr><tr><td>Sales</td><td>LineTotal</td><td>double</td><td>Calculated column.</td></tr></tbody></table>
+<h2 id="sec7">7. Measures &amp; Calculations (DAX Dictionary)</h2>
+<div class="measure" id="measure-avg-order-value">
+<h3>Avg Order Value · Sales<span class="pill">Ratio</span></h3>
+<p>A ratio: Total Revenue divided by DISTINCTCOUNT ( Sales[SalesKey] ).</p>
+<p class="caveat">Known caveats: Housed in &#x27;Key Measures&#x27; table but operates on &#x27;Sales&#x27; table.</p>
+<p class="usedon">Depends on: Total Revenue, Sales[SalesKey]</p>
+<p class="usedon">Used on: Data Quality · format <code>\$#,0.00</code></p>
+<p class="caveat">Confidence in inferred business meaning: Low — review with the business owner.</p>
+<div class="code-block"><button type="button" class="copy-btn">Copy</button><pre><code><span class="tok-keyword">DIVIDE</span> ( <span class="tok-ref">[Total Revenue]</span>, <span class="tok-keyword">DISTINCTCOUNT</span> ( <span class="tok-ref">Sales[SalesKey]</span> ) )</code></pre></div>
+</div>
+<div class="measure" id="measure-total-revenue">
+<h3>Total Revenue · Sales<span class="pill">Revenue</span></h3>
+<p>Computes the total of Sales[Quantity] * Sales[UnitPrice], evaluated row by row over FILTER ( Sales, Sales[Status] &lt;&gt; &quot;Canceled&quot; ).</p>
+<p class="caveat">Known caveats: excludes rows where Status = &quot;Canceled&quot;</p>
+<p class="usedon">Depends on: Sales[Status], Sales[Quantity], Sales[UnitPrice]</p>
+<p class="usedon">Used on: Sales Overview, Region Detail · format <code>\$#,0</code></p>
+<p class="caveat">Confidence in inferred business meaning: Low — review with the business owner.</p>
+<div class="code-block"><button type="button" class="copy-btn">Copy</button><pre><code><span class="tok-keyword">SUMX</span> (
+        <span class="tok-keyword">FILTER</span> ( Sales, <span class="tok-ref">Sales[Status]</span> &lt;&gt; <span class="tok-string">&quot;Canceled&quot;</span> ),
+        <span class="tok-ref">Sales[Quantity]</span> * <span class="tok-ref">Sales[UnitPrice]</span>
+    )</code></pre></div>
+</div>
+<div class="measure" id="measure-revenue-ytd">
+<h3>Revenue YTD · Date<span class="pill">Time-Intelligence</span></h3>
+<p>A time-intelligence calculation: the year-to-date value of Total Revenue.</p>
+<p class="caveat">Known caveats: Housed in &#x27;Sales&#x27; table but operates on &#x27;Date&#x27; table.</p>
+<p class="usedon">Depends on: Total Revenue, &#x27;Date&#x27;[Date]</p>
+<p class="usedon">Used on: not placed on a page · format <code>\$#,0</code></p>
+<p class="caveat">Confidence in inferred business meaning: Low — review with the business owner.</p>
+<div class="code-block"><button type="button" class="copy-btn">Copy</button><pre><code><span class="tok-keyword">TOTALYTD</span> ( <span class="tok-ref">[Total Revenue]</span>, <span class="tok-ref">&#x27;Date&#x27;[Date]</span> )</code></pre></div>
+</div>
+<div class="measure" id="measure-orphan-margin">
+<h3>Orphan Margin · Sales<span class="pill">Revenue</span></h3>
+<p>A derived metric: Total Revenue * 0.3.</p>
+<p class="usedon">Depends on: Total Revenue</p>
+<p class="usedon">Used on: not placed on a page · format <code>\$#,0</code></p>
+<p class="caveat">Confidence in inferred business meaning: Low — review with the business owner.</p>
+<div class="code-block"><button type="button" class="copy-btn">Copy</button><pre><code><span class="tok-ref">[Total Revenue]</span> * <span class="tok-number">0.3</span></code></pre></div>
+</div>
+<h3>Calculated columns</h3>
+<table><thead><tr><th>Table</th><th>Column</th><th>Expression</th></tr></thead><tbody><tr><td>Sales</td><td>LineTotal</td><td><code><span class="tok-ref">Sales[Quantity]</span> * <span class="tok-ref">Sales[UnitPrice]</span></code></td></tr></tbody></table>
+<h2 id="sec8">8. Report Pages &amp; Visuals</h2>
+<h3>How to read the key visuals</h3><ul>
+<li><strong>Revenue Breakdown</strong> (Sales Overview): A decomposition tree breaks a measure down one field at a time. Click the + on a node and pick a field to expand by; the tree shows which categories contribute most to the total.</li>
+<li><strong>Revenue by Region</strong> (Region Detail): A map plots values geographically. Bubble size or colour encodes the measure — compare regions visually and zoom for detail.</li>
+</ul>
+<h3>Sales Overview</h3>
+<p>Presents 3 visual(s) — 1 column chart, 1 slicer, 1 decomposition tree. Key fields: Year, Total Revenue, Date, Region, Segment.</p>
+<p><strong>Business questions answered:</strong></p><ul><li>How does Total Revenue break down by Year?</li><li>Which Date values drive Total Revenue?</li></ul>
+<table><thead><tr><th>Visual</th><th>Type</th><th>Metric(s)</th><th>Dimension(s)</th></tr></thead><tbody><tr><td>Revenue by Year</td><td>Column chart</td><td>Total Revenue</td><td>Year</td></tr><tr><td>Revenue Breakdown</td><td>Decomposition tree</td><td>Total Revenue</td><td>Region, Segment</td></tr></tbody></table>
+<h3>Region Detail <span class="muted">(drill-through)</span></h3>
+<p>Presents 1 visual(s) — 1 map. Key fields: Region, Total Revenue. Drill-through detail page reached from other pages.</p>
+<p><strong>Business questions answered:</strong></p><ul><li>How does Total Revenue break down by Region?</li></ul>
+<table><thead><tr><th>Visual</th><th>Type</th><th>Metric(s)</th><th>Dimension(s)</th></tr></thead><tbody><tr><td>Revenue by Region</td><td>Map</td><td>Total Revenue</td><td>Region</td></tr></tbody></table>
+<h3>Data Quality <span class="muted">(hidden)</span></h3>
+<table><thead><tr><th>Visual</th><th>Type</th><th>Metric(s)</th><th>Dimension(s)</th></tr></thead><tbody><tr><td>Avg Order Value</td><td>Card</td><td>Avg Order Value</td><td>—</td></tr></tbody></table>
+<h2 id="sec9">9. Filters, Slicers &amp; Navigation</h2>
+<ul><li>On &#x27;Sales Overview&#x27;, use the &#x27;Date.Date&#x27; slicer to filter the visuals on that page.</li><li>Right-click a data point on a summary page and choose Drill through to open the &#x27;Region Detail&#x27; page for row-level detail.</li></ul>
+<table><thead><tr><th>Slicer field</th><th>Page</th></tr></thead><tbody><tr><td>Date.Date</td><td>Sales Overview</td></tr></tbody></table>
+<p><strong>Drill-through pages:</strong> Region Detail.</p>
+<div class="todo"><b>✎ To complete:</b> Detail bookmarks, button navigation logic, and the fields passed on each drill-through.</div>
+<h2 id="sec10">10. Row-Level Security (RLS)</h2>
+<table><thead><tr><th>Role</th><th>Rule (DAX filter)</th><th>Members</th></tr></thead><tbody><tr><td>Regional Manager</td><td><code>Customer: <span class="tok-ref">Customer[Region]</span> = <span class="tok-string">&quot;West&quot;</span></code></td><td><span class="muted">—</span></td></tr><tr><td>Sales Rep</td><td><code>Sales: <span class="tok-ref">Sales[Status]</span> &lt;&gt; <span class="tok-string">&quot;Canceled&quot;</span></code></td><td>rep1@contoso.com</td></tr></tbody></table>
+<div class="todo"><b>✎ To complete:</b> Confirm each role was tested with &#x27;View as role&#x27;, and note any object-level security (OLS) rules.</div>
+<h2 id="sec11">11. Refresh, Gateway &amp; Performance</h2>
+<table><thead><tr><th>Field</th><th>Value / Status</th></tr></thead><tbody><tr><td>Refresh Type</td><td><span class="todo">✎ To complete</span></td></tr><tr><td>Gateway Name</td><td><span class="todo">✎ To complete</span></td></tr><tr><td>Typical Duration</td><td><span class="todo">✎ To complete</span></td></tr><tr><td>Dataset Size</td><td><span class="todo">✎ To complete</span></td></tr><tr><td>Failure Alert Contact</td><td><span class="todo">✎ To complete</span></td></tr></tbody></table>
+<div class="todo"><b>✎ To complete:</b> Detail performance considerations and gateway configurations.</div>
+<h2 id="sec12">12. Deployment &amp; Environment</h2>
+<div class="todo"><b>✎ To complete:</b> Dev / Test / Production workspaces, app URLs, deployment method (pipeline/Git), and per-environment parameters.</div>
+<h2 id="sec13">13. Access &amp; Permissions</h2>
+<div class="todo"><b>✎ To complete:</b> Workspace roles and app access per group, with justification.</div>
+<h2 id="sec14">14. Data Dictionary / Glossary</h2>
+<p class="muted">Column-level data dictionary is in section 6. Business-term definitions belong below.</p>
+<table><thead><tr><th>Term</th><th>Type</th><th>Plain-English Definition</th><th>Typo / Rename Flag</th></tr></thead><tbody><tr><td><code>Avg Order Value</code></td><td>Measure</td><td>A ratio: Total Revenue divided by DISTINCTCOUNT ( Sales[SalesKey] ).</td><td><span class="muted">—</span></td></tr><tr><td><code>Total Revenue</code></td><td>Measure</td><td>Computes the total of Sales[Quantity] * Sales[UnitPrice], evaluated row by row over FILTER ( Sales, Sales[Status] &lt;&gt; &quot;Canceled&quot; ).</td><td><span class="muted">—</span></td></tr><tr><td><code>Revenue YTD</code></td><td>Measure</td><td>A time-intelligence calculation: the year-to-date value of Total Revenue.</td><td><span class="muted">—</span></td></tr><tr><td><code>Orphan Margin</code></td><td>Measure</td><td>A derived metric: Total Revenue * 0.3.</td><td><span class="muted">—</span></td></tr><tr><td><code>Date</code></td><td>Dimension</td><td>Time-dimension field used to filter, segment, and perform time-intelligence trends.</td><td><span class="muted">—</span></td></tr><tr><td><code>Region</code></td><td>Dimension</td><td>Geographical dimension used to analyze regional breakdown and location-based performance.</td><td><span class="muted">—</span></td></tr><tr><td><code>Segment</code></td><td>Dimension</td><td>Unknown — requires business confirmation.</td><td><span class="muted">—</span></td></tr><tr><td><code>Year</code></td><td>Dimension</td><td>Unknown — requires business confirmation.</td><td><span class="muted">—</span></td></tr></tbody></table>
+<h2 id="sec15">15. Known Issues, Assumptions &amp; Limitations</h2>
+<p>2 of 4 measures (50%) are defined but not used on any report page (directly or via another measure).</p>
+<h3>Orphaned measures (defined but not used on any page)</h3>
+<ul><li>Revenue YTD</li><li>Orphan Margin</li></ul>
+<h3>Modeling risks</h3>
+<ul><li>Sales ↔ Date uses bi-directional cross-filtering, which can create ambiguous filter paths and slow performance.</li><li>Sales[ShipDateKey] → Date[DateKey] is inactive and only applies via USERELATIONSHIP() in DAX.</li></ul>
+<div class="todo"><b>✎ To complete:</b> Business assumptions and limitations (e.g. &quot;returns lag source by 1 day&quot;) with impact and workaround.</div>
+<h2 id="sec16">16. Model Health &amp; AI Recommendations</h2>
+<h3>Health Score: 87 / 100 (Good)</h3>
+<table><thead><tr><th>Component</th><th>Score</th><th>Why</th></tr></thead><tbody><tr><td>Model Design</td><td><span class="num">75</span></td><td>5 of 14 best-practice check(s) failed.</td></tr><tr><td>DAX Quality</td><td><span class="num">96</span></td><td>4 DAX finding(s) (worst severity: Low).</td></tr><tr><td>Governance &amp; Security</td><td><span class="num">91</span></td><td>3 governance finding(s) (worst severity: Medium).</td></tr><tr><td>Performance</td><td><span class="num">97</span></td><td>3 performance risk signal(s) (worst severity: Low).</td></tr><tr><td>Maintainability</td><td><span class="num">76</span></td><td>12 unused asset(s) add size and maintenance load without analytical value.</td></tr></tbody></table>
+<p class="muted">Scored by deterministic rules over the model metadata — reproducible, not an AI guess.</p>
+<h3>Prioritized recommendations</h3>
+<div class="measure">
+<h3>1. <span class="pill">High</span> Some relationships use bidirectional cross-filtering.</h3>
+<p><strong>Impact:</strong> Bidirectional filters can create ambiguous filter paths and materially slow down query performance.</p>
+<p><strong>Recommendation:</strong> Switch to single-direction filtering and use CROSSFILTER() in specific DAX measures where bidirectional behavior is truly needed.</p>
+<p><strong>Expected benefit:</strong> More predictable filtering and better query performance.</p>
+<p><strong>Estimated effort:</strong> Medium</p>
+</div>
+<div class="measure">
+<h3>2. <span class="pill">Medium</span> Many measures/columns have no description.</h3>
+<p><strong>Impact:</strong> Missing descriptions mean new team members must reverse-engineer intent from DAX and column names alone.</p>
+<p><strong>Recommendation:</strong> Add descriptions to the most-used measures and columns first.</p>
+<p><strong>Expected benefit:</strong> Faster onboarding and self-documenting metadata in Power BI Desktop tooltips.</p>
+<p><strong>Estimated effort:</strong> Low</p>
+</div>
+<div class="measure">
+<h3>3. <span class="pill">Medium</span> Row-level security gaps were found.</h3>
+<p><strong>Impact:</strong> Without RLS (or with roles that have no members configured), sensitive rows may be visible to more users than intended.</p>
+<p><strong>Recommendation:</strong> Define RLS roles for any data that should be restricted, and assign members either in the model or in the Power BI Service.</p>
+<p><strong>Expected benefit:</strong> Data access that matches the intended audience.</p>
+<p><strong>Estimated effort:</strong> Medium</p>
+</div>
+<div class="measure">
+<h3>4. <span class="pill">Medium</span> Description coverage across measures and columns is low.</h3>
+<p><strong>Impact:</strong> Missing descriptions increase onboarding time and the risk of misinterpreting a field&#x27;s meaning.</p>
+<p><strong>Recommendation:</strong> Prioritize descriptions for the most-used measures and columns first.</p>
+<p><strong>Expected benefit:</strong> Faster onboarding and fewer misunderstandings.</p>
+<p><strong>Estimated effort:</strong> Low</p>
+</div>
+<div class="measure">
+<h3>5. <span class="pill">Medium</span> No owner or data classification was specified for this report.</h3>
+<p><strong>Impact:</strong> Without a named owner, there&#x27;s no clear point of contact for questions, incidents, or change requests.</p>
+<p><strong>Recommendation:</strong> Assign a business owner and a data classification (e.g. Internal, Confidential) in the documentation metadata.</p>
+<p><strong>Expected benefit:</strong> Clear accountability and appropriate handling of the data.</p>
+<p><strong>Estimated effort:</strong> Low</p>
+</div>
+<div class="measure">
+<h3>6. <span class="pill">Low</span> Some measures have no description.</h3>
+<p><strong>Impact:</strong> Without a description, business meaning has to be reverse-engineered from the DAX every time.</p>
+<p><strong>Recommendation:</strong> Add a one-sentence description to each measure explaining what it calculates and why.</p>
+<p><strong>Expected benefit:</strong> Faster onboarding and fewer misinterpretations of what a measure means.</p>
+<p><strong>Estimated effort:</strong> Low</p>
+</div>
+<div class="measure">
+<h3>7. <span class="pill">Low</span> Some ID/key-style columns are visible to report authors.</h3>
+<p><strong>Impact:</strong> Visible technical join keys clutter the field list and can be mis-used in visuals by mistake.</p>
+<p><strong>Recommendation:</strong> Hide columns that exist only to support relationships.</p>
+<p><strong>Expected benefit:</strong> A cleaner field list focused on business-relevant fields.</p>
+<p><strong>Estimated effort:</strong> Low</p>
+</div>
+<div class="measure">
+<h3>8. <span class="pill">Low</span> Some calculated columns are never used in any report visual.</h3>
+<p><strong>Impact:</strong> Unused calculated columns still consume model size and refresh time for no analytical benefit.</p>
+<p><strong>Recommendation:</strong> Remove calculated columns that are not referenced anywhere, or confirm they are needed for row-level security/relationships.</p>
+<p><strong>Expected benefit:</strong> Smaller model size and faster refreshes.</p>
+<p><strong>Estimated effort:</strong> Low</p>
+</div>
+<div class="measure">
+<h3>9. <span class="pill">Low</span> Some relationships are inactive.</h3>
+<p><strong>Impact:</strong> Inactive relationships only take effect via USERELATIONSHIP() in DAX — easy to forget and easy to misconfigure.</p>
+<p><strong>Recommendation:</strong> Document where each inactive relationship is activated, or make it the active relationship if that&#x27;s the common case.</p>
+<p><strong>Expected benefit:</strong> Less risk of a report silently using the wrong relationship.</p>
+<p><strong>Estimated effort:</strong> Low</p>
+</div>
+<div class="measure">
+<h3>10. <span class="pill">Low</span> Some visible columns look like high-cardinality identifiers.</h3>
+<p><strong>Impact:</strong> High-cardinality columns compress poorly and can slow down the model if used in visuals or relationships.</p>
+<p><strong>Recommendation:</strong> Hide the column if it&#x27;s a technical key, or confirm its cardinality is acceptable for the intended use.</p>
+<p><strong>Expected benefit:</strong> Smaller model size and better query performance, if confirmed unnecessary.</p>
+<p><strong>Estimated effort:</strong> Low</p>
+</div>
+<div class="measure">
+<h3>11. <span class="pill">Low</span> 12 unused asset(s) were found (measures, columns, tables, calculated columns, or hidden non-drillthrough pages).</h3>
+<p><strong>Impact:</strong> Unused assets add to model size, refresh time, and cognitive load for anyone maintaining the report.</p>
+<p><strong>Recommendation:</strong> Remove unused assets, or confirm they&#x27;re intentionally kept for a documented reason (e.g. future use, RLS support).</p>
+<p><strong>Expected benefit:</strong> A leaner, easier-to-maintain model.</p>
+<p><strong>Estimated effort:</strong> Low</p>
+</div>
+<h2 id="sec17">17. Support &amp; Maintenance</h2>
+<div class="todo"><b>✎ To complete:</b> Escalation contact, SLA for fixes, .pbix/.pbip backup location, and decommission criteria.</div>
+<h2 id="sec18">18. Appendix &amp; Sign-off</h2>
+<p>The model diagram is in section 6. Attach wireframes/mockups and any source-to-target mapping here.</p>
+<table><thead><tr><th>Sign-off Role</th><th>Name</th><th>Title / Role</th><th>Date</th></tr></thead><tbody><tr><td>Business Owner</td><td></td><td></td><td></td></tr><tr><td>Data Owner</td><td></td><td></td><td></td></tr><tr><td>Developer</td><td>TBC</td><td>BI Developer</td><td>2026-07-05</td></tr></tbody></table>
+<p class="caveat"><strong>Reminder:</strong> Obtain sign-off before sharing with stakeholders.</p>
+</main></div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const links = document.querySelectorAll('.toc-link');
+  const sections = document.querySelectorAll('h2[id]');
+
+  function changeActiveLink() {
+    let index = sections.length;
+    while(--index && window.scrollY + 100 < sections[index].offsetTop) {}
+    links.forEach((link) => {
+      link.classList.remove('active');
+      link.removeAttribute('aria-current');
+    });
+    if (sections[index]) {
+      const activeLink = document.querySelector(`.toc-link[href="#${sections[index].id}"]`);
+      if (activeLink) {
+        activeLink.classList.add('active');
+        activeLink.setAttribute('aria-current', 'true');
+      }
+    }
+  }
+
+  changeActiveLink();
+  window.addEventListener('scroll', changeActiveLink);
+
+  // Client-side search — substring + prefix ranking over the embedded
+  // {title, type, anchor} index, no CDN/no lunr. ~work fully offline.
+  (function () {
+    const input = document.querySelector('.search-input');
+    const resultsEl = document.querySelector('.search-results');
+    const indexScript = document.getElementById('search-index');
+    if (!input || !resultsEl || !indexScript) return;
+    let entries = [];
+    try { entries = JSON.parse(indexScript.textContent); } catch (e) { entries = []; }
+    let active = -1;
+    let shown = [];
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+      }[c]));
+    }
+
+    function render(matches) {
+      shown = matches;
+      active = -1;
+      if (!matches.length) {
+        resultsEl.innerHTML = '<li class="search-empty">No matches</li>';
+        resultsEl.hidden = false;
+        return;
+      }
+      resultsEl.innerHTML = matches.map((m, i) =>
+        `<li class="search-result" data-index="${i}" data-anchor="${escapeHtml(m.anchor)}">` +
+        `<span>${escapeHtml(m.title)}</span><span class="type">${escapeHtml(m.type)}</span></li>`
+      ).join('');
+      resultsEl.hidden = false;
+    }
+
+    function search(query) {
+      const q = query.trim().toLowerCase();
+      if (!q) { resultsEl.hidden = true; resultsEl.innerHTML = ''; return; }
+      const scored = [];
+      for (const e of entries) {
+        const t = e.title.toLowerCase();
+        const idx = t.indexOf(q);
+        if (idx === -1) continue;
+        scored.push({ entry: e, rank: idx === 0 ? 0 : 1, idx });
+      }
+      scored.sort((a, b) => a.rank - b.rank || a.idx - b.idx || a.entry.title.length - b.entry.title.length);
+      render(scored.slice(0, 20).map((s) => s.entry));
+    }
+
+    function goTo(anchor) {
+      const target = document.getElementById(anchor);
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      resultsEl.hidden = true;
+      input.value = '';
+    }
+
+    function setActive(i) {
+      active = i;
+      resultsEl.querySelectorAll('.search-result').forEach((el, idx) => {
+        el.classList.toggle('active', idx === active);
+      });
+    }
+
+    input.addEventListener('input', () => search(input.value));
+    input.addEventListener('keydown', (e) => {
+      if (resultsEl.hidden) return;
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setActive(Math.min(active + 1, shown.length - 1));
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setActive(Math.max(active - 1, 0));
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (active >= 0 && shown[active]) goTo(shown[active].anchor);
+        else if (shown.length) goTo(shown[0].anchor);
+      } else if (e.key === 'Escape') {
+        resultsEl.hidden = true;
+      }
+    });
+    resultsEl.addEventListener('click', (e) => {
+      const li = e.target.closest('.search-result');
+      if (li) goTo(li.getAttribute('data-anchor'));
+    });
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.search-box')) resultsEl.hidden = true;
+    });
+  })();
+
+  // Theme toggle
+  const themeBtn = document.querySelector('.theme-toggle');
+  if (themeBtn) {
+    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    function currentTheme() {
+      const attr = document.documentElement.getAttribute('data-theme');
+      if (attr) return attr;
+      return prefersDark ? 'dark' : 'light';
+    }
+    function updateLabel() {
+      themeBtn.textContent = currentTheme() === 'dark' ? '☀ Light mode' : '🌙 Dark mode';
+    }
+    updateLabel();
+    themeBtn.addEventListener('click', () => {
+      const next = currentTheme() === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+      try { localStorage.setItem('pbicompass-theme', next); } catch (e) {}
+      updateLabel();
+    });
+  }
+
+  // Mobile TOC overlay
+  const mobileToggle = document.querySelector('.mobile-toc-toggle');
+  const sidebar = document.querySelector('.sidebar');
+  const scrim = document.querySelector('.sidebar-scrim');
+  function closeSidebar() {
+    if (sidebar) sidebar.classList.remove('open');
+    if (scrim) scrim.classList.remove('open');
+  }
+  if (mobileToggle && sidebar) {
+    mobileToggle.addEventListener('click', () => {
+      sidebar.classList.toggle('open');
+      if (scrim) scrim.classList.toggle('open');
+    });
+  }
+  if (scrim) scrim.addEventListener('click', closeSidebar);
+  links.forEach((link) => link.addEventListener('click', closeSidebar));
+
+  // Copy-to-clipboard for code blocks — one delegated listener covers every
+  // .copy-btn added by any renderer, present or future.
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.copy-btn');
+    if (!btn) return;
+    const pre = btn.parentElement && btn.parentElement.querySelector('pre');
+    if (!pre || !navigator.clipboard) return;
+    navigator.clipboard.writeText(pre.textContent).then(() => {
+      const original = btn.textContent;
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = original; }, 1500);
+    }).catch(() => {});
+  });
+
+  // Force every collapsed <details> open for print/PDF, then restore
+  // whatever was open before once printing finishes.
+  let detailsClosedBeforePrint = [];
+  window.addEventListener('beforeprint', () => {
+    detailsClosedBeforePrint = Array.from(document.querySelectorAll('details.collapsible:not([open])'));
+    detailsClosedBeforePrint.forEach((d) => { d.open = true; });
+  });
+  window.addEventListener('afterprint', () => {
+    detailsClosedBeforePrint.forEach((d) => { d.open = false; });
+    detailsClosedBeforePrint = [];
+  });
+
+  // Interactive model diagram: wheel/pinch zoom, drag to pan, hover to
+  // highlight a table's relationships, click to jump to its row. A no-op on
+  // any doc without a diagram (querySelectorAll finds nothing); print/DOCX
+  // always show the static, un-panned/zoomed view since these only run on
+  // user interaction.
+  function slugify(s) {
+    return (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'x';
+  }
+  document.querySelectorAll('.diagram svg').forEach((svg) => {
+    const vb = svg.viewBox.baseVal;
+    const initial = { x: vb.x, y: vb.y, w: vb.width, h: vb.height };
+    let panning = false, lastX = 0, lastY = 0;
+
+    svg.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const rect = svg.getBoundingClientRect();
+      const scale = e.deltaY > 0 ? 1.1 : 0.9;
+      const newW = Math.max(initial.w * 0.25, Math.min(initial.w * 4, vb.width * scale));
+      const newH = newW * (initial.h / initial.w);
+      const mx = vb.x + (e.clientX - rect.left) / rect.width * vb.width;
+      const my = vb.y + (e.clientY - rect.top) / rect.height * vb.height;
+      vb.x = mx - (mx - vb.x) * (newW / vb.width);
+      vb.y = my - (my - vb.y) * (newH / vb.height);
+      vb.width = newW;
+      vb.height = newH;
+    }, { passive: false });
+
+    svg.addEventListener('mousedown', (e) => {
+      panning = true; lastX = e.clientX; lastY = e.clientY;
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (!panning) return;
+      const rect = svg.getBoundingClientRect();
+      vb.x -= (e.clientX - lastX) * (vb.width / rect.width);
+      vb.y -= (e.clientY - lastY) * (vb.height / rect.height);
+      lastX = e.clientX; lastY = e.clientY;
+    });
+    window.addEventListener('mouseup', () => { panning = false; });
+
+    const nodes = svg.querySelectorAll('.dm-node');
+    const dimEdges = svg.querySelectorAll('.dm-edge');
+    nodes.forEach((node) => {
+      const table = node.getAttribute('data-table');
+      node.addEventListener('mouseenter', () => {
+        nodes.forEach((n) => n.classList.add('dimmed'));
+        dimEdges.forEach((ed) => ed.classList.add('dimmed'));
+        node.classList.remove('dimmed');
+        dimEdges.forEach((ed) => {
+          if (ed.getAttribute('data-from') !== table && ed.getAttribute('data-to') !== table) return;
+          ed.classList.remove('dimmed');
+          ed.classList.add('highlighted');
+          const other = ed.getAttribute('data-from') === table ? ed.getAttribute('data-to') : ed.getAttribute('data-from');
+          nodes.forEach((n) => { if (n.getAttribute('data-table') === other) n.classList.remove('dimmed'); });
+        });
+      });
+      node.addEventListener('mouseleave', () => {
+        nodes.forEach((n) => n.classList.remove('dimmed'));
+        dimEdges.forEach((ed) => { ed.classList.remove('dimmed'); ed.classList.remove('highlighted'); });
+      });
+      node.addEventListener('click', () => {
+        const target = document.getElementById(`table-${slugify(table)}`);
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    });
+  });
+});
+</script>
+
+</body></html>

@@ -170,6 +170,60 @@ class DocumentAllTest(unittest.TestCase):
                 self.assertTrue(per_type.exists())
                 self.assertGreater(per_type.stat().st_size, 0)
 
+    def test_all_html_creates_hub_and_doc_switcher_links(self):
+        # 2.1/2.7: --document all --format html writes one hub (index.html)
+        # linking every sibling doc, and each doc's own sidebar links back
+        # to its siblings + the hub, using the real on-disk filenames.
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td) / "report.html"
+            code = cli.main(["generate", str(FIXTURE), "--document", "all", "--format", "html",
+                            "-o", str(out), "--quiet"])
+            self.assertEqual(code, 0)
+
+            hub_path = out.with_name("report.index.html")
+            self.assertTrue(hub_path.exists())
+            hub_html = hub_path.read_text(encoding="utf-8")
+            for dtype in DOCUMENT_TYPES:
+                self.assertIn(f"report.{dtype}.html", hub_html)
+
+            technical_html = out.with_name("report.technical.html").read_text(encoding="utf-8")
+            self.assertIn('class="doc-switcher"', technical_html)
+            self.assertIn("report.audit.html", technical_html)
+            self.assertIn("report.index.html", technical_html)
+            self.assertNotIn("report.technical.html", technical_html.split('class="doc-switcher"')[1].split("</nav>")[0])
+
+    def test_cross_document_content_links_resolve_to_real_anchors(self):
+        # 2.7: audit's DAX findings link to the technical doc's measure
+        # anchors, and the executive doc's known risks link to the audit
+        # doc's Recommendations section — both real anchors that exist in
+        # the sibling file, not dead links.
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td) / "report.html"
+            code = cli.main(["generate", str(FIXTURE), "--document", "all", "--format", "html",
+                            "-o", str(out), "--quiet"])
+            self.assertEqual(code, 0)
+
+            technical_html = out.with_name("report.technical.html").read_text(encoding="utf-8")
+            audit_html = out.with_name("report.audit.html").read_text(encoding="utf-8")
+            executive_html = out.with_name("report.executive.html").read_text(encoding="utf-8")
+
+            self.assertIn('id="measure-total-revenue"', technical_html)
+            self.assertIn('href="report.technical.html#measure-total-revenue"', audit_html)
+
+            self.assertIn('id="sec8"', audit_html)
+            self.assertIn('href="report.audit.html#sec8"', executive_html)
+
+    def test_single_document_html_has_no_dead_doc_switcher(self):
+        # a single-document run has no siblings to link to — no doc-switcher
+        # block, never a dead link.
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td) / "report.html"
+            code = cli.main(["generate", str(FIXTURE), "--document", "technical", "--format", "html",
+                            "-o", str(out), "--quiet"])
+            self.assertEqual(code, 0)
+            self.assertNotIn('class="doc-switcher"', out.read_text(encoding="utf-8"))
+            self.assertFalse(out.with_name("report.index.html").exists())
+
     def test_all_stdout_prints_a_header_per_type(self):
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):

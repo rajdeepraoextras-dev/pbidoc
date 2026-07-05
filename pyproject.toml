@@ -18,11 +18,12 @@ dependencies = []
 [project.optional-dependencies]
 # Added in later phases — kept out of the core so the parser stays dependency-free.
 # pbix: legacy .pbix semantic-model extraction. pbixray currently needs
-# Python <= 3.13 (its xpress9 decompressor has no 3.14 wheel yet).
-pbix = ["pbixray"]
+# Python <= 3.13 (its xpress9 decompressor has no 3.14 wheel yet) — the
+# environment marker below makes that degrade gracefully at pip-install time
+# on 3.14+ instead of failing.
+pbix = ["pbixray; python_version < '3.14'"]
 agents = ["anthropic", "google-genai", "cohere"]  # Claude / Gemini / Cohere providers (offline engine needs nothing)
 service = ["fastapi", "uvicorn", "python-multipart"]  # async web service + upload UI
-docs = ["jinja2"]
 dev = ["pytest", "httpx"]  # httpx backs FastAPI's TestClient
 
 [project.scripts]

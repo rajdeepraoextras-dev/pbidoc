@@ -15,8 +15,6 @@ import dataclasses
 import re
 from typing import Optional
 
-from ...schemas.audit_document import Recommendation
-
 from ...schemas.document import (
     Document,
     DocumentMetadata,
@@ -44,12 +42,14 @@ from ..report_facts import (
     data_source_summaries,
     detect_hardcoded_years,
     find_referenced_tables,
+    first_sentence,
+    local_path_sources,
     report_pages,
     slicers,
     table_priority_key,
 )
 from ..usage import measure_dependencies, measure_usage, used_measure_names
-from .base import Warn, call_llm
+from .base import Warn, call_llm, call_llm_with_retry
 
 _call = call_llm  # local alias — keeps the body below byte-for-byte identical
 
@@ -86,22 +86,66 @@ def _metadata(model: SemanticModel, owner, audience, refresh,
 
 # -- II. Executive Summary ----------------------------------------------------
 def _executive_summary(model: SemanticModel, client, warn) -> ExecutiveSummary:
-    if client is not None:
-        data = _call(client, io.BUSINESS_ANALYST_SYSTEM, io.business_analyst_input(model),
-                     io.BUSINESS_ANALYST_SCHEMA, warn, "Business Analyst")
+    """Batches the Business Analyst prompt by page (``io.business_analyst_
+    batches``) so one failed/invalid batch degrades only the pages it
+    covers, not the whole Executive Summary. Each batch gets one retry
+    (jittered) before falling back; a batch that still fails keeps its pages
+    on the deterministic engine and names them in a warning, rather than
+    silently degrading the whole document with no signal (1.4)."""
+    deterministic = business_analyst_deterministic(model)
+    if client is None:
+        return deterministic
+
+    pages = list(deterministic.pages)
+    core_purpose = deterministic.core_purpose
+    navigation_guide = list(deterministic.navigation_guide)
+    complex_visual_explainers = list(deterministic.complex_visual_explainers)
+    nav_seen = set(navigation_guide)
+    explainer_seen = {(e.visual, e.page) for e in complex_visual_explainers}
+    core_purpose_set = False
+    offset = 0
+
+    for batch in io.business_analyst_batches(model):
+        batch_size = len(batch["pages"])
+        slice_titles = [p.page_title for p in pages[offset:offset + batch_size]]
+        data = call_llm_with_retry(client, io.BUSINESS_ANALYST_SYSTEM, batch, io.BUSINESS_ANALYST_SCHEMA)
+        batch_pages = None
         if data:
             try:
-                return ExecutiveSummary(
-                    core_purpose=data["core_purpose"],
-                    pages=[PageSummary(**p) for p in data["pages"]],
-                    navigation_guide=list(data["navigation_guide"]),
-                    complex_visual_explainers=[
-                        VisualExplainer(**e) for e in data["complex_visual_explainers"]
-                    ],
-                )
+                batch_pages = [PageSummary(**p) for p in data["pages"]]
             except (KeyError, TypeError) as exc:
-                warn(f"Business Analyst: malformed response, using deterministic fallback ({exc})")
-    return business_analyst_deterministic(model)
+                warn(f"Business Analyst: malformed response for pages: {', '.join(slice_titles)} "
+                     f"({exc}) — deterministic summary used")
+
+        if batch_pages is not None:
+            for i, page in enumerate(batch_pages):
+                if offset + i < len(pages):
+                    pages[offset + i] = page
+            if not core_purpose_set and data.get("core_purpose"):
+                core_purpose, core_purpose_set = data["core_purpose"], True
+            for nav in data.get("navigation_guide", []):
+                if nav not in nav_seen:
+                    nav_seen.add(nav)
+                    navigation_guide.append(nav)
+            for e in data.get("complex_visual_explainers", []):
+                try:
+                    explainer = VisualExplainer(**e)
+                except TypeError:
+                    continue
+                key = (explainer.visual, explainer.page)
+                if key not in explainer_seen:
+                    explainer_seen.add(key)
+                    complex_visual_explainers.append(explainer)
+        elif data is None and slice_titles:
+            warn(f"Business Analyst: AI narrative unavailable for pages: {', '.join(slice_titles)} "
+                 f"— deterministic summary used")
+
+        offset += batch_size
+
+    return ExecutiveSummary(
+        core_purpose=core_purpose, pages=pages,
+        navigation_guide=navigation_guide, complex_visual_explainers=complex_visual_explainers,
+    )
 
 
 # -- III. Lineage & Architecture ----------------------------------------------
@@ -190,20 +234,16 @@ def _semantic_model(model: SemanticModel, client, warn, col_descs: dict) -> Sema
             summary = data["summary"]
             risks = list(data.get("risks", risks))
 
-    # Check for local path data sources
-    for ds in model.data_sources:
-        target = ds.server or ds.detail or ""
-        if ds.database:
-            target = f"{target}/{ds.database}" if target else ds.database
-        if re.search(r"^[A-Za-z]:[\\/]", target) or "Users/" in target or "Users\\" in target:
-            risks.append(f"Hardcoded local path detected — replace with a parameterized path or gateway source before production deployment. (Path: {target})")
+    for target in local_path_sources(model):
+        risks.append(f"Hardcoded local path detected — replace with a parameterized path or gateway source before production deployment. (Path: {target})")
     tables = [
         {"name": t.name, "kind": t.kind, "columns": len(t.columns), "measures": len(t.measures)}
         for t in model.tables
     ]
     edges = [
         {"from": r.from_table, "to": r.to_table, "from_card": r.from_cardinality,
-         "to_card": r.to_cardinality, "cross_filter": r.cross_filter, "is_active": r.is_active}
+         "to_card": r.to_cardinality, "cross_filter": r.cross_filter, "is_active": r.is_active,
+         "from_column": r.from_column, "to_column": r.to_column}
         for r in model.relationships
     ]
     return SemanticModelDoc(summary=summary, data_dictionary=data_dictionary, relationships=rels,
@@ -404,14 +444,6 @@ def _check_typo(name: str) -> str:
     return ""
 
 
-def _first_sentence(text: str) -> str:
-    """First sentence of a description — the glossary references the Measure
-    Catalog rather than repeating its full definition."""
-    text = (text or "").strip()
-    m = re.match(r"(.+?[.!?])(?:\s|$)", text)
-    return m.group(1) if m else text
-
-
 def _infer_glossary(model: SemanticModel, measure_catalog: MeasureCatalog, col_descs: dict[tuple[str, str], str]) -> list[dict[str, str]]:
     entries = []
 
@@ -422,7 +454,7 @@ def _infer_glossary(model: SemanticModel, measure_catalog: MeasureCatalog, col_d
         entries.append({
             "term": m.name,
             "type": "Measure",
-            "definition": _first_sentence(m.plain_english) or "See the Measure Catalog for the definition.",
+            "definition": first_sentence(m.plain_english) or "See the Measure Catalog for the definition.",
             "typo_flag": typo_flag
         })
 
@@ -470,32 +502,17 @@ def _infer_glossary(model: SemanticModel, measure_catalog: MeasureCatalog, col_d
 
 
 # -- Health Score & AI Recommendations ----------------------------------------
-_PRIORITY_ORDER = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
-
-
-def _local_path_sources(model: SemanticModel) -> list[str]:
-    paths = []
-    for ds in model.data_sources:
-        target = ds.server or ds.detail or ""
-        if ds.database:
-            target = f"{target}/{ds.database}" if target else ds.database
-        if re.search(r"^[A-Za-z]:[\\/]", target) or "Users/" in target or "Users\\" in target:
-            paths.append(target)
-    return paths
-
-
 def _health_and_recommendations(
     model: SemanticModel,
     owner: Optional[str],
     classification: Optional[str],
-    hardcoded_measures: list[tuple[str, list[str]]],
 ) -> tuple[dict, list[dict]]:
     """Run the deterministic audit rules over the model and return
     ``(health_score, ai_recommendations)`` as plain dicts for the technical
-    document. Reuses :mod:`audit_rules` end-to-end — same scoring rubric and
-    templated fixes as the Audit & Health Report, never LLM output — and adds
-    two report-level findings the audit rules don't model (hardcoded years,
-    hardcoded local paths)."""
+    document. Reuses :mod:`audit_rules` end-to-end — same scoring rubric,
+    findings (including hardcoded years and hardcoded local paths), and
+    templated fixes as the Audit & Health Report, never LLM output — so the
+    two documents never disagree on what the model's risks are."""
     measures = model.all_measures()
     dax_findings = audit_rules.find_dax_findings(measures)
     best_practices = audit_rules.check_best_practices(model)
@@ -508,34 +525,6 @@ def _health_and_recommendations(
     recommendations = audit_rules.build_recommendations(
         dax_findings, best_practices, performance_risks, governance, unused_assets,
     )
-
-    if hardcoded_measures:
-        detail = "; ".join(f"'{name}' ({', '.join(years)})" for name, years in hardcoded_measures)
-        recommendations.append(Recommendation(
-            priority="Critical",
-            issue=f"Hardcoded year value(s) in DAX: {detail}.",
-            why_it_matters="The affected measures stop reflecting current data at the next "
-                           "year boundary — the report silently shows stale results.",
-            suggested_fix="Replace the literal year with dynamic logic such as YEAR(TODAY()) "
-                          "or a relative-period filter on the date table.",
-            expected_benefit="Calculations stay correct every year without manual edits.",
-            effort="Low",
-        ))
-
-    local_paths = _local_path_sources(model)
-    if local_paths:
-        recommendations.append(Recommendation(
-            priority="High",
-            issue=f"Hardcoded local file path(s) in data sources: {'; '.join(local_paths)}.",
-            why_it_matters="Refresh fails as soon as the report runs on any machine or "
-                           "service other than the author's.",
-            suggested_fix="Replace the literal path with a Power Query parameter, or move "
-                          "the source behind a gateway/shared location.",
-            expected_benefit="Refresh works after deployment to the Power BI Service.",
-            effort="Low",
-        ))
-
-    recommendations.sort(key=lambda r: _PRIORITY_ORDER.get(r.priority, 4))
     return dataclasses.asdict(health), [dataclasses.asdict(r) for r in recommendations]
 
 
@@ -620,6 +609,6 @@ class TechnicalDocumentationGenerator:
         doc.inferred_requirements = _infer_requirements(model)
         doc.glossary_entries = _infer_glossary(model, doc.measure_catalog, col_descs)
         doc.health_score, doc.ai_recommendations = _health_and_recommendations(
-            model, owner, classification, hardcoded_measures,
+            model, owner, classification,
         )
         return doc

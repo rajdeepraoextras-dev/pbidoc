@@ -3,446 +3,816 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#05070c">
 <title>PBICompass — Power BI Knowledge Platform: Technical, Audit, Executive &amp; User Docs</title>
 <meta name="description" content="Zero-retention, AI-powered Power BI knowledge platform. From a single parse, generate Technical Documentation, an Audit &amp; Health Report, an Executive Summary, and a Business User Guide — in Markdown, HTML, DOCX, PDF &amp; JSON.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400;1,600&display=swap" rel="stylesheet">
 <style>
+  /* ============================================================
+     PBICompass — design system
+     graphite · slate · glass · azure
+     ============================================================ */
   :root {
-    --bg: #060606;
-    --bg-2: #0a0a0a;
-    --panel: rgba(24, 20, 10, 0.6);
-    --panel-solid: #14110a;
-    --glass: rgba(255, 255, 255, 0.035);
-    --border: rgba(255, 255, 255, 0.09);
-    --border-strong: rgba(255, 255, 255, 0.16);
+    --bg: #05070c;
+    --bg-2: #0a0e15;
+    --panel: rgba(255,255,255,.025);
+    --panel-2: rgba(255,255,255,.04);
+    --hair: rgba(255,255,255,.08);
+    --hair-2: rgba(255,255,255,.16);
 
-    /* Power BI yellow, tuned into a gold/amber/bronze ramp for depth */
-    --gold: #f2c811;
-    --gold-light: #ffe066;
+    --gold: #4f83f1;            /* primary accent — refined azure (legacy var names kept) */
+    --gold-light: #86b0ff;
+    --gold-deep: #2f5cc4;
     --amber: #f5a623;
-    --bronze: #c9971b;
-    --violet: #f2c811;   /* legacy name kept — every former accent usage now resolves to gold */
-    --cyan: #22d3ee;
-    --ink: #171204;      /* near-black text used on top of solid gold fills, for contrast */
+    --violet: #4f83f1;          /* legacy alias — resolves to the accent */
+    --ink: #ffffff;             /* text used on solid accent fills */
 
-    --grad: linear-gradient(120deg, #ffe066 0%, #f2c811 50%, #c9971b 100%);
-    --grad-soft: linear-gradient(120deg, #ffe680, #f2c811, #d9a406);
-    --grad-amber: linear-gradient(120deg, #fbbf24, #f59e0b);
+    --grad: linear-gradient(120deg, #6b9af9 0%, #4a7ded 50%, #2f5cc4 100%);
+    --grad-soft: linear-gradient(120deg, #b9d2ff, #7fa8fb, #4a76d8);
 
-    --text: #f7f5ee;
-    --muted: #bdb6a4;
-    --dim: #8a8372;
+    --text: #eef2f8;
+    --muted: #9aa6b8;
+    --dim: #5f6b7e;
     --success: #34d399;
     --danger: #fb7185;
 
-    --shadow: 0 30px 70px -28px rgba(0, 0, 0, .85);
-    --r: 18px;
+    --font: 'Poppins', -apple-system, BlinkMacSystemFont, sans-serif;
+    --serif: 'Poppins', -apple-system, BlinkMacSystemFont, sans-serif;
+    --mono: 'Poppins', -apple-system, BlinkMacSystemFont, sans-serif;
+
+    --ease: cubic-bezier(.16, 1, .3, 1);        /* expo-out */
+    --spring: cubic-bezier(.34, 1.45, .5, 1);   /* gentle overshoot */
+
+    --shadow: 0 40px 90px -30px rgba(0,0,0,.9);
+    --px: 0; --py: 0;                           /* pointer parallax, set by JS */
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  html { scroll-behavior: smooth; }
+  html { scroll-behavior: smooth; scrollbar-color: #1b2942 var(--bg); }
 
   body {
-    font-family: 'Poppins', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-family: var(--font);
     background: var(--bg);
     color: var(--text);
     min-height: 100vh;
     overflow-x: hidden;
-    line-height: 1.55;
+    line-height: 1.6;
     -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
-  ::selection { background: rgba(242, 200, 17, .45); color: var(--ink); }
-
+  ::selection { background: rgba(79,131,241,.4); color: var(--ink); }
   a { color: inherit; text-decoration: none; }
+  ::-webkit-scrollbar { width: 10px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: #1b2942; border-radius: 100px; border: 3px solid var(--bg); }
+  ::-webkit-scrollbar-thumb:hover { background: #2b4270; }
 
-  /* ===================== ANIMATED BACKGROUND ===================== */
-  .bg {
-    position: fixed; inset: 0; z-index: -3;
-    background: var(--bg);
-  }
-  .grid-overlay {
-    position: fixed; inset: -2px; z-index: -2; pointer-events: none;
-    background-image:
-      linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
-    background-size: 58px 58px;
-    -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 30%, transparent 80%);
-            mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 30%, transparent 80%);
-    animation: gridDrift 28s linear infinite;
-  }
-  @keyframes gridDrift { to { background-position: 58px 58px, 58px 58px; } }
+  a:focus-visible, button:focus-visible, input:focus-visible,
+  .doctype-option:focus-within { outline: 2px solid var(--gold); outline-offset: 3px; border-radius: 10px; }
 
-  #stars { position: fixed; inset: 0; z-index: -2; pointer-events: none; }
-
+  /* ---------- ambient layers ---------- */
   .noise {
-    position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: .035;
+    position: fixed; inset: 0; z-index: 40; pointer-events: none; opacity: .028;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   }
-
-  /* ===================== LAYOUT ===================== */
-  .wrap { width: 100%; max-width: 1180px; margin: 0 auto; padding: 0 24px; }
-  section { position: relative; }
-
-  /* ===================== NAVBAR ===================== */
-  nav {
-    position: sticky; top: 0; z-index: 50;
-    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
-    border-bottom: 1px solid transparent;
-    transition: border-color .3s, background .3s;
+  .glow-cursor {
+    position: fixed; left: 0; top: 0; z-index: 0; pointer-events: none;
+    width: 560px; height: 560px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(79,131,241,.055), transparent 62%);
+    transform: translate(-50%,-50%); will-change: transform; opacity: 0;
+    transition: opacity .6s var(--ease);
   }
-  nav.scrolled { background: rgba(6,6,6,.78); border-bottom-color: var(--border); }
-  .nav-inner { display: flex; align-items: center; justify-content: space-between; height: 70px; }
-  .brand { display: flex; align-items: center; gap: 11px; font-weight: 800; font-size: 1.16rem; letter-spacing: -.02em; }
-  .logo {
-    width: 34px; height: 34px; border-radius: 10px; position: relative; flex: none;
-    background: var(--grad);
-    display: grid; place-items: center;
-  }
-  .logo::before {
-    content: ""; position: absolute; inset: 0; border-radius: 10px; padding: 1px;
-    background: linear-gradient(140deg, rgba(255,255,255,.7), transparent 50%);
-    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor; mask-composite: exclude;
-  }
-  .logo svg { width: 19px; height: 19px; }
-  .brand b { background: var(--grad-soft); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
-  .nav-links { display: flex; align-items: center; gap: 4px; }
-  .nav-links a { color: var(--muted); font-size: .9rem; font-weight: 500; padding: 9px 14px; border-radius: 9px; transition: color .2s, background .2s; }
-  .nav-links a:hover { color: var(--text); background: var(--glass); }
-  .nav-cta {
-    margin-left: 8px; padding: 9px 18px !important; color: var(--ink) !important;
-    background: var(--grad); border-radius: 10px !important; font-weight: 700 !important;
-    transition: transform .2s !important;
-  }
-  .nav-cta:hover { transform: translateY(-1px); background: var(--grad) !important; }
-  .menu-toggle {
-    display: none; width: 40px; height: 40px; place-items: center; flex: none;
-    background: var(--glass); border: 1px solid var(--border); border-radius: 10px;
-    color: var(--text); cursor: pointer; transition: border-color .2s, background .2s;
-  }
-  .menu-toggle:hover { border-color: var(--border-strong); background: rgba(255,255,255,.06); }
-  .menu-toggle svg { width: 20px; height: 20px; }
+  body.has-pointer .glow-cursor { opacity: 1; }
+  @media (pointer: coarse) { .glow-cursor { display: none; } }
 
   .scroll-progress {
     position: fixed; top: 0; left: 0; height: 2px; width: 0%;
-    background: var(--grad); z-index: 60; pointer-events: none;
+    background: var(--grad); z-index: 90; pointer-events: none;
   }
 
-  /* anchored sections land below the sticky nav instead of underneath it */
-  #features, #how, #security, #generate { scroll-margin-top: 86px; }
+  .wrap { width: 100%; max-width: 1180px; margin: 0 auto; padding: 0 28px; }
+  section { position: relative; }
+  #story, #dax, #documents, #security, #generate { scroll-margin-top: 80px; }
 
-  /* keyboard focus ring, gold to match the theme */
-  a:focus-visible, button:focus-visible, .doctype-option:focus-within {
-    outline: 2px solid var(--gold); outline-offset: 3px; border-radius: 10px;
+  /* ============================================================
+     NAV
+     ============================================================ */
+  nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 80;
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid transparent;
+    transition: border-color .4s, background .4s;
   }
+  nav.scrolled { background: rgba(5,7,12,.72); border-bottom-color: var(--hair); }
+  .nav-inner { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 1.02rem; letter-spacing: -.02em; }
+  .logo {
+    width: 30px; height: 30px; border-radius: 9px; position: relative; flex: none;
+    background: var(--grad); display: grid; place-items: center;
+  }
+  .logo::before {
+    content: ""; position: absolute; inset: 0; border-radius: 9px; padding: 1px;
+    background: linear-gradient(140deg, rgba(255,255,255,.7), transparent 50%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor; mask-composite: exclude;
+  }
+  .logo svg { width: 16px; height: 16px; }
+  .brand b { font-weight: 700; background: var(--grad-soft); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .nav-links { display: flex; align-items: center; gap: 2px; }
+  .nav-links a { color: var(--muted); font-size: .86rem; font-weight: 500; padding: 8px 13px; border-radius: 9px; transition: color .2s, background .2s; }
+  .nav-links a:hover { color: var(--text); background: var(--panel-2); }
+  .nav-cta {
+    margin-left: 10px; padding: 8px 17px !important; color: var(--ink) !important;
+    background: var(--grad); border-radius: 100px !important; font-weight: 600 !important;
+    transition: transform .25s var(--spring) !important;
+  }
+  .nav-cta:hover { transform: translateY(-1px) scale(1.03); background: var(--grad) !important; }
+  .menu-toggle {
+    display: none; width: 38px; height: 38px; place-items: center; flex: none;
+    background: var(--panel-2); border: 1px solid var(--hair); border-radius: 10px;
+    color: var(--text); cursor: pointer; transition: border-color .2s;
+  }
+  .menu-toggle:hover { border-color: var(--hair-2); }
+  .menu-toggle svg { width: 19px; height: 19px; }
 
-  /* themed scrollbar */
-  html { scrollbar-color: #33290f var(--bg); }
-  ::-webkit-scrollbar { width: 11px; }
-  ::-webkit-scrollbar-track { background: var(--bg); }
-  ::-webkit-scrollbar-thumb { background: #33290f; border-radius: 100px; border: 3px solid var(--bg); }
-  ::-webkit-scrollbar-thumb:hover { background: #55441a; }
+  /* ============================================================
+     TYPE SYSTEM
+     ============================================================ */
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 10px;
+    font-family: var(--mono); font-size: .7rem; font-weight: 500;
+    letter-spacing: .24em; text-transform: uppercase; color: var(--gold);
+    margin-bottom: 22px;
+  }
+  .eyebrow::before { content: ""; width: 24px; height: 1px; background: var(--grad); }
+  .sec-title {
+    font-size: clamp(2.3rem, 5.2vw, 3.9rem); font-weight: 600;
+    letter-spacing: -.04em; line-height: 1.02; margin-bottom: 18px;
+  }
+  .sec-title em, .serif-gold {
+    font-family: var(--serif); font-style: italic; font-weight: 400;
+    font-size: 1.06em; letter-spacing: -.01em;
+    background: var(--grad-soft); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .sec-sub { color: var(--muted); font-size: 1.05rem; max-width: 560px; font-weight: 400; }
+  .sec-head { max-width: 720px; margin: 0 auto 64px; text-align: center; }
+  .sec-head .sec-sub { margin: 0 auto; }
 
-  /* ===================== HERO ===================== */
-  .hero { padding: 96px 0 60px; }
-  .hero-grid { display: grid; grid-template-columns: 1fr; justify-items: center; text-align: center; max-width: 860px; margin: 0 auto; }
-  .hero-copy { display: flex; flex-direction: column; align-items: center; }
+  /* ============================================================
+     HERO
+     ============================================================ */
+  .hero {
+    min-height: 100svh; display: flex; flex-direction: column;
+    justify-content: center; align-items: center; text-align: center;
+    padding: 120px 0 40px; overflow: hidden;
+  }
+  #hero-net { position: absolute; inset: 0; z-index: -2; will-change: transform; }
+  .hero-vignette {
+    position: absolute; inset: 0; z-index: -1; pointer-events: none;
+    background:
+      radial-gradient(ellipse 70% 52% at 50% 46%, rgba(5,7,12,.82), transparent 100%),
+      linear-gradient(to bottom, rgba(5,7,12,.5), transparent 26%, transparent 70%, var(--bg) 98%);
+  }
+  .hero-inner { position: relative; transform: translate3d(calc(var(--px)*7px), calc(var(--py)*5px), 0); }
 
-  .pill {
+  .hero-pill {
     display: inline-flex; align-items: center; gap: 9px;
-    padding: 7px 15px 7px 11px; border-radius: 100px;
-    background: var(--glass); border: 1px solid var(--border);
-    font-size: .8rem; font-weight: 500; color: var(--muted);
-    backdrop-filter: blur(8px); margin-bottom: 26px;
+    padding: 7px 16px 7px 12px; border-radius: 100px;
+    background: rgba(255,255,255,.03); border: 1px solid var(--hair);
+    font-family: var(--mono); font-size: .72rem; letter-spacing: .06em; color: var(--muted);
+    backdrop-filter: blur(8px); margin-bottom: 38px;
   }
-  .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--success); }
-  .pill b { color: var(--text); font-weight: 600; }
+  .hero-pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); }
+  .hero-pill b { color: var(--text); font-weight: 500; }
 
   h1.hero-title {
-    font-size: clamp(2.5rem, 5.4vw, 4.3rem);
-    line-height: 1.04; font-weight: 800; letter-spacing: -.035em; margin-bottom: 22px;
+    font-size: clamp(3rem, 8.4vw, 7rem);
+    font-weight: 600; letter-spacing: -.048em; line-height: .99;
+    margin-bottom: 30px;
   }
-  h1.hero-title .shine {
-    background: linear-gradient(110deg, #fff 20%, #ffe066 42%, #f2c811 58%, #fff 80%);
-    background-size: 220% auto; -webkit-background-clip: text; background-clip: text;
-    -webkit-text-fill-color: transparent; animation: shimmer 6s linear infinite;
+  h1.hero-title .h-serif {
+    display: block; font-family: var(--serif); font-style: italic; font-weight: 400;
+    font-size: 1.08em; letter-spacing: -.015em; padding: 0 .06em .04em;
+    background: linear-gradient(110deg, #eef4ff 5%, #a9c8ff 35%, #4f83f1 60%, #2f5cc4 95%);
+    background-size: 200% auto; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+    animation: shine 9s linear infinite;
   }
-  @keyframes shimmer { to { background-position: 220% center; } }
-  .hero p.lead { font-size: 1.12rem; color: var(--muted); max-width: 600px; margin: 0 auto 34px; font-weight: 400; }
-  .hero p.lead b { color: var(--text); font-weight: 600; }
+  @keyframes shine { to { background-position: 200% center; } }
 
-  .hero-cta { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: center; }
-  .btn {
-    display: inline-flex; align-items: center; gap: 10px; cursor: pointer;
-    font-family: inherit; font-weight: 600; font-size: .98rem; border: none;
-    padding: 14px 26px; border-radius: 13px; transition: transform .2s, background .2s;
+  .hero-lead {
+    color: var(--muted); font-size: clamp(1rem, 1.6vw, 1.18rem);
+    max-width: 520px; margin: 0 auto 44px; line-height: 1.65;
   }
-  .btn-primary { color: var(--ink); font-weight: 700; background: var(--grad); position: relative; overflow: hidden; }
+  .hero-lead b { color: var(--text); font-weight: 600; }
+
+  .hero-cta { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: center; }
+  .btn {
+    position: relative; display: inline-flex; align-items: center; gap: 10px; cursor: pointer;
+    font-family: inherit; font-weight: 600; font-size: .95rem; border: none;
+    padding: 16px 30px; border-radius: 100px;
+    transition: transform .3s var(--spring), background .25s, border-color .25s;
+    will-change: transform;
+  }
+  .btn .btn-label { position: relative; display: inline-flex; align-items: center; gap: 10px; }
+  .btn-primary { color: var(--ink); background: var(--grad); overflow: hidden; }
   .btn-primary::after {
     content: ""; position: absolute; inset: 0; pointer-events: none;
-    background: linear-gradient(115deg, transparent 30%, rgba(255,255,255,.55) 48%, transparent 66%);
-    transform: translateX(-120%); transition: transform .55s ease;
+    background: linear-gradient(115deg, transparent 30%, rgba(255,255,255,.6) 48%, transparent 66%);
+    transform: translateX(-130%); transition: transform .6s var(--ease);
   }
-  .btn-primary:hover::after { transform: translateX(120%); }
-  .btn-primary:hover { transform: translateY(-2px); }
-  .btn-primary svg { transition: transform .2s; position: relative; }
+  .btn-primary:hover::after { transform: translateX(130%); }
+  .btn-primary svg { transition: transform .25s var(--ease); }
   .btn-primary:hover svg { transform: translateX(4px); }
-  .btn-ghost { color: var(--text); background: var(--glass); border: 1px solid var(--border); }
-  .btn-ghost:hover { transform: translateY(-2px); border-color: var(--border-strong); background: rgba(255,255,255,.06); }
+  .btn-ghost { color: var(--text); background: rgba(255,255,255,.03); border: 1px solid var(--hair); backdrop-filter: blur(8px); }
+  .btn-ghost:hover { border-color: var(--hair-2); background: rgba(255,255,255,.055); }
 
-  .hero-meta { display: flex; gap: 26px; margin-top: 32px; flex-wrap: wrap; justify-content: center; }
-  .hero-meta div { display: flex; align-items: center; gap: 8px; font-size: .86rem; color: var(--dim); }
-  .hero-meta svg { width: 16px; height: 16px; color: var(--success); flex: none; }
-
-  /* ===================== MARQUEE ===================== */
-  .marquee-wrap { padding: 26px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); margin-top: 40px; overflow: hidden; -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent); mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent); }
-  .marquee { display: flex; gap: 56px; width: max-content; animation: scroll 26s linear infinite; }
-  .marquee:hover { animation-play-state: paused; }
-  .marquee span { display: flex; align-items: center; gap: 11px; font-size: .92rem; font-weight: 600; color: var(--dim); white-space: nowrap; }
-  .marquee span svg { width: 17px; height: 17px; color: var(--violet); }
-  @keyframes scroll { to { transform: translateX(-50%); } }
-
-  /* ===================== SECTION HEADERS ===================== */
-  .sec-head { text-align: center; max-width: 660px; margin: 0 auto 56px; }
-  .eyebrow { font-size: .78rem; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; background: var(--grad-soft); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 14px; }
-  h2.sec-title { font-size: clamp(1.9rem, 3.6vw, 2.7rem); font-weight: 800; letter-spacing: -.03em; line-height: 1.1; margin-bottom: 16px; }
-  .sec-head p { color: var(--muted); font-size: 1.04rem; }
-
-  /* ===================== STATS ===================== */
-  .stats { padding: 70px 0 10px; }
-  .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
-  .stat {
-    text-align: center; padding: 30px 18px; border-radius: var(--r);
-    background: var(--glass); border: 1px solid var(--border); position: relative; overflow: hidden;
-    transition: transform .3s, border-color .3s;
+  .hero-fine {
+    margin-top: 34px; font-family: var(--mono); font-size: .72rem;
+    letter-spacing: .08em; color: var(--dim);
   }
-  .stat:hover { transform: translateY(-4px); border-color: var(--border-strong); }
-  .stat::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--grad); opacity: .8; }
-  .stat .num { font-size: 2.7rem; font-weight: 800; letter-spacing: -.04em; background: var(--grad-soft); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; line-height: 1; }
-  .stat .lbl { color: var(--muted); font-size: .9rem; margin-top: 9px; font-weight: 500; }
+  .hero-fine i { font-style: normal; color: var(--gold-deep); padding: 0 8px; }
 
-  /* ===================== FEATURES ===================== */
-  .features { padding: 100px 0; }
-  .feat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
-  .card {
-    position: relative; padding: 30px; border-radius: 20px; overflow: hidden;
-    background: var(--panel); border: 1px solid var(--border);
-    backdrop-filter: blur(12px); transition: transform .3s, border-color .3s;
+  .hero-scroll {
+    position: absolute; bottom: 26px; left: 50%; transform: translateX(-50%);
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    color: var(--dim); font-family: var(--mono); font-size: .62rem; letter-spacing: .3em; text-transform: uppercase;
   }
-  .card:hover { transform: translateY(-6px) scale(1.012); border-color: var(--border-strong); }
-  .feat-ico {
-    width: 52px; height: 52px; border-radius: 14px; display: grid; place-items: center; margin-bottom: 20px;
-    background: linear-gradient(150deg, rgba(242,200,17,.24), rgba(201,151,27,.14));
-    border: 1px solid rgba(242,200,17,.32); color: #ffe066;
+  .hero-scroll span { display: block; width: 1px; height: 34px; background: linear-gradient(var(--gold), transparent); animation: drip 2.2s var(--ease) infinite; transform-origin: top; }
+  @keyframes drip { 0% { transform: scaleY(0); } 45% { transform: scaleY(1); } 100% { transform: scaleY(0); transform-origin: bottom; } }
+
+  /* ---------- capability ticker ---------- */
+  .ticker-wrap {
+    padding: 20px 0; border-top: 1px solid var(--hair); border-bottom: 1px solid var(--hair);
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent);
+            mask-image: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent);
   }
-  .feat-ico svg { width: 25px; height: 25px; }
-  .card.amber .feat-ico { background: linear-gradient(150deg, rgba(249,115,22,.22), rgba(234,88,12,.13)); border-color: rgba(249,115,22,.34); color: #fdba74; }
-  .card.cyan .feat-ico { background: linear-gradient(150deg, rgba(34,211,238,.18), rgba(13,148,136,.13)); border-color: rgba(34,211,238,.3); color: #67e8f9; }
-  .card h3 { font-size: 1.18rem; font-weight: 700; margin-bottom: 10px; letter-spacing: -.01em; }
-  .card p { color: var(--muted); font-size: .94rem; }
-  .card .tag { display: inline-block; margin-top: 16px; font-size: .72rem; font-weight: 700; padding: 4px 10px; border-radius: 6px; background: var(--glass); border: 1px solid var(--border); color: var(--dim); font-family: 'Poppins', sans-serif; letter-spacing: .01em; }
+  .ticker { display: flex; gap: 0; width: max-content; animation: tick 34s linear infinite; }
+  .ticker:hover { animation-play-state: paused; }
+  .ticker span {
+    display: flex; align-items: center; font-family: var(--mono); font-size: .72rem;
+    letter-spacing: .18em; text-transform: uppercase; color: var(--dim); white-space: nowrap;
+  }
+  .ticker span::after { content: "◆"; color: var(--gold-deep); font-size: .5rem; padding: 0 28px; }
+  @keyframes tick { to { transform: translateX(-50%); } }
 
-  /* ===================== HOW IT WORKS ===================== */
-  .how { padding: 30px 0 100px; }
-  .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; position: relative; }
-  .step { position: relative; padding: 28px 22px; border-radius: 18px; background: var(--panel); border: 1px solid var(--border); transition: transform .3s, border-color .3s; }
-  .step:hover { transform: translateY(-4px); border-color: var(--border-strong); }
-  .step .n { width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; font-weight: 800; font-size: 1.05rem; color: var(--ink); background: var(--grad); margin-bottom: 18px; }
-  .step h4 { font-size: 1.05rem; font-weight: 700; margin-bottom: 8px; }
-  .step p { color: var(--muted); font-size: .88rem; }
-  .step .arrow { position: absolute; right: -13px; top: 42px; color: var(--violet); z-index: 2; }
-  .step:last-child .arrow { display: none; }
+  /* ---------- proof strip ---------- */
+  .proof { padding: 74px 0 10px; }
+  .proof-row { display: flex; justify-content: center; align-items: stretch; flex-wrap: wrap; }
+  .proof-item { text-align: center; padding: 6px 46px; position: relative; }
+  .proof-item + .proof-item::before {
+    content: ""; position: absolute; left: 0; top: 12%; bottom: 12%; width: 1px;
+    background: linear-gradient(transparent, var(--hair-2), transparent);
+  }
+  .proof-item .num {
+    font-size: clamp(2.4rem, 4.4vw, 3.4rem); font-weight: 600; letter-spacing: -.05em; line-height: 1;
+    background: var(--grad-soft); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .proof-item .lbl { color: var(--dim); font-family: var(--mono); font-size: .68rem; letter-spacing: .18em; text-transform: uppercase; margin-top: 12px; }
 
-  /* ===================== GENERATOR (APP) ===================== */
-  .generator { padding: 30px 0 110px; }
-  .app-shell {
+  /* ============================================================
+     PROBLEM — chaos vs. order comparison
+     ============================================================ */
+  .problem { padding: 150px 0 60px; }
+  .compare {
+    position: relative; height: 480px; border-radius: 22px; overflow: hidden;
+    border: 1px solid var(--hair); background: var(--bg-2);
+    --cut: 12%;
+  }
+  .cmp-side { position: absolute; inset: 0; }
+  .cmp-tag {
+    position: absolute; top: 18px; font-family: var(--mono); font-size: .64rem;
+    letter-spacing: .26em; text-transform: uppercase; padding: 6px 12px; border-radius: 6px;
+    border: 1px solid var(--hair); background: rgba(5,7,12,.6); backdrop-filter: blur(6px); z-index: 3;
+  }
+  .cmp-before .cmp-tag { left: 18px; color: var(--danger); border-color: rgba(251,113,133,.25); }
+  .cmp-after  .cmp-tag { right: 18px; color: var(--gold); border-color: rgba(79,131,241,.3); }
+
+  /* chaos side */
+  .cmp-before { background: radial-gradient(90% 90% at 30% 40%, #0a0f19, var(--bg-2)); }
+  .chip {
+    position: absolute; padding: 8px 13px; border-radius: 9px; white-space: nowrap;
+    font-family: var(--mono); font-size: .72rem; color: #8a93a5;
+    background: rgba(255,255,255,.028); border: 1px solid rgba(255,255,255,.07);
+    transform: rotate(var(--rot, 0deg));
+    animation: chipFloat var(--dur, 7s) ease-in-out var(--del, 0s) infinite alternate;
+  }
+  .chip.bad { color: #d98b98; border-color: rgba(251,113,133,.18); background: rgba(251,113,133,.05); }
+  .chip.q { font-size: 1.5rem; color: rgba(251,113,133,.5); background: none; border: none; }
+  @keyframes chipFloat { from { transform: rotate(var(--rot,0deg)) translateY(-5px); } to { transform: rotate(var(--rot,0deg)) translateY(6px); } }
+
+  /* documented side */
+  .cmp-after {
+    background: radial-gradient(100% 100% at 70% 30%, #0b1220, var(--bg-2));
+    clip-path: inset(0 0 0 var(--cut));
+    display: grid; place-items: center;
+  }
+  .minidoc {
+    width: min(520px, 82%); border-radius: 14px; overflow: hidden;
+    background: linear-gradient(170deg, rgba(255,255,255,.045), rgba(255,255,255,.015));
+    border: 1px solid var(--hair-2); box-shadow: var(--shadow);
+  }
+  .minidoc-bar { display: flex; align-items: center; gap: 10px; padding: 11px 16px; border-bottom: 1px solid var(--hair); }
+  .minidoc-bar i { width: 9px; height: 9px; border-radius: 50%; background: var(--grad); font-style: normal; }
+  .minidoc-bar b { font-family: var(--mono); font-size: .68rem; font-weight: 500; letter-spacing: .1em; color: var(--muted); }
+  .minidoc-body { padding: 20px 22px 24px; }
+  .minidoc h5 { font-size: 1.02rem; font-weight: 600; letter-spacing: -.02em; margin-bottom: 3px; }
+  .minidoc .sub { font-family: var(--mono); font-size: .66rem; color: var(--dim); letter-spacing: .08em; margin-bottom: 16px; }
+  .mrow { display: flex; justify-content: space-between; align-items: baseline; gap: 14px; padding: 9px 0; border-top: 1px solid rgba(255,255,255,.05); }
+  .mrow .k { font-family: var(--mono); font-size: .74rem; color: var(--text); }
+  .mrow .v { font-size: .76rem; color: var(--muted); text-align: right; }
+  .mrow .ok { color: var(--success); font-family: var(--mono); font-size: .7rem; white-space: nowrap; }
+
+  .cmp-line {
+    position: absolute; top: 0; bottom: 0; left: var(--cut); width: 1px; z-index: 4;
+    background: linear-gradient(transparent, var(--gold) 22%, var(--gold) 78%, transparent);
+    pointer-events: none;
+  }
+  .cmp-handle {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center;
+    background: rgba(9,13,21,.85); border: 1px solid rgba(79,131,241,.55);
+    color: var(--gold); backdrop-filter: blur(6px);
+  }
+  .cmp-handle svg { width: 18px; height: 18px; }
+  .cmp-range {
+    position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0;
+    cursor: ew-resize; z-index: 5; margin: 0; -webkit-appearance: none; appearance: none; background: transparent;
+  }
+  .cmp-hint { text-align: center; margin-top: 18px; font-family: var(--mono); font-size: .68rem; letter-spacing: .2em; text-transform: uppercase; color: var(--dim); }
+
+  /* ============================================================
+     STORY — sticky pipeline stage
+     ============================================================ */
+  .story { padding: 130px 0 40px; }
+  .story-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 70px; align-items: start; }
+  .stage-wrap { position: sticky; top: 100px; }
+  .stage {
+    position: relative; height: min(560px, calc(100vh - 160px)); border-radius: 24px; overflow: hidden;
+    background: linear-gradient(170deg, rgba(255,255,255,.035), rgba(255,255,255,.01));
+    border: 1px solid var(--hair-2); box-shadow: var(--shadow);
+  }
+  .stage::before {
+    content: ""; position: absolute; top: 0; left: 8%; right: 8%; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(79,131,241,.6), transparent);
+  }
+  .stage-head { display: flex; align-items: center; gap: 8px; padding: 15px 20px; border-bottom: 1px solid var(--hair); position: relative; z-index: 2; }
+  .stage-head i { width: 10px; height: 10px; border-radius: 50%; background: rgba(255,255,255,.12); font-style: normal; }
+  .stage-head i:first-child { background: rgba(251,113,133,.5); }
+  .stage-head i:nth-child(2) { background: rgba(245,166,35,.5); }
+  .stage-head i:nth-child(3) { background: rgba(52,211,153,.5); }
+  .stage-head b { margin-left: auto; font-family: var(--mono); font-size: .64rem; font-weight: 500; letter-spacing: .18em; color: var(--dim); text-transform: uppercase; }
+
+  .scene {
+    position: absolute; inset: 52px 0 46px; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 20px; padding: 0 34px;
+    opacity: 0; transform: translateY(16px) scale(.985);
+    transition: opacity .55s var(--ease), transform .55s var(--ease);
+    pointer-events: none;
+  }
+  .stage[data-state="0"] .scene-upload,
+  .stage[data-state="1"] .scene-parse,
+  .stage[data-state="2"] .scene-think { opacity: 1; transform: none; pointer-events: auto; }
+
+  .stage-status {
+    position: absolute; left: 0; right: 0; bottom: 0; padding: 13px 20px;
+    border-top: 1px solid var(--hair); font-family: var(--mono); font-size: .66rem;
+    letter-spacing: .1em; color: var(--dim); display: flex; align-items: center; gap: 9px;
+  }
+  .stage-status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--success); flex: none; }
+  .stage-status span { display: none; }
+  .stage[data-state="0"] .st-0, .stage[data-state="1"] .st-1, .stage[data-state="2"] .st-2 { display: inline; }
+
+  /* scene 1 — upload */
+  .up-ring {
+    width: 168px; height: 168px; border-radius: 50%; position: relative;
+    border: 1px dashed rgba(79,131,241,.4); display: grid; place-items: center;
+  }
+  .stage[data-state="0"] .up-ring { animation: ringSpin 24s linear infinite; }
+  @keyframes ringSpin { to { transform: rotate(360deg); } }
+  .up-ring::after {
+    content: ""; position: absolute; inset: -14px; border-radius: 50%;
+    border: 1px solid rgba(79,131,241,.14);
+  }
+  .up-file {
+    display: flex; align-items: center; gap: 9px; padding: 11px 17px; border-radius: 11px;
+    background: rgba(9,13,21,.9); border: 1px solid var(--hair-2);
+    font-family: var(--mono); font-size: .76rem; color: var(--text);
+  }
+  .stage[data-state="0"] .up-ring .up-file { animation: fileDrop 1s var(--spring) both; }
+  .up-file svg { width: 15px; height: 15px; color: var(--gold); flex: none; }
+  @keyframes fileDrop { from { opacity: 0; transform: translateY(-46px) scale(.9); } to { opacity: 1; transform: none; } }
+  .up-cap { font-family: var(--mono); font-size: .68rem; color: var(--dim); letter-spacing: .1em; }
+  .up-cap b { color: var(--gold); font-weight: 500; }
+
+  /* scene 2 — parse */
+  .model-svg { width: 100%; max-width: 360px; height: auto; overflow: visible; }
+  .model-svg .tbl { fill: rgba(255,255,255,.03); stroke: rgba(255,255,255,.16); }
+  .model-svg text { font-family: var(--mono); font-size: 9.5px; fill: var(--muted); letter-spacing: .06em; }
+  .model-svg .fact { stroke: rgba(79,131,241,.55); fill: rgba(79,131,241,.05); }
+  .model-svg .rel {
+    stroke: rgba(79,131,241,.5); stroke-width: 1;
+    stroke-dasharray: 1; stroke-dashoffset: 1;
+  }
+  .stage[data-state="1"] .model-svg .rel { animation: drawRel 1s var(--ease) forwards; }
+  .stage[data-state="1"] .model-svg .rel:nth-of-type(2) { animation-delay: .18s; }
+  .stage[data-state="1"] .model-svg .rel:nth-of-type(3) { animation-delay: .36s; }
+  .stage[data-state="1"] .model-svg .rel:nth-of-type(4) { animation-delay: .54s; }
+  @keyframes drawRel { to { stroke-dashoffset: 0; } }
+  .model-svg .jn { fill: var(--gold); opacity: 0; }
+  .stage[data-state="1"] .model-svg .jn { animation: jnIn .4s var(--ease) .9s forwards; }
+  @keyframes jnIn { to { opacity: 1; } }
+  .parse-counts { display: flex; gap: 26px; font-family: var(--mono); font-size: .7rem; color: var(--dim); letter-spacing: .08em; }
+  .parse-counts b { display: block; color: var(--text); font-size: 1.35rem; font-weight: 500; letter-spacing: -.02em; text-align: center; }
+
+  /* scene 3 — reasoning */
+  .think-panel {
+    width: 100%; max-width: 400px; border-radius: 14px; overflow: hidden;
+    background: rgba(5,8,13,.72); border: 1px solid var(--hair-2);
+  }
+  .think-bar { padding: 10px 16px; border-bottom: 1px solid var(--hair); font-family: var(--mono); font-size: .64rem; letter-spacing: .22em; text-transform: uppercase; color: var(--gold-deep); display: flex; align-items: center; gap: 8px; }
+  .think-bar::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--gold); animation: blink 1.4s ease-in-out infinite; }
+  @keyframes blink { 50% { opacity: .25; } }
+  .think-lines { padding: 16px 18px 20px; min-height: 148px; display: flex; flex-direction: column; gap: 9px; }
+  .think-lines div { font-family: var(--mono); font-size: .74rem; line-height: 1.55; color: var(--muted); }
+  .think-lines div::before { content: "▸ "; color: var(--gold); }
+  .think-lines .caret { display: inline-block; width: 7px; height: 13px; background: var(--gold); vertical-align: -2px; animation: blink 1s steps(1) infinite; }
+
+  /* right column steps */
+  .story-steps { display: flex; flex-direction: column; }
+  .story-step { min-height: 78vh; display: flex; flex-direction: column; justify-content: center; opacity: .28; transition: opacity .5s var(--ease); }
+  .story-step.live { opacity: 1; }
+  .story-step .sn { font-family: var(--mono); font-size: .7rem; letter-spacing: .3em; color: var(--gold); margin-bottom: 16px; }
+  .story-step h3 { font-size: clamp(1.9rem, 3.4vw, 2.9rem); font-weight: 600; letter-spacing: -.035em; line-height: 1.04; margin-bottom: 16px; }
+  .story-step p { color: var(--muted); font-size: 1.02rem; max-width: 420px; }
+  .story-step p b { color: var(--text); font-weight: 600; }
+
+  /* ============================================================
+     DAX — interactive translation
+     ============================================================ */
+  .dax { padding: 150px 0 60px; }
+  .dax-grid { display: grid; grid-template-columns: 1.08fr .92fr; gap: 26px; align-items: stretch; }
+  .code-panel {
+    border-radius: 20px; overflow: hidden; display: flex; flex-direction: column;
+    background: linear-gradient(170deg, rgba(255,255,255,.03), rgba(255,255,255,.008));
+    border: 1px solid var(--hair-2);
+  }
+  .code-bar { display: flex; align-items: center; gap: 10px; padding: 13px 20px; border-bottom: 1px solid var(--hair); }
+  .code-bar b { font-family: var(--mono); font-size: .68rem; font-weight: 500; letter-spacing: .14em; color: var(--muted); }
+  .code-bar i { margin-left: auto; font-style: normal; font-family: var(--mono); font-size: .62rem; letter-spacing: .2em; color: var(--gold-deep); text-transform: uppercase; }
+  .code-body { padding: 28px 26px 30px; font-family: var(--mono); font-size: clamp(.82rem, 1.35vw, .98rem); line-height: 2.05; color: #c5cfe0; flex: 1; }
+  .code-body .cm { color: var(--dim); }
+  .tok {
+    font: inherit; color: var(--gold-light); background: rgba(79,131,241,.07);
+    border: 1px solid rgba(79,131,241,.22); border-radius: 7px; padding: 2px 7px;
+    cursor: help; transition: background .2s, border-color .2s, color .2s;
+  }
+  .tok:hover, .tok:focus-visible, .tok.on { background: rgba(79,131,241,.18); border-color: rgba(79,131,241,.6); color: #eaf1ff; }
+  .code-eng { border-top: 1px solid var(--hair); padding: 15px 20px; font-family: var(--serif); font-style: italic; font-size: 1.04rem; color: var(--muted); }
+  .code-eng b { color: var(--gold-light); font-weight: 400; }
+
+  .explain-panel {
+    border-radius: 20px; padding: 30px 30px 26px; display: flex; flex-direction: column;
+    background: linear-gradient(170deg, rgba(79,131,241,.05), rgba(255,255,255,.01));
+    border: 1px solid rgba(79,131,241,.2);
+    transition: opacity .22s var(--ease), transform .22s var(--ease);
+  }
+  .explain-panel.swap { opacity: 0; transform: translateY(6px); }
+  .explain-kind { font-family: var(--mono); font-size: .64rem; letter-spacing: .26em; text-transform: uppercase; color: var(--gold); margin-bottom: 14px; }
+  .explain-panel h4 { font-size: 1.32rem; font-weight: 600; letter-spacing: -.025em; margin-bottom: 12px; }
+  .explain-panel p { color: var(--muted); font-size: .96rem; line-height: 1.7; }
+  .explain-foot { margin-top: auto; padding-top: 22px; font-family: var(--mono); font-size: .66rem; letter-spacing: .12em; color: var(--dim); }
+
+  /* ============================================================
+     DOCUMENTS — the deck
+     ============================================================ */
+  .documents { padding: 150px 0 90px; }
+  .deck { display: flex; justify-content: center; align-items: flex-end; padding: 30px 0 10px; }
+  .sheet {
+    position: relative; width: 258px; height: 348px; border-radius: 16px; flex: none;
+    background: linear-gradient(172deg, #0e1522, #070a11);
+    border: 1px solid var(--hair-2); box-shadow: 0 30px 60px -20px rgba(0,0,0,.85);
+    padding: 22px 20px; margin: 0 -26px;
+    transform: rotate(var(--tilt, 0deg)) translateY(var(--dy, 0px));
+    transition: transform .45s var(--spring), border-color .3s, box-shadow .45s var(--ease);
+    cursor: default;
+  }
+  .sheet::before {
+    content: ""; position: absolute; top: 0; left: 10%; right: 10%; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(79,131,241,.5), transparent);
+  }
+  .sheet:hover {
+    transform: rotate(0deg) translateY(-26px) scale(1.045); z-index: 6;
+    border-color: rgba(79,131,241,.45);
+    box-shadow: 0 50px 90px -24px rgba(0,0,0,.95);
+  }
+  .sheet .s-kind { font-family: var(--mono); font-size: .58rem; letter-spacing: .26em; text-transform: uppercase; color: var(--gold); margin-bottom: 10px; }
+  .sheet h4 { font-size: 1.04rem; font-weight: 600; letter-spacing: -.02em; line-height: 1.25; margin-bottom: 14px; }
+  .s-line { height: 5px; border-radius: 4px; background: rgba(255,255,255,.07); margin-bottom: 8px; }
+  .s-line.g { background: rgba(79,131,241,.28); }
+  .s-toc { font-family: var(--mono); font-size: .66rem; line-height: 2.1; color: var(--muted); }
+  .s-toc i { font-style: normal; color: var(--gold-deep); padding-right: 8px; }
+  .s-chip { display: inline-block; font-family: var(--mono); font-size: .62rem; padding: 4px 9px; border-radius: 6px; margin: 3px 4px 3px 0; background: rgba(255,255,255,.04); border: 1px solid var(--hair); color: var(--muted); }
+  .s-chip.ok { color: var(--success); border-color: rgba(52,211,153,.3); }
+  .s-chip.wr { color: var(--amber); border-color: rgba(245,166,35,.3); }
+  .s-quote { font-family: var(--serif); font-style: italic; font-size: 1.12rem; line-height: 1.45; color: #dde5f2; margin: 10px 0 16px; }
+  .s-quote b { color: var(--gold-light); font-weight: 400; }
+  .s-qa { font-size: .74rem; line-height: 1.5; margin-bottom: 11px; }
+  .s-qa .q { color: var(--text); font-weight: 600; }
+  .s-qa .a { color: var(--muted); }
+  .s-qa .a::before { content: "→ "; color: var(--gold); font-family: var(--mono); }
+  .s-foot { position: absolute; left: 20px; right: 20px; bottom: 16px; display: flex; justify-content: space-between; font-family: var(--mono); font-size: .58rem; letter-spacing: .12em; color: var(--dim); border-top: 1px solid var(--hair); padding-top: 10px; }
+
+  /* health ring */
+  .ring-wrap { display: flex; align-items: center; gap: 16px; margin: 6px 0 14px; }
+  .ring { transform: rotate(-90deg); }
+  .ring .track { fill: none; stroke: rgba(255,255,255,.07); stroke-width: 6; }
+  .ring .val { fill: none; stroke: url(#ringGrad); stroke-width: 6; stroke-linecap: round; stroke-dasharray: 226.19; stroke-dashoffset: 226.19; transition: stroke-dashoffset 1.5s var(--ease); }
+  .ring-num { font-size: 1.9rem; font-weight: 600; letter-spacing: -.04em; line-height: 1; }
+  .ring-num small { display: block; font-family: var(--mono); font-size: .58rem; font-weight: 400; letter-spacing: .2em; color: var(--dim); margin-top: 5px; text-transform: uppercase; }
+
+  .deck-formats { text-align: center; margin-top: 46px; font-family: var(--mono); font-size: .7rem; letter-spacing: .22em; text-transform: uppercase; color: var(--dim); }
+  .deck-formats i { font-style: normal; color: var(--gold-deep); padding: 0 10px; }
+
+  /* ============================================================
+     SECURITY — the pipeline
+     ============================================================ */
+  .security { padding: 150px 0 80px; }
+  .pipe { position: relative; max-width: 640px; margin: 70px auto 0; padding: 8px 0; }
+  .pipe::before {
+    content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px;
+    transform: translateX(-.5px);
+    background: linear-gradient(transparent, rgba(79,131,241,.35) 6%, rgba(79,131,241,.35) 94%, transparent);
+  }
+  .pipe-pulse {
+    position: absolute; left: 50%; top: 0; width: 5px; height: 46px; border-radius: 100px;
+    transform: translateX(-50%);
+    background: linear-gradient(transparent, var(--gold-light), transparent);
+    animation: pulseDown 6s linear infinite;
+  }
+  @keyframes pulseDown { from { top: -8%; opacity: 0; } 8% { opacity: 1; } 92% { opacity: 1; } to { top: 104%; opacity: 0; } }
+  .pnode { position: relative; display: grid; grid-template-columns: 1fr 56px 1fr; align-items: center; min-height: 108px; list-style: none; }
+  .pdot {
+    grid-column: 2; justify-self: center; width: 15px; height: 15px; border-radius: 50%;
+    background: #0b1220; border: 1px solid rgba(79,131,241,.55); position: relative; z-index: 2;
+    animation: nodeFlash 6s linear infinite; animation-delay: calc(var(--i) * 1.15s);
+  }
+  @keyframes nodeFlash {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(79,131,241,0); background: #0b1220; }
+    4% { box-shadow: 0 0 18px 2px rgba(79,131,241,.55); background: var(--gold); }
+    12% { box-shadow: 0 0 0 0 rgba(79,131,241,0); background: #0b1220; }
+  }
+  .ptxt h4 { font-size: 1.12rem; font-weight: 600; letter-spacing: -.02em; margin-bottom: 4px; }
+  .ptxt p { color: var(--dim); font-family: var(--mono); font-size: .7rem; letter-spacing: .06em; line-height: 1.6; }
+  .pnode:nth-child(odd)  .ptxt { grid-column: 1; text-align: right; padding-right: 8px; }
+  .pnode:nth-child(even) .ptxt { grid-column: 3; text-align: left; padding-left: 8px; }
+  .pnode.final .pdot { border-color: rgba(251,113,133,.6); }
+  .pnode.final h4 { color: #f3a8b3; }
+
+  .sec-statement { text-align: center; margin-top: 110px; }
+  .sec-statement h3 { font-size: clamp(2.4rem, 6vw, 4.6rem); font-weight: 600; letter-spacing: -.045em; line-height: 1.02; }
+
+  /* ============================================================
+     GENERATOR — the console (functional)
+     ============================================================ */
+  .generator { padding: 140px 0 130px; }
+  .console {
     max-width: 880px; margin: 0 auto; border-radius: 26px; position: relative;
-    background: linear-gradient(165deg, rgba(19,17,10,.88), rgba(6,6,4,.94));
-    border: 1px solid var(--border-strong);
-    box-shadow: var(--shadow); overflow: hidden;
+    background: linear-gradient(168deg, rgba(13,19,31,.75), rgba(6,8,13,.92));
+    border: 1px solid var(--hair-2); box-shadow: var(--shadow); overflow: hidden;
+    transition: border-color .4s;
   }
-  .app-head { padding: 34px 40px 0; text-align: center; }
-  .app-head .pill { margin-bottom: 16px; }
-  .app-head h3 { font-size: 1.7rem; font-weight: 800; letter-spacing: -.02em; margin-bottom: 8px; }
-  .app-head p { color: var(--muted); font-size: .96rem; }
-  .app-body { padding: 28px 40px 40px; }
+  .console::before {
+    content: ""; position: absolute; top: 0; left: 6%; right: 6%; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(79,131,241,.7), transparent);
+  }
+  .console-head { padding: 34px 42px 0; text-align: center; }
+  .console-head .chip-live {
+    display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 100px;
+    background: rgba(255,255,255,.03); border: 1px solid var(--hair);
+    font-family: var(--mono); font-size: .64rem; letter-spacing: .18em; text-transform: uppercase; color: var(--muted);
+    margin-bottom: 18px;
+  }
+  .console-head .chip-live::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
+  .console-head h3 { font-size: 1.6rem; font-weight: 600; letter-spacing: -.03em; margin-bottom: 6px; }
+  .console-head p { color: var(--muted); font-size: .92rem; }
+  .app-body { padding: 30px 42px 42px; }
 
-  /* tabs */
-  .tabs { display: flex; gap: 6px; padding: 5px; background: rgba(0,0,0,.32); border: 1px solid var(--border); border-radius: 14px; margin-bottom: 28px; }
+  .tabs { display: flex; gap: 5px; padding: 5px; background: rgba(0,0,0,.4); border: 1px solid var(--hair); border-radius: 14px; margin-bottom: 30px; }
   .tab-btn {
     flex: 1; background: none; border: none; color: var(--muted); padding: 11px 10px;
-    font-family: inherit; font-size: .87rem; font-weight: 600; cursor: pointer; border-radius: 10px;
+    font-family: inherit; font-size: .84rem; font-weight: 600; cursor: pointer; border-radius: 10px;
     transition: color .2s, background .2s; display: flex; align-items: center; justify-content: center; gap: 8px;
   }
-  .tab-btn .tn { width: 20px; height: 20px; border-radius: 6px; display: grid; place-items: center; font-size: .72rem; font-weight: 700; background: var(--glass); color: var(--dim); transition: all .2s; }
+  .tab-btn .tn { width: 20px; height: 20px; border-radius: 6px; display: grid; place-items: center; font-family: var(--mono); font-size: .68rem; background: rgba(255,255,255,.05); color: var(--dim); transition: all .2s; }
   .tab-btn:hover { color: var(--text); }
   .tab-btn.active { color: var(--ink); background: var(--grad); }
   .tab-btn.active .tn { background: rgba(0,0,0,.16); color: var(--ink); }
   @media (max-width: 600px) { .tab-btn span.txt { display: none; } }
 
   .tab-content { display: none; }
-  .tab-content.active { display: block; animation: fadeUp .35s ease; }
-  @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  .tab-content.active { display: block; animation: fadeUp .35s var(--ease); }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
   .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
   @media (max-width: 640px) { .grid-2 { grid-template-columns: 1fr; } }
 
-  /* Document-type selector */
   .doctype-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 10px; }
   @media (max-width: 640px) { .doctype-grid { grid-template-columns: 1fr; } }
   .doctype-option {
     display: flex; align-items: flex-start; gap: 10px; padding: 13px 14px;
-    background: rgba(5,4,10,.7); border: 1px solid var(--border); border-radius: 11px;
+    background: rgba(0,0,0,.35); border: 1px solid var(--hair); border-radius: 12px;
     cursor: pointer; transition: border-color .2s, background .2s;
   }
-  .doctype-option:hover { border-color: var(--border-strong); }
-  .doctype-option:has(input:checked) { border-color: var(--violet); background: rgba(242,200,17,.1); }
-  .doctype-option input[type=checkbox] { margin-top: 3px; accent-color: var(--violet); width: 15px; height: 15px; flex: none; cursor: pointer; }
+  .doctype-option:hover { border-color: var(--hair-2); }
+  .doctype-option:has(input:checked) { border-color: rgba(79,131,241,.55); background: rgba(79,131,241,.07); }
+  .doctype-option input[type=checkbox] { margin-top: 3px; accent-color: var(--gold); width: 15px; height: 15px; flex: none; cursor: pointer; }
   .doctype-option .doctype-text { display: flex; flex-direction: column; gap: 2px; }
-  .doctype-option .doctype-name { font-size: .88rem; font-weight: 600; color: var(--text); }
-  .doctype-option .doctype-desc { font-size: .76rem; color: var(--dim); line-height: 1.4; }
-  .link-btn {
-    background: none; border: none; color: var(--violet); font-family: inherit;
-    font-size: .8rem; font-weight: 600; cursor: pointer; padding: 2px 0;
-  }
+  .doctype-option .doctype-name { font-size: .87rem; font-weight: 600; color: var(--text); }
+  .doctype-option .doctype-desc { font-size: .74rem; color: var(--dim); line-height: 1.4; }
+  .link-btn { background: none; border: none; color: var(--gold); font-family: var(--mono); font-size: .72rem; letter-spacing: .04em; font-weight: 500; cursor: pointer; padding: 2px 0; }
   .link-btn:hover { color: var(--gold-light); text-decoration: underline; }
 
-  .dl-group { margin-top: 14px; }
-  .dl-group-title { font-size: .78rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; text-align: center; }
-  .dl-group-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 11px; margin-bottom: 6px; }
-
   .form-group { margin-bottom: 18px; }
-  label { display: block; margin-bottom: 7px; font-weight: 600; font-size: .85rem; color: var(--text); }
+  label { display: block; margin-bottom: 7px; font-weight: 600; font-size: .83rem; color: var(--text); letter-spacing: -.005em; }
   label small { color: var(--dim); font-weight: 400; margin-left: 5px; }
 
   input[type=text], select, textarea {
-    width: 100%; padding: 12px 15px; background: rgba(5,4,10,.7);
-    border: 1px solid var(--border); border-radius: 11px; color: var(--text);
-    font-family: inherit; font-size: .9rem; outline: none;
+    width: 100%; padding: 12px 15px; background: rgba(0,0,0,.4);
+    border: 1px solid var(--hair); border-radius: 12px; color: var(--text);
+    font-family: inherit; font-size: .89rem; outline: none;
     transition: border-color .2s, background .2s;
   }
-  input::placeholder, textarea::placeholder { color: #5a5a6a; }
-  input[type=text]:focus, select:focus, textarea:focus {
-    border-color: var(--violet); background: rgba(5,4,10,.95);
-  }
-  select { cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='none' stroke='%23b4b4c4' stroke-width='2' viewBox='0 0 24 24'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 38px; }
+  input::placeholder, textarea::placeholder { color: #4d5566; }
+  input[type=text]:focus, select:focus, textarea:focus { border-color: rgba(79,131,241,.55); background: rgba(0,0,0,.6); }
+  select { cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='none' stroke='%239aa6b8' stroke-width='2' viewBox='0 0 24 24'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 38px; }
   textarea { resize: vertical; min-height: 92px; }
 
   .file-dropzone {
-    border: 2px dashed var(--border); background: rgba(0,0,0,.28);
-    border-radius: 16px; padding: 34px 24px; text-align: center; cursor: pointer;
-    transition: border-color .25s, background .25s, transform .15s; position: relative; overflow: hidden;
+    position: relative; border: 1px solid var(--hair-2);
+    background: linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.012));
+    border-radius: 16px; padding: 20px 22px; cursor: pointer;
+    transition: border-color .25s, background .25s, transform .25s var(--spring);
   }
-  .file-dropzone:hover, .file-dropzone.drag { border-color: var(--violet); background: rgba(242,200,17,.05); }
-  .file-dropzone .dz-ico { width: 54px; height: 54px; border-radius: 15px; margin: 0 auto 14px; display: grid; place-items: center; background: linear-gradient(150deg, rgba(242,200,17,.22), rgba(201,151,27,.13)); border: 1px solid rgba(242,200,17,.32); color: #ffe066; }
-  .file-dropzone .dz-ico svg { width: 26px; height: 26px; }
-  .file-dropzone .dz-main { font-size: .98rem; font-weight: 600; }
-  .file-dropzone .dz-sub { font-size: .78rem; color: var(--dim); margin-top: 4px; }
+  .file-dropzone::before, .file-dropzone::after {
+    content: ""; position: absolute; width: 18px; height: 18px; pointer-events: none;
+    border: 1px solid rgba(79,131,241,.6); transition: border-color .25s;
+  }
+  .file-dropzone::before { top: 7px; left: 7px; border-right: 0; border-bottom: 0; border-top-left-radius: 9px; }
+  .file-dropzone::after { bottom: 7px; right: 7px; border-left: 0; border-top: 0; border-bottom-right-radius: 9px; }
+  .file-dropzone:hover, .file-dropzone.drag {
+    border-color: rgba(79,131,241,.55); background: rgba(79,131,241,.05); transform: translateY(-2px);
+  }
+  .file-dropzone.drag { border-style: dashed; }
+  .dz-row { display: flex; align-items: center; gap: 16px; text-align: left; }
+  .file-dropzone .dz-ico {
+    width: 46px; height: 46px; flex: none; border-radius: 12px; display: grid; place-items: center;
+    background: rgba(79,131,241,.1); border: 1px solid rgba(79,131,241,.3); color: var(--gold-light);
+    transition: background .25s;
+  }
+  .file-dropzone:hover .dz-ico, .file-dropzone.drag .dz-ico { background: rgba(79,131,241,.18); }
+  .file-dropzone .dz-ico svg { width: 22px; height: 22px; }
+  .dz-copy { flex: 1; min-width: 0; }
+  .file-dropzone .dz-main { font-size: .94rem; font-weight: 600; }
+  .file-dropzone .dz-sub { font-size: .74rem; color: var(--dim); margin-top: 2px; }
+  .dz-btn {
+    flex: none; padding: 9px 18px; border-radius: 100px; font-size: .8rem; font-weight: 600;
+    color: var(--text); background: rgba(255,255,255,.04); border: 1px solid var(--hair-2);
+    transition: background .25s, color .25s, border-color .25s;
+  }
+  .file-dropzone:hover .dz-btn, .file-dropzone.drag .dz-btn { background: var(--grad); color: var(--ink); border-color: transparent; }
   .file-dropzone input[type=file] { display: none; }
-  .file-name { font-size: .92rem; font-weight: 600; color: var(--gold-light); margin-top: 12px; display: none; align-items: center; gap: 8px; }
+  .file-name {
+    font-size: .8rem; font-weight: 500; color: var(--gold-light); margin-top: 14px; padding-top: 12px;
+    border-top: 1px solid var(--hair); display: none; align-items: center; gap: 8px;
+  }
   .file-name.show { display: flex; }
-  .file-name::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--success); flex: none; }
+  .file-name::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--success); flex: none; }
+  @media (max-width: 560px) {
+    .dz-row { flex-direction: column; text-align: center; gap: 12px; }
+    .dz-btn { display: none; }
+  }
 
   button[type=submit] {
-    width: 100%; padding: 16px; background: var(--grad); color: var(--ink); border: none;
-    border-radius: 13px; font-family: inherit; font-size: 1.02rem; font-weight: 700; cursor: pointer;
-    transition: transform .2s; margin-top: 14px;
+    width: 100%; padding: 17px; background: var(--grad); color: var(--ink); border: none;
+    border-radius: 100px; font-family: inherit; font-size: 1rem; font-weight: 700; cursor: pointer;
+    transition: transform .3s var(--spring); margin-top: 16px;
     display: flex; align-items: center; justify-content: center; gap: 10px;
     position: relative; overflow: hidden;
   }
   button[type=submit]::after {
     content: ""; position: absolute; inset: 0; pointer-events: none;
     background: linear-gradient(115deg, transparent 30%, rgba(255,255,255,.5) 48%, transparent 66%);
-    transform: translateX(-120%); transition: transform .55s ease;
+    transform: translateX(-130%); transition: transform .6s var(--ease);
   }
-  button[type=submit]:hover:not(:disabled)::after { transform: translateX(120%); }
+  button[type=submit]:hover:not(:disabled)::after { transform: translateX(130%); }
   button[type=submit]:hover:not(:disabled) { transform: translateY(-2px); }
   button[type=submit]:disabled { opacity: .55; cursor: not-allowed; }
-  button[type=submit] .spin { width: 17px; height: 17px; border: 2px solid rgba(23,18,4,.3); border-top-color: var(--ink); border-radius: 50%; animation: spin .7s linear infinite; display: none; }
+  button[type=submit] .spin { width: 17px; height: 17px; border: 2px solid rgba(255,255,255,.35); border-top-color: var(--ink); border-radius: 50%; animation: spin .7s linear infinite; display: none; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  #status { margin-top: 22px; text-align: center; font-weight: 600; font-size: .94rem; min-height: 22px; transition: color .2s; }
+  #status { margin-top: 22px; text-align: center; font-weight: 600; font-size: .93rem; min-height: 22px; transition: color .2s; }
   #status.err { color: var(--danger); }
   #status.ok { color: var(--success); }
   #status.warn { color: var(--amber); }
   #job-warnings {
-    margin-top: 10px; padding: 12px 14px; border-radius: 10px;
-    background: rgba(245, 166, 35, 0.1); border: 1px solid rgba(245, 166, 35, 0.35);
-    color: var(--amber); font-size: .85rem; line-height: 1.5; text-align: left; display: none;
+    margin-top: 10px; padding: 12px 14px; border-radius: 12px;
+    background: rgba(245,166,35,.08); border: 1px solid rgba(245,166,35,.3);
+    color: var(--amber); font-size: .84rem; line-height: 1.5; text-align: left; display: none;
   }
   #job-warnings.show { display: block; }
   #job-warnings ul { margin: 6px 0 0 18px; }
 
-  .progress-track { margin-top: 14px; height: 8px; border-radius: 100px; background: rgba(255,255,255,.08); overflow: hidden; }
-  .progress-fill { height: 100%; width: 0%; border-radius: 100px; background: var(--grad); transition: width .4s ease; }
+  .progress-track { margin-top: 14px; height: 6px; border-radius: 100px; background: rgba(255,255,255,.07); overflow: hidden; }
+  .progress-fill { height: 100%; width: 0%; border-radius: 100px; background: var(--grad); transition: width .4s var(--ease); }
   .progress-fill.done { background: var(--success); }
-  .progress-text { margin-top: 8px; text-align: center; font-size: .8rem; color: var(--dim); font-family: 'Poppins', sans-serif; font-weight: 500; }
-  #downloads { display: flex; flex-wrap: wrap; justify-content: center; gap: 11px; margin-top: 18px; }
+  .progress-text { margin-top: 9px; text-align: center; font-family: var(--mono); font-size: .68rem; letter-spacing: .05em; color: var(--dim); }
+  #downloads { display: flex; flex-direction: column; margin-top: 8px; }
+  .dl-group { margin-top: 16px; }
+  .dl-group-title { font-family: var(--mono); font-size: .66rem; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: .2em; margin-bottom: 9px; text-align: center; }
+  .dl-group-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
   .download-btn {
     display: inline-flex; align-items: center; gap: 8px;
-    background: var(--glass); border: 1px solid var(--border); color: var(--text);
-    padding: 11px 17px; border-radius: 11px; font-size: .86rem; font-weight: 600;
-    transition: transform .18s, border-color .2s, background .2s; animation: fadeUp .4s ease backwards;
+    background: rgba(255,255,255,.03); border: 1px solid var(--hair); color: var(--text);
+    padding: 11px 18px; border-radius: 100px; font-size: .84rem; font-weight: 600;
+    transition: transform .25s var(--spring), border-color .2s, background .2s; animation: fadeUp .4s var(--ease) backwards;
   }
-  .download-btn:hover { transform: translateY(-2px); border-color: var(--violet); background: rgba(242,200,17,.1); color: #fff; }
-  .download-btn svg { width: 15px; height: 15px; color: var(--violet); }
+  .download-btn:hover { transform: translateY(-2px); border-color: rgba(79,131,241,.5); background: rgba(79,131,241,.08); color: #fff; }
+  .download-btn svg { width: 15px; height: 15px; color: var(--gold); }
 
-  .app-foot { text-align: center; color: var(--dim); font-size: .8rem; border-top: 1px solid var(--border); padding: 18px 40px; display: flex; align-items: center; justify-content: center; gap: 8px; }
-  .app-foot svg { width: 15px; height: 15px; color: var(--success); }
+  .app-foot { text-align: center; color: var(--dim); font-family: var(--mono); font-size: .68rem; letter-spacing: .06em; border-top: 1px solid var(--hair); padding: 17px 42px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .app-foot svg { width: 14px; height: 14px; color: var(--success); flex: none; }
 
-  /* ===================== FOOTER ===================== */
-  footer.site { border-top: 1px solid var(--border); padding: 50px 0 40px; margin-top: 20px; }
+  /* ============================================================
+     FOOTER
+     ============================================================ */
+  footer.site { border-top: 1px solid var(--hair); padding: 44px 0 40px; }
   .foot-grid { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 24px; }
-  .foot-grid .brand { font-size: 1.05rem; }
-  .foot-links { display: flex; gap: 22px; flex-wrap: wrap; }
-  .foot-links a { color: var(--muted); font-size: .88rem; transition: color .2s; }
+  .foot-links { display: flex; gap: 24px; flex-wrap: wrap; }
+  .foot-links a { color: var(--muted); font-size: .85rem; transition: color .2s; }
   .foot-links a:hover { color: var(--text); }
-  .foot-copy { color: var(--dim); font-size: .82rem; margin-top: 28px; text-align: center; }
+  .foot-copy { color: var(--dim); font-family: var(--mono); font-size: .66rem; letter-spacing: .08em; margin-top: 26px; text-align: center; }
 
-  /* ===================== SCROLL REVEAL ===================== */
-  .reveal { opacity: 0; transform: translateY(26px); transition: opacity .7s cubic-bezier(.2,.7,.2,1), transform .7s cubic-bezier(.2,.7,.2,1); }
+  /* ============================================================
+     REVEAL + MOTION SAFETY + RESPONSIVE
+     ============================================================ */
+  .reveal { opacity: 0; transform: translateY(30px); transition: opacity .9s var(--ease), transform .9s var(--ease); }
   .reveal.in { opacity: 1; transform: none; }
-  .reveal.d1 { transition-delay: .08s; } .reveal.d2 { transition-delay: .16s; } .reveal.d3 { transition-delay: .24s; } .reveal.d4 { transition-delay: .32s; }
+  .reveal.d1 { transition-delay: .09s; } .reveal.d2 { transition-delay: .18s; }
+  .reveal.d3 { transition-delay: .27s; } .reveal.d4 { transition-delay: .36s; }
 
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation: none !important; transition: none !important; }
     .reveal { opacity: 1; transform: none; }
+    .glow-cursor { display: none; }
+    .story-step { opacity: 1; }
+    .model-svg .rel { stroke-dashoffset: 0 !important; }
+    .model-svg .jn { opacity: 1 !important; }
   }
 
-  /* ===================== RESPONSIVE ===================== */
-  @media (max-width: 900px) {
-    .feat-grid { grid-template-columns: 1fr; }
-    .steps { grid-template-columns: 1fr 1fr; }
-    .step .arrow { display: none; }
-    .stat-grid { grid-template-columns: 1fr 1fr; }
+  @media (max-width: 980px) {
+    .story-grid { grid-template-columns: 1fr; gap: 30px; }
+    .stage-wrap { position: relative; top: 0; }
+    .stage { height: 480px; }
+    .story-step { min-height: 0; padding: 56px 0; }
+    .dax-grid { grid-template-columns: 1fr; }
+    .deck { flex-wrap: nowrap; justify-content: flex-start; overflow-x: auto; padding: 30px 6px 24px; gap: 18px; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; }
+    .deck .sheet { margin: 0; scroll-snap-align: center; transform: none; }
+    .deck .sheet:hover { transform: translateY(-8px); }
+    .pnode { grid-template-columns: 40px 1fr; min-height: 96px; }
+    .pipe::before, .pipe-pulse { left: 20px; }
+    .pdot { grid-column: 1; }
+    .pnode:nth-child(odd) .ptxt, .pnode:nth-child(even) .ptxt { grid-column: 2; text-align: left; padding: 0 0 0 10px; }
     .menu-toggle { display: grid; }
     .nav-links {
-      display: none; position: absolute; top: 70px; left: 0; right: 0;
+      display: none; position: absolute; top: 64px; left: 0; right: 0;
       flex-direction: column; align-items: stretch; gap: 2px;
-      padding: 10px 24px 18px; background: #0a0a0a;
-      border-bottom: 1px solid var(--border);
+      padding: 10px 24px 18px; background: #0a0e15;
+      border-bottom: 1px solid var(--hair);
       box-shadow: 0 24px 40px -18px rgba(0,0,0,.8);
-      animation: fadeUp .25s ease;
+      animation: fadeUp .25s var(--ease);
     }
     .nav-links.open { display: flex; }
     .nav-links a { padding: 12px 14px; }
     .nav-cta { margin: 8px 0 0; text-align: center; }
   }
-  @media (max-width: 560px) {
-    .stat-grid, .steps { grid-template-columns: 1fr; }
-    .app-body, .app-head { padding-left: 22px; padding-right: 22px; }
-    .hero { padding-top: 50px; }
+  @media (max-width: 640px) {
+    .proof-item { padding: 14px 22px; }
+    .proof-item + .proof-item::before { display: none; }
+    .compare { height: 560px; }
+    .app-body, .console-head { padding-left: 22px; padding-right: 22px; }
+    .app-foot { padding-left: 22px; padding-right: 22px; }
+    .sheet { width: 240px; height: 330px; }
   }
 </style>
 </head>
 <body>
 
 <div class="scroll-progress" id="scroll-progress"></div>
-<div class="bg"></div>
-<div class="grid-overlay"></div>
-<canvas id="stars"></canvas>
+<div class="glow-cursor" id="glow-cursor"></div>
 <div class="noise"></div>
 
 <!-- ============ NAV ============ -->
@@ -450,13 +820,14 @@
   <div class="wrap nav-inner">
     <div class="brand">
       <span class="logo">
-        <svg viewBox="0 0 24 24" fill="none" stroke="#171204" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="6"/><rect x="12" y="7" width="3" height="10"/><rect x="17" y="13" width="3" height="4"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="6"/><rect x="12" y="7" width="3" height="10"/><rect x="17" y="13" width="3" height="4"/></svg>
       </span>
       <span class="name">PBI<b>Compass</b></span>
     </div>
     <div class="nav-links" id="nav-links">
-      <a href="#features">Features</a>
-      <a href="#how">How it works</a>
+      <a href="#story">How it works</a>
+      <a href="#dax">DAX</a>
+      <a href="#documents">Documents</a>
       <a href="#security">Security</a>
       <a href="#generate" class="nav-cta">Generate docs</a>
     </div>
@@ -467,148 +838,294 @@
 </nav>
 
 <!-- ============ HERO ============ -->
-<section class="hero">
-  <div class="wrap hero-grid">
-    <div class="hero-copy">
-      <span class="pill reveal"><span class="dot"></span>Zero-retention&nbsp;·&nbsp;<b>One parse, four documents</b>&nbsp;·&nbsp;AI-powered</span>
-      <h1 class="hero-title reveal d1">One report,<br><span class="shine">four AI-written docs</span><br>in seconds.</h1>
-      <p class="lead reveal d2">Drop a <b>.pbix</b> or <b>.pbip</b> and PBICompass parses the semantic model once, then writes a <b>Technical Documentation</b>, an <b>Audit &amp; Health Report</b>, an <b>Executive Summary</b>, and a <b>Business User Guide</b> — without your row-level data ever leaving the sandbox.</p>
-      <div class="hero-cta reveal d3">
-        <a href="#generate" class="btn btn-primary">Generate documentation
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
-        </a>
-        <a href="#features" class="btn btn-ghost">Explore capabilities</a>
-      </div>
-      <div class="hero-meta reveal d4">
-        <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>No data retained</div>
-        <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>4 documents, 1 parse</div>
-        <div><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>Claude Opus 4.8</div>
-      </div>
-    </div>
+<section class="hero" id="hero">
+  <canvas id="hero-net"></canvas>
+  <div class="hero-vignette"></div>
 
+  <div class="wrap hero-inner">
+    <span class="hero-pill reveal"><span class="dot"></span><b>Zero retention</b>&nbsp;· one parse, four documents</span>
+    <h1 class="hero-title reveal d1">
+      Power BI finally has
+      <span class="h-serif">documentation</span>
+      worth reading.
+    </h1>
+    <p class="hero-lead reveal d2">Drop a <b>.pbix</b>. Four enterprise-grade documents come back — technical, audit, executive, and business guide. Your data never leaves the sandbox.</p>
+    <div class="hero-cta reveal d3">
+      <a href="#generate" class="btn btn-primary magnetic"><span class="btn-label">Generate documentation
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>
+      </a>
+      <a href="#story" class="btn btn-ghost magnetic"><span class="btn-label">Watch it work</span></a>
+    </div>
+    <p class="hero-fine reveal d4">No signup<i>◆</i>Metadata only<i>◆</i>Claude Opus · Gemini · Cohere · Offline</p>
   </div>
 
-  <!-- marquee -->
-  <div class="wrap"><div class="marquee-wrap reveal">
-    <div class="marquee" id="marquee">
-      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>.pbix &amp; .pbip parsing</span>
-      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 17l6-6-6-6M12 19h8"/></svg>DAX translation</span>
-      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>Data model narrative</span>
-      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>RLS &amp; security</span>
-      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>Markdown · HTML · DOCX · PDF · JSON</span>
-      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4M12 3l8 4v5c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V7z"/></svg>Audit &amp; Health scoring</span>
-      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 8v8M12 8v8M8 8v8M3 3h18v18H3z"/></svg>Executive Summary</span>
-      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>Business User Guide</span>
-      <!-- duplicate for seamless loop -->
-      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>.pbix &amp; .pbip parsing</span>
-      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 17l6-6-6-6M12 19h8"/></svg>DAX translation</span>
-      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>Data model narrative</span>
-      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>RLS &amp; security</span>
-      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>Markdown · HTML · DOCX · PDF · JSON</span>
-      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4M12 3l8 4v5c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V7z"/></svg>Audit &amp; Health scoring</span>
-      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 8v8M12 8v8M8 8v8M3 3h18v18H3z"/></svg>Executive Summary</span>
-      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>Business User Guide</span>
-    </div>
-  </div></div>
+  <div class="hero-scroll" aria-hidden="true"><span></span>scroll</div>
 </section>
 
-<!-- ============ STATS ============ -->
-<section class="stats">
-  <div class="wrap stat-grid">
-    <div class="stat reveal"><div class="num" data-count="4" data-suffix="">0</div><div class="lbl">Document types</div></div>
-    <div class="stat reveal d1"><div class="num" data-count="5" data-suffix="">0</div><div class="lbl">Export formats</div></div>
-    <div class="stat reveal d2"><div class="num" data-count="0" data-suffix="%">0</div><div class="lbl">Row data retained</div></div>
-    <div class="stat reveal d3"><div class="num" data-count="1" data-suffix="">0</div><div class="lbl">Parse per report</div></div>
+<!-- ============ TICKER ============ -->
+<div class="ticker-wrap" aria-hidden="true">
+  <div class="ticker">
+    <span>.pbix &amp; .pbip parsing</span><span>DAX → plain English</span><span>Audit &amp; health scoring</span><span>RLS &amp; security</span><span>Executive summary</span><span>Business user guide</span><span>md · html · docx · pdf · json</span><span>Zero retention</span>
+    <span>.pbix &amp; .pbip parsing</span><span>DAX → plain English</span><span>Audit &amp; health scoring</span><span>RLS &amp; security</span><span>Executive summary</span><span>Business user guide</span><span>md · html · docx · pdf · json</span><span>Zero retention</span>
+  </div>
+</div>
+
+<!-- ============ PROOF ============ -->
+<section class="proof">
+  <div class="wrap proof-row">
+    <div class="proof-item reveal"><div class="num" data-count="4">0</div><div class="lbl">Documents</div></div>
+    <div class="proof-item reveal d1"><div class="num" data-count="5">0</div><div class="lbl">Export formats</div></div>
+    <div class="proof-item reveal d2"><div class="num" data-count="0" data-suffix="%">0</div><div class="lbl">Row data retained</div></div>
+    <div class="proof-item reveal d3"><div class="num" data-count="1">0</div><div class="lbl">Parse per report</div></div>
   </div>
 </section>
 
-<!-- ============ FEATURES ============ -->
-<section class="features" id="features">
+<!-- ============ PROBLEM ============ -->
+<section class="problem">
   <div class="wrap">
     <div class="sec-head reveal">
-      <div class="eyebrow">Capabilities</div>
-      <h2 class="sec-title">Everything a BI team needs,<br>documented automatically</h2>
-      <p>From one parsed semantic model, PBICompass writes four audience-specific documents — developer reference, governance audit, executive brief, and business user guide — so your reports never go undocumented again.</p>
+      <div class="eyebrow">The problem</div>
+      <h2 class="sec-title">Every report becomes<br>a <em>mystery.</em> Eventually.</h2>
+      <p class="sec-sub">The author leaves. The measures multiply. Nobody remembers why. Drag the line.</p>
     </div>
 
-    <div class="feat-grid">
-      <div class="card reveal" id="security">
-        <div class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></div>
-        <h3>Zero-retention by design</h3>
-        <p>Every upload is processed inside a per-job sandbox that is shredded the moment rendering finishes. Only metadata is read — never the VertiPaq row data — and nothing is logged or persisted.</p>
-        <span class="tag">finally → shred()</span>
+    <div class="compare reveal d1" id="compare">
+      <div class="cmp-side cmp-before" aria-hidden="true">
+        <span class="cmp-tag">Undocumented</span>
+        <span class="chip bad" style="top:16%; left:8%;  --rot:-4deg; --dur:6s;">Measure 47 (2)</span>
+        <span class="chip"     style="top:30%; left:26%; --rot:3deg;  --dur:8s; --del:.6s;">Table_final_v3_FINAL</span>
+        <span class="chip bad" style="top:12%; left:52%; --rot:-2deg; --dur:7s; --del:.3s;">owner: ???</span>
+        <span class="chip"     style="top:44%; left:6%;  --rot:2deg;  --dur:9s; --del:1s;">CALCULATE(SUM(F[Amt]),ALL(...))</span>
+        <span class="chip bad" style="top:56%; left:44%; --rot:-3deg; --dur:6.5s;">no description</span>
+        <span class="chip"     style="top:68%; left:12%; --rot:4deg;  --dur:7.5s; --del:.8s;">Copy of Copy of Sales</span>
+        <span class="chip bad" style="top:78%; left:40%; --rot:-2deg; --dur:8.5s; --del:.2s;">RLS: unknown</span>
+        <span class="chip"     style="top:38%; left:58%; --rot:2deg;  --dur:7s; --del:1.4s;">refresh: when it breaks</span>
+        <span class="chip"     style="top:84%; left:65%; --rot:-4deg; --dur:6s; --del:.5s;">bi-directional. both. why?</span>
+        <span class="chip q"   style="top:22%; left:78%; --rot:10deg;  --dur:5s;">?</span>
+        <span class="chip q"   style="top:62%; left:84%; --rot:-12deg; --dur:6s; --del:.7s;">?</span>
+        <span class="chip q"   style="top:6%;  left:30%; --rot:8deg;   --dur:7s; --del:1.2s;">?</span>
       </div>
 
-      <div class="card reveal d1">
-        <div class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a4 4 0 014 4 4 4 0 01-1 2.6A5 5 0 0117 13a5 5 0 01-5 5 5 5 0 01-5-5 5 5 0 012-3.4A4 4 0 018 6a4 4 0 014-4z"/><path d="M12 18v3M9 21h6"/></svg></div>
-        <h3>One parse, four documents</h3>
-        <p>From the same parsed model, PBICompass writes a Technical Doc for developers, an Audit &amp; Health Report for governance, an Executive Summary for leadership, and a Business User Guide for everyone else — pick one or generate all four.</p>
-        <span class="tag">1 parse → 4 docs</span>
+      <div class="cmp-side cmp-after">
+        <span class="cmp-tag">PBICompass</span>
+        <div class="minidoc" aria-hidden="true">
+          <div class="minidoc-bar"><i></i><b>technical-documentation.html</b></div>
+          <div class="minidoc-body">
+            <h5>Sales Performance — Semantic Model</h5>
+            <div class="sub">14 tables · 128 measures · 23 relationships · RLS validated</div>
+            <div class="mrow"><span class="k">[Total Revenue YTD]</span><span class="v">Year-to-date revenue on the fiscal calendar</span><span class="ok">documented</span></div>
+            <div class="mrow"><span class="k">FactSales ↔ Date</span><span class="v">Single direction · 1:* on DateKey</span><span class="ok">mapped</span></div>
+            <div class="mrow"><span class="k">RegionSecurity</span><span class="v">RLS role · [Region] = USERPRINCIPALNAME()</span><span class="ok">audited</span></div>
+            <div class="mrow"><span class="k">Owner</span><span class="v">Finance BI · refresh daily 08:00 EST</span><span class="ok">known</span></div>
+          </div>
+        </div>
       </div>
 
-      <div class="card reveal d2 amber">
-        <div class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg></div>
-        <h3>Five export formats</h3>
-        <p>One run, every format you need: styled <b>HTML</b>, hand-written <b>DOCX</b>, clean <b>Markdown</b>, structured <b>JSON</b>, and <b>PDF</b> — no Word, no LaTeX, no external tooling required.</p>
-        <span class="tag">md · html · docx · pdf · json</span>
+      <div class="cmp-line"><span class="cmp-handle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5"/></svg></span></div>
+      <input type="range" class="cmp-range" id="cmp-range" min="6" max="94" value="12" step="0.5" aria-label="Reveal the documented version">
+    </div>
+    <p class="cmp-hint">◆ drag to document ◆</p>
+  </div>
+</section>
+
+<!-- ============ STORY ============ -->
+<section class="story" id="story">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="eyebrow">How it works</div>
+      <h2 class="sec-title">Watch it <em>work.</em></h2>
+    </div>
+
+    <div class="story-grid">
+      <div class="stage-wrap reveal">
+        <div class="stage" id="stage" data-state="0">
+          <div class="stage-head"><i></i><i></i><i></i><b>pbicompass · sandbox #a4f2</b></div>
+
+          <div class="scene scene-upload">
+            <div class="up-ring">
+              <div class="up-file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>sales-performance.pbix</div>
+            </div>
+            <div class="up-cap">48.2 MB received · <b>ephemeral sandbox created</b></div>
+          </div>
+
+          <div class="scene scene-parse">
+            <svg class="model-svg" viewBox="0 0 320 220" aria-hidden="true">
+              <path class="rel" pathLength="1" d="M160 105 L60 40"/>
+              <path class="rel" pathLength="1" d="M160 105 L260 40"/>
+              <path class="rel" pathLength="1" d="M160 105 L60 180"/>
+              <path class="rel" pathLength="1" d="M160 105 L260 180"/>
+              <rect class="tbl fact" x="122" y="90" width="76" height="30" rx="7"/><text x="160" y="109" text-anchor="middle">FactSales</text>
+              <rect class="tbl" x="22"  y="26" width="76" height="28" rx="7"/><text x="60"  y="44"  text-anchor="middle">Date</text>
+              <rect class="tbl" x="222" y="26" width="76" height="28" rx="7"/><text x="260" y="44"  text-anchor="middle">Product</text>
+              <rect class="tbl" x="22"  y="166" width="76" height="28" rx="7"/><text x="60"  y="184" text-anchor="middle">Customer</text>
+              <rect class="tbl" x="222" y="166" width="76" height="28" rx="7"/><text x="260" y="184" text-anchor="middle">Region</text>
+              <circle class="jn" cx="160" cy="105" r="3"/>
+              <circle class="jn" cx="60" cy="40" r="2.4"/><circle class="jn" cx="260" cy="40" r="2.4"/>
+              <circle class="jn" cx="60" cy="180" r="2.4"/><circle class="jn" cx="260" cy="180" r="2.4"/>
+            </svg>
+            <div class="parse-counts">
+              <div><b data-tick="14">0</b>tables</div>
+              <div><b data-tick="128">0</b>measures</div>
+              <div><b data-tick="23">0</b>relationships</div>
+              <div><b data-tick="6">0</b>pages</div>
+            </div>
+          </div>
+
+          <div class="scene scene-think">
+            <div class="think-panel">
+              <div class="think-bar">reasoning</div>
+              <div class="think-lines" id="think-lines"></div>
+            </div>
+          </div>
+
+          <div class="stage-status">
+            <span class="st-0">upload · TLS · zip-slip guard active</span>
+            <span class="st-1">parse · metadata only · rows never read</span>
+            <span class="st-2">generate · claude opus · four documents</span>
+          </div>
+        </div>
       </div>
 
-      <div class="card reveal cyan">
-        <div class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l6-6-6-6M12 19h8"/></svg></div>
-        <h3>Plain-English DAX</h3>
-        <p>Multi-line measures are preserved and translated, with format strings, home tables and display folders intact — so anyone can read what a calculation actually does.</p>
-        <span class="tag">DIVIDE · CALCULATE · …</span>
-      </div>
-
-      <div class="card reveal d1">
-        <div class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg></div>
-        <h3>Full model coverage</h3>
-        <p>Tables, columns, relationships, RLS roles, M / Power Query, data sources and report layout — the parser maps the common ~95% of real exports and never aborts on the odd construct.</p>
-        <span class="tag">TMDL · TMSL · PBIR</span>
-      </div>
-
-      <div class="card reveal d2">
-        <div class="feat-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></div>
-        <h3>Audit &amp; Health Report</h3>
-        <p>A dedicated document with a 0–100 health score, best-practice checks, performance-risk heuristics, and prioritized recommendations — fully deterministic, so it works offline with no API key and never guesses.</p>
-        <span class="tag">health score · best practices · risks</span>
+      <div class="story-steps" id="story-steps">
+        <div class="story-step" data-step="0">
+          <div class="sn">01 — UPLOAD</div>
+          <h3>One file.<br>One sealed room.</h3>
+          <p>A <b>.pbix</b> or <b>.pbip</b> enters an ephemeral sandbox built for exactly one job: yours. Nothing shared, nothing global, nothing left behind.</p>
+        </div>
+        <div class="story-step" data-step="1">
+          <div class="sn">02 — PARSE</div>
+          <h3>The model,<br>read once.</h3>
+          <p>Tables, measures, relationships, RLS roles, M queries, report layout — extracted into one canonical model. <b>Metadata only.</b> The parser never touches a row of your data.</p>
+        </div>
+        <div class="story-step" data-step="2">
+          <div class="sn">03 — UNDERSTAND</div>
+          <h3>It doesn't template.<br>It <em class="serif-gold">reasons.</em></h3>
+          <p>The AI reads your model the way a senior BI developer would — what each measure means, why each relationship exists, where the risks hide — then writes it down for four different audiences.</p>
+        </div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ============ HOW IT WORKS ============ -->
-<section class="how" id="how">
+<!-- ============ DAX ============ -->
+<section class="dax" id="dax">
   <div class="wrap">
     <div class="sec-head reveal">
-      <div class="eyebrow">Pipeline</div>
-      <h2 class="sec-title">From upload to handover<br>in four steps</h2>
-      <p>parse → agents → render → download. The whole journey runs in an ephemeral sandbox.</p>
+      <div class="eyebrow">DAX, translated</div>
+      <h2 class="sec-title">Hover the <em>formula.</em></h2>
+      <p class="sec-sub">Every measure in your model gets this treatment — automatically.</p>
     </div>
-    <div class="steps">
-      <div class="step reveal">
-        <div class="n">1</div>
-        <h4>Upload</h4>
-        <p>Drop a <b>.pbix</b> or a zipped <b>.pbip</b> project. A zip-slip guard isolates every file inside its own per-job directory.</p>
-        <svg class="arrow" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+
+    <div class="dax-grid">
+      <div class="code-panel reveal">
+        <div class="code-bar"><b>Measures / Revenue.dax</b><i>live</i></div>
+        <div class="code-body">
+          <span class="cm">-- home table: FactSales · folder: Revenue</span><br>
+          Total Revenue YTD =<br>
+          &nbsp;&nbsp;<button class="tok" data-x="calc">CALCULATE</button> (<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;<button class="tok" data-x="base">[Total Revenue]</button>,<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;<button class="tok" data-x="ytd">DATESYTD</button> ( <button class="tok" data-x="date">'Date'[Date]</button> )<br>
+          &nbsp;&nbsp;)
+        </div>
+        <div class="code-eng">“<b>Revenue so far this year</b> — respecting every filter on the page.”</div>
       </div>
-      <div class="step reveal d1">
-        <div class="n">2</div>
-        <h4>Parse</h4>
-        <p>The stdlib-only parser extracts the semantic model and report layout into a canonical <b>model.json</b> — metadata only.</p>
-        <svg class="arrow" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+
+      <div class="explain-panel reveal d1" id="dax-explain" aria-live="polite">
+        <div class="explain-kind" id="dax-kind">Measure · Explained by AI</div>
+        <h4 id="dax-title">Total Revenue YTD</h4>
+        <p id="dax-body">Year-to-date revenue: the base revenue measure re-evaluated across a window that grows through the year and resets every January 1st. Hover any highlighted token to see exactly what it contributes.</p>
+        <div class="explain-foot">written for: developers · auditors · executives · business users</div>
       </div>
-      <div class="step reveal d2">
-        <div class="n">3</div>
-        <h4>Generate</h4>
-        <p>AI agents (or the offline engine) assemble whichever document types you chose — Technical, Audit, Executive, User Guide — from that one parsed model.</p>
-        <svg class="arrow" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
-      </div>
-      <div class="step reveal d3">
-        <div class="n">4</div>
-        <h4>Download</h4>
-        <p>Grab your docs in any format. The sandbox is shredded; only the rendered files survive, for a short TTL.</p>
-      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ DOCUMENTS ============ -->
+<section class="documents" id="documents">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="eyebrow">The output</div>
+      <h2 class="sec-title">Four audiences.<br>Four <em>documents.</em></h2>
+      <p class="sec-sub">One parse writes all of them. Pick one, or take the full set.</p>
+    </div>
+
+    <div class="deck">
+      <article class="sheet reveal"    style="--tilt:-7deg; --dy:18px;">
+        <div class="s-kind">01 · Technical Documentation</div>
+        <h4>Sales Performance<br>Developer Reference</h4>
+        <div class="s-toc">
+          <div><i>1.</i>Model overview</div>
+          <div><i>2.</i>Tables &amp; columns</div>
+          <div><i>3.</i>Relationships</div>
+          <div><i>4.</i>Measures &amp; DAX</div>
+          <div><i>5.</i>RLS &amp; security</div>
+          <div><i>6.</i>Power Query / M</div>
+        </div>
+        <div class="s-foot"><span>128 measures</span><span>~40 pages</span></div>
+      </article>
+
+      <article class="sheet reveal d1" style="--tilt:-2deg; --dy:0px;">
+        <div class="s-kind">02 · Audit &amp; Health</div>
+        <h4>Model Health<br>Report</h4>
+        <div class="ring-wrap">
+          <svg class="ring" width="88" height="88" viewBox="0 0 88 88" aria-hidden="true">
+            <defs><linearGradient id="ringGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#86b0ff"/><stop offset="1" stop-color="#2f5cc4"/></linearGradient></defs>
+            <circle class="track" cx="44" cy="44" r="36"/>
+            <circle class="val" id="ring-val" cx="44" cy="44" r="36"/>
+          </svg>
+          <div class="ring-num"><span id="ring-num">0</span><small>health / 100</small></div>
+        </div>
+        <span class="s-chip ok">12 checks passed</span>
+        <span class="s-chip wr">△ 3 recommendations</span>
+        <span class="s-chip">star schema</span>
+        <div class="s-foot"><span>deterministic</span><span>works offline</span></div>
+      </article>
+
+      <article class="sheet reveal d2" style="--tilt:2deg; --dy:0px;">
+        <div class="s-kind">03 · Executive Summary</div>
+        <h4>For Leadership</h4>
+        <p class="s-quote">“One source of truth for <b>regional revenue</b> — refreshed daily, governed, and owned.”</p>
+        <div class="s-line g" style="width:82%"></div>
+        <div class="s-line" style="width:64%"></div>
+        <div class="s-line" style="width:71%"></div>
+        <div class="s-foot"><span>10-minute read</span><span>zero jargon</span></div>
+      </article>
+
+      <article class="sheet reveal d3" style="--tilt:7deg; --dy:18px;">
+        <div class="s-kind">04 · Business User Guide</div>
+        <h4>For Everyone Else</h4>
+        <div class="s-qa"><div class="q">Where do I filter by region?</div><div class="a">Page 2 · slicer, top left</div></div>
+        <div class="s-qa"><div class="q">Why is April missing?</div><div class="a">Fiscal calendar starts in May</div></div>
+        <div class="s-qa"><div class="q">Who owns this report?</div><div class="a">Finance BI · listed inside</div></div>
+        <div class="s-foot"><span>plain English</span><span>per-page tour</span></div>
+      </article>
+    </div>
+
+    <p class="deck-formats reveal">Markdown<i>◆</i>HTML<i>◆</i>DOCX<i>◆</i>PDF<i>◆</i>JSON</p>
+  </div>
+</section>
+
+<!-- ============ SECURITY ============ -->
+<section class="security" id="security">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <div class="eyebrow">Trust, engineered</div>
+      <h2 class="sec-title">Built like it handles<br>something <em>precious.</em></h2>
+      <p class="sec-sub">Because it does. Follow the pulse — that's your file's entire life.</p>
+    </div>
+
+    <ol class="pipe reveal">
+      <div class="pipe-pulse" aria-hidden="true"></div>
+      <li class="pnode" style="--i:0"><div class="ptxt"><h4>Upload</h4><p>.pbix received over TLS</p></div><span class="pdot"></span></li>
+      <li class="pnode" style="--i:1"><span class="pdot"></span><div class="ptxt"><h4>Sandbox</h4><p>per-job isolated workspace · zip-slip guard</p></div></li>
+      <li class="pnode" style="--i:2"><div class="ptxt"><h4>Extract</h4><p>metadata only — rows are never read</p></div><span class="pdot"></span></li>
+      <li class="pnode" style="--i:3"><span class="pdot"></span><div class="ptxt"><h4>Generate</h4><p>AI writes four documents from one model</p></div></li>
+      <li class="pnode" style="--i:4"><div class="ptxt"><h4>Deliver</h4><p>five formats · short-lived download TTL</p></div><span class="pdot"></span></li>
+      <li class="pnode final" style="--i:5"><span class="pdot"></span><div class="ptxt"><h4>Destroy</h4><p>sandbox shredded · keys discarded · nothing retained</p></div></li>
+    </ol>
+
+    <div class="sec-statement reveal">
+      <h3>Nothing stored.<br><span class="serif-gold">Nothing to breach.</span></h3>
     </div>
   </div>
 </section>
@@ -617,14 +1134,14 @@
 <section class="generator" id="generate">
   <div class="wrap">
     <div class="sec-head reveal">
-      <div class="eyebrow">Live generator</div>
-      <h2 class="sec-title">Document your report now</h2>
-      <p>Upload a file, choose which document(s) to generate, add optional governance metadata, and download enterprise-grade docs in seconds.</p>
+      <div class="eyebrow">Live console</div>
+      <h2 class="sec-title">Your <em>turn.</em></h2>
+      <p class="sec-sub">One upload. Four documents. Five formats. About a minute.</p>
     </div>
 
-    <div class="app-shell reveal d1" id="container">
-      <div class="app-head">
-        <span class="pill"><span class="dot"></span>Secure sandbox · shredded after render</span>
+    <div class="console reveal d1" id="container">
+      <div class="console-head">
+        <span class="chip-live">secure sandbox · shredded after render</span>
         <h3>Power BI Knowledge Platform</h3>
         <p>Metadata-only · choose one document or generate all four</p>
       </div>
@@ -642,9 +1159,14 @@
             <div class="form-group">
               <label>Power BI Report File</label>
               <div class="file-dropzone" onclick="document.getElementById('file').click()">
-                <div class="dz-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg></div>
-                <p class="dz-main">Click to upload or drag &amp; drop</p>
-                <p class="dz-sub">Accepts .pbix, or a .zip of a .pbip project folder</p>
+                <div class="dz-row">
+                  <div class="dz-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 16.6A4.5 4.5 0 0 0 17.5 8.5h-1.3A7 7 0 1 0 4 15"/><path d="M12 12v9M8 17l4-4 4 4"/></svg></div>
+                  <div class="dz-copy">
+                    <p class="dz-main">Drop your Power BI report here</p>
+                    <p class="dz-sub">.pbix — or a .zip of a .pbip project folder · drag &amp; drop or browse</p>
+                  </div>
+                  <span class="dz-btn">Browse files</span>
+                </div>
                 <input type="file" id="file" accept=".pbix,.zip,.pbip">
                 <div class="file-name" id="file-name"></div>
               </div>
@@ -778,23 +1300,25 @@
   <div class="wrap">
     <div class="foot-grid">
       <div class="brand">
-        <span class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="6"/><rect x="12" y="7" width="3" height="10"/><rect x="17" y="13" width="3" height="4"/></svg></span>
+        <span class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="6"/><rect x="12" y="7" width="3" height="10"/><rect x="17" y="13" width="3" height="4"/></svg></span>
         <span class="name">PBI<b>Compass</b></span>
       </div>
       <div class="foot-links">
-        <a href="#features">Features</a>
-        <a href="#how">How it works</a>
+        <a href="#story">How it works</a>
+        <a href="#documents">Documents</a>
         <a href="#security">Security</a>
         <a href="#generate">Generate</a>
       </div>
     </div>
-    <div class="foot-copy">Power BI Knowledge Platform · Technical, Audit, Executive &amp; User docs · Metadata only, zero-retention · © 2026 PBICompass</div>
+    <div class="foot-copy">Power BI Knowledge Platform · metadata only · zero retention · © 2026 PBICompass</div>
   </div>
 </footer>
 
 <script>
-/* ============ AMBIENT EFFECTS ============ */
-// nav shadow + top progress bar on scroll
+/* ============ AMBIENT / MOTION ============ */
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// nav state + top progress hairline
 const navEl = document.getElementById("nav");
 const progressEl = document.getElementById("scroll-progress");
 function onScroll() {
@@ -816,51 +1340,293 @@ function setMenu(open) {
 menuToggle.addEventListener("click", () => setMenu(!navLinks.classList.contains("open")));
 navLinks.querySelectorAll("a").forEach(a => a.addEventListener("click", () => setMenu(false)));
 
-// starfield canvas
+// cursor light (fine pointers only)
+const glow = document.getElementById("glow-cursor");
+if (matchMedia("(pointer: fine)").matches && !reduceMotion) {
+  let gx = 0, gy = 0, queued = false;
+  addEventListener("pointermove", e => {
+    gx = e.clientX; gy = e.clientY;
+    document.body.classList.add("has-pointer");
+    if (!queued) { queued = true; requestAnimationFrame(() => {
+      glow.style.transform = `translate(-50%,-50%) translate3d(${gx}px,${gy}px,0)`;
+      queued = false;
+    }); }
+  }, { passive: true });
+}
+
+/* ============ HERO — semantic constellation ============ */
 (function () {
-  const c = document.getElementById("stars"), x = c.getContext("2d");
-  let w, h, stars;
-  function resize() {
-    w = c.width = innerWidth; h = c.height = innerHeight;
-    stars = Array.from({ length: Math.min(120, (w * h) / 14000) }, () => ({
-      x: Math.random() * w, y: Math.random() * h, r: Math.random() * 1.3 + .3,
-      a: Math.random(), s: Math.random() * .02 + .004
+  const canvas = document.getElementById("hero-net");
+  const hero = document.getElementById("hero");
+  const ctx = canvas.getContext("2d");
+  let w, h, dpr, nodes = [], edges = [], pulses = [], running = false, raf = 0;
+  let px = 0, py = 0; // parallax target
+
+  function build() {
+    dpr = Math.min(devicePixelRatio || 1, 1.75);
+    w = hero.offsetWidth; h = hero.offsetHeight;
+    canvas.width = w * dpr; canvas.height = h * dpr;
+    canvas.style.width = w + "px"; canvas.style.height = h + "px";
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const N = Math.max(26, Math.min(46, Math.round((w * h) / 26000)));
+    nodes = Array.from({ length: N }, () => ({
+      x: Math.random() * w, y: Math.random() * h,
+      z: Math.random() * .7 + .3,                    // depth for parallax
+      r: Math.random() < .18 ? 2.6 : 1.4,            // a few "table" nodes
+      a: Math.random() * Math.PI * 2,
+      s: Math.random() * .0016 + .0005,              // drift speed
+      amp: Math.random() * 26 + 14
     }));
+    nodes.forEach(n => { n.hx = n.x; n.hy = n.y; });
+
+    // connect each node to its 2 nearest neighbours
+    edges = [];
+    const seen = new Set();
+    nodes.forEach((n, i) => {
+      const near = nodes.map((m, j) => ({ j, d: (n.hx-m.hx)**2 + (n.hy-m.hy)**2 }))
+        .filter(o => o.j !== i).sort((a,b) => a.d - b.d).slice(0, 2);
+      near.forEach(o => {
+        const key = Math.min(i,o.j) + "-" + Math.max(i,o.j);
+        if (!seen.has(key)) { seen.add(key); edges.push([i, o.j]); }
+      });
+    });
+    pulses = [];
   }
-  function tick() {
-    x.clearRect(0, 0, w, h);
-    for (const st of stars) {
-      st.a += st.s; const o = (Math.sin(st.a) + 1) / 2 * .6 + .1;
-      x.fillStyle = "rgba(255,224,102," + o + ")";
-      x.beginPath(); x.arc(st.x, st.y, st.r, 0, 7); x.fill();
+
+  let lastSpawn = 0;
+  function frame(t) {
+    ctx.clearRect(0, 0, w, h);
+    for (const n of nodes) {
+      n.a += n.s;
+      n.x = n.hx + Math.cos(n.a) * n.amp + px * 26 * n.z;
+      n.y = n.hy + Math.sin(n.a * .9) * n.amp * .7 + py * 18 * n.z;
     }
-    requestAnimationFrame(tick);
+    ctx.lineWidth = 1;
+    for (const [i, j] of edges) {
+      const a = nodes[i], b = nodes[j];
+      const d = Math.hypot(a.x-b.x, a.y-b.y);
+      const o = Math.max(0, .2 - d / 2200);
+      if (o <= 0) continue;
+      ctx.strokeStyle = `rgba(79,131,241,${o})`;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    }
+    for (const n of nodes) {
+      ctx.fillStyle = n.r > 2 ? "rgba(134,176,255,.8)" : "rgba(79,131,241,.5)";
+      ctx.beginPath(); ctx.arc(n.x, n.y, n.r * n.z + .4, 0, 7); ctx.fill();
+    }
+    // travelling pulses along random edges
+    if (t - lastSpawn > 900 && edges.length) {
+      lastSpawn = t;
+      pulses.push({ e: edges[(Math.random() * edges.length) | 0], t: 0 });
+    }
+    pulses = pulses.filter(p => p.t <= 1);
+    for (const p of pulses) {
+      p.t += .012;
+      const a = nodes[p.e[0]], b = nodes[p.e[1]];
+      const x = a.x + (b.x - a.x) * p.t, y = a.y + (b.y - a.y) * p.t;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, 7);
+      g.addColorStop(0, "rgba(134,176,255,.9)"); g.addColorStop(1, "rgba(134,176,255,0)");
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, 7, 0, 7); ctx.fill();
+    }
+    if (running) raf = requestAnimationFrame(frame);
   }
-  addEventListener("resize", resize); resize(); tick();
+
+  build();
+  if (reduceMotion) { frame(0); return; }
+
+  // pause when the hero is off-screen or the tab is hidden
+  new IntersectionObserver(([en]) => {
+    const should = en.isIntersecting && !document.hidden;
+    if (should && !running) { running = true; raf = requestAnimationFrame(frame); }
+    else if (!should) { running = false; cancelAnimationFrame(raf); }
+  }, { threshold: .02 }).observe(hero);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) { running = false; cancelAnimationFrame(raf); }
+  });
+  let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(build, 180); });
+
+  // pointer parallax — canvas layers + hero text (CSS vars)
+  hero.addEventListener("pointermove", e => {
+    const r = hero.getBoundingClientRect();
+    px = ((e.clientX - r.left) / r.width - .5) * 2;
+    py = ((e.clientY - r.top) / r.height - .5) * 2;
+    document.documentElement.style.setProperty("--px", px.toFixed(3));
+    document.documentElement.style.setProperty("--py", py.toFixed(3));
+  }, { passive: true });
+  hero.addEventListener("pointerleave", () => {
+    px = py = 0;
+    document.documentElement.style.setProperty("--px", 0);
+    document.documentElement.style.setProperty("--py", 0);
+  });
 })();
 
+/* ============ magnetic buttons ============ */
+if (matchMedia("(pointer: fine)").matches && !reduceMotion) {
+  document.querySelectorAll(".magnetic").forEach(btn => {
+    const label = btn.querySelector(".btn-label");
+    btn.addEventListener("pointermove", e => {
+      const r = btn.getBoundingClientRect();
+      const dx = e.clientX - (r.left + r.width / 2);
+      const dy = e.clientY - (r.top + r.height / 2);
+      btn.style.transform = `translate(${dx * .22}px, ${dy * .3}px)`;
+      if (label) label.style.transform = `translate(${dx * .1}px, ${dy * .14}px)`;
+    });
+    btn.addEventListener("pointerleave", () => {
+      btn.style.transform = "";
+      if (label) label.style.transform = "";
+    });
+  });
+}
 
-// scroll reveal
+/* ============ scroll reveal ============ */
 const io = new IntersectionObserver((entries) => {
   entries.forEach(en => { if (en.isIntersecting) { en.target.classList.add("in"); io.unobserve(en.target); } });
 }, { threshold: 0.12 });
 document.querySelectorAll(".reveal").forEach(el => io.observe(el));
 
-// animated counters
+/* ============ counters ============ */
+function countUp(el, target, suffix, dur = 1100) {
+  if (reduceMotion) { el.textContent = target + suffix; return; }
+  const t0 = performance.now();
+  (function step(t) {
+    const p = Math.min((t - t0) / dur, 1), e = 1 - Math.pow(1 - p, 3);
+    el.textContent = Math.round(e * target) + suffix;
+    if (p < 1) requestAnimationFrame(step);
+  })(t0);
+}
 const cio = new IntersectionObserver((entries) => {
   entries.forEach(en => {
     if (!en.isIntersecting) return;
-    const el = en.target, target = +el.dataset.count, suffix = el.dataset.suffix || "";
-    let n = 0; const dur = 1100, t0 = performance.now();
-    (function step(t) {
-      const p = Math.min((t - t0) / dur, 1), e = 1 - Math.pow(1 - p, 3);
-      el.textContent = Math.round(e * target) + suffix;
-      if (p < 1) requestAnimationFrame(step);
-    })(t0);
-    cio.unobserve(el);
+    countUp(en.target, +en.target.dataset.count, en.target.dataset.suffix || "");
+    cio.unobserve(en.target);
   });
 }, { threshold: 0.6 });
 document.querySelectorAll("[data-count]").forEach(el => cio.observe(el));
+
+/* ============ compare slider ============ */
+(function () {
+  const box = document.getElementById("compare");
+  const range = document.getElementById("cmp-range");
+  const setCut = v => box.style.setProperty("--cut", v + "%");
+  range.addEventListener("input", () => setCut(range.value));
+  // cinematic auto-sweep the first time it scrolls into view
+  new IntersectionObserver(([en], obs) => {
+    if (!en.isIntersecting) return;
+    obs.disconnect();
+    if (reduceMotion) { range.value = 56; setCut(56); return; }
+    const t0 = performance.now(), from = 12, to = 56, dur = 1500;
+    (function sweep(t) {
+      const p = Math.min((t - t0) / dur, 1), e = 1 - Math.pow(1 - p, 4);
+      const v = from + (to - from) * e;
+      range.value = v; setCut(v);
+      if (p < 1) requestAnimationFrame(sweep);
+    })(t0);
+  }, { threshold: .45 }).observe(box);
+})();
+
+/* ============ story stage ============ */
+(function () {
+  const stage = document.getElementById("stage");
+  const steps = document.querySelectorAll(".story-step");
+  const thinkBox = document.getElementById("think-lines");
+  const THINK = [
+    "Sales[Total Revenue] aggregates FactSales[Amount]",
+    "filtered by Date via single-direction 1:* on DateKey",
+    "flagging: 3 measures missing descriptions",
+    "writing → Technical doc · section 4.2 Measures"
+  ];
+  let typed = false, ticked = false, typeTimers = [];
+
+  function typeLines() {
+    typeTimers.forEach(clearTimeout); typeTimers = [];
+    thinkBox.innerHTML = "";
+    if (reduceMotion) { THINK.forEach(l => { const d = document.createElement("div"); d.textContent = l; thinkBox.appendChild(d); }); return; }
+    let delay = 100;
+    THINK.forEach((line) => {
+      typeTimers.push(setTimeout(() => {
+        const d = document.createElement("div");
+        const caret = document.createElement("span"); caret.className = "caret";
+        thinkBox.appendChild(d); d.appendChild(caret);
+        let i = 0;
+        const iv = setInterval(() => {
+          d.insertBefore(document.createTextNode(line[i]), caret);
+          if (++i >= line.length) { clearInterval(iv); caret.remove(); }
+        }, 13);
+      }, delay));
+      delay += line.length * 13 + 260;
+    });
+  }
+
+  const sio = new IntersectionObserver((entries) => {
+    entries.forEach(en => {
+      if (!en.isIntersecting) return;
+      const s = +en.target.dataset.step;
+      stage.dataset.state = s;
+      steps.forEach(st => st.classList.toggle("live", st === en.target));
+      if (s === 1 && !ticked) {
+        ticked = true;
+        document.querySelectorAll("[data-tick]").forEach(el => countUp(el, +el.dataset.tick, "", 1300));
+      }
+      if (s === 2 && !typed) { typed = true; typeLines(); }
+    });
+  }, { threshold: .55 });
+  steps.forEach(st => sio.observe(st));
+  steps[0].classList.add("live");
+})();
+
+/* ============ DAX explainer ============ */
+(function () {
+  const panel = document.getElementById("dax-explain");
+  const kind = document.getElementById("dax-kind");
+  const title = document.getElementById("dax-title");
+  const body = document.getElementById("dax-body");
+  const X = {
+    calc: ["Function · Filter context", "CALCULATE — the filter rewriter",
+      "Evaluates [Total Revenue] inside a modified filter context. Everything between the parentheses changes what “now” means for the number on screen."],
+    base: ["Measure · Dependency", "[Total Revenue] — the backbone",
+      "SUM of FactSales[Amount]. Defined once, referenced by 14 other measures — PBICompass maps that dependency chain for you."],
+    ytd:  ["Function · Time intelligence", "DATESYTD — the expanding window",
+      "Returns every date from January 1st (or your fiscal start) through the current filter date. That window is what makes this measure “year-to-date”."],
+    date: ["Column · Calendar spine", "'Date'[Date] — the marked date table",
+      "The model's calendar. A single-direction relationship into FactSales keeps filter flow predictable — and auditable."],
+    _default: ["Measure · Explained by AI", "Total Revenue YTD",
+      "Year-to-date revenue: the base revenue measure re-evaluated across a window that grows through the year and resets every January 1st. Hover any highlighted token to see exactly what it contributes."]
+  };
+  let t;
+  function show(key) {
+    const [k, h, b] = X[key] || X._default;
+    panel.classList.add("swap");
+    clearTimeout(t);
+    t = setTimeout(() => {
+      kind.textContent = k; title.textContent = h; body.textContent = b;
+      panel.classList.remove("swap");
+    }, reduceMotion ? 0 : 200);
+  }
+  document.querySelectorAll(".tok").forEach(tok => {
+    const key = tok.dataset.x;
+    const on = () => { document.querySelectorAll(".tok").forEach(x => x.classList.toggle("on", x === tok)); show(key); };
+    const off = () => { tok.classList.remove("on"); show("_default"); };
+    tok.addEventListener("mouseenter", on);
+    tok.addEventListener("focus", on);
+    tok.addEventListener("mouseleave", off);
+    tok.addEventListener("blur", off);
+    tok.addEventListener("click", e => e.preventDefault());
+  });
+})();
+
+/* ============ health ring ============ */
+(function () {
+  const ring = document.getElementById("ring-val");
+  const num = document.getElementById("ring-num");
+  const C = 226.19, SCORE = 87;
+  new IntersectionObserver(([en], obs) => {
+    if (!en.isIntersecting) return;
+    obs.disconnect();
+    ring.style.strokeDashoffset = C * (1 - SCORE / 100);
+    countUp(num, SCORE, "", 1500);
+  }, { threshold: .5 }).observe(ring.closest(".sheet"));
+})();
 
 /* ============ APP LOGIC (functional — talks to the backend) ============ */
 const $ = (id) => document.getElementById(id);
@@ -984,7 +1750,7 @@ function setStatus(msg, cls) {
   if (cls === "err") c.style.borderColor = "var(--danger)";
   else if (cls === "ok") c.style.borderColor = "var(--success)";
   else if (cls === "warn") c.style.borderColor = "var(--amber)";
-  else c.style.borderColor = "var(--border-strong)";
+  else c.style.borderColor = "var(--hair-2)";
 }
 function renderWarnings(warnings) {
   const box = $("job-warnings");

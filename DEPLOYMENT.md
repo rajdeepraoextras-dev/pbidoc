@@ -67,6 +67,35 @@ fly secrets set PBICOMPASS_REQUIRE_AUTH=1 PBICOMPASS_ADMIN_TOKEN=... ANTHROPIC_A
 fly deploy
 ```
 
+**Google Cloud Run:** it's the same Dockerfile, but Cloud Run's defaults are
+actively hostile to this app's current state and MUST be overridden:
+
+```bash
+gcloud run deploy pbicompass \
+  --source . \
+  --max-instances=1 \
+  --no-cpu-throttling \
+  --set-env-vars PBICOMPASS_REQUIRE_AUTH=1,PBICOMPASS_ADMIN_TOKEN=...
+```
+
+- `--max-instances=1` — the job store and accounts DB are in-process/SQLite-
+  on-local-disk (see the single-instance constraint above). If Cloud Run scales
+  to a 2nd instance, a job created on instance A 404s when polled on instance
+  B, and each instance has its own (different) accounts DB.
+- `--no-cpu-throttling` ("CPU always allocated") — by default Cloud Run
+  throttles CPU to ~zero outside of an active request. Documentation jobs run
+  in a `BackgroundTasks` coroutine *after* the upload request returns, so a
+  throttled instance only makes progress during the brief CPU windows opened
+  by the browser's status-polling requests — the same failure class as the
+  hang the job-timeout watchdog was added for. Check current Cloud Run
+  billing before enabling this: it can reduce free-tier coverage. If you must
+  keep throttling for cost reasons, accept poll-driven (slower, but
+  watchdog-bounded) progress instead.
+- Without a persistent volume, `PBICOMPASS_DB` and any sandbox files on
+  Cloud Run's container filesystem are wiped on every redeploy/restart — mount
+  a volume (Cloud Run volume mounts, or point `PBICOMPASS_DB` at Cloud SQL/
+  managed Postgres) if accounts need to survive redeploys.
+
 ---
 
 ## Option B — Your own VM with Docker + Caddy (auto-HTTPS)

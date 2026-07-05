@@ -17,6 +17,8 @@ from pathlib import Path
 from ..schemas.audit_document import AuditDocument
 from ._docx_writer import _Docx
 from ._html_shell import page_shell
+from ._shared import anchor_slug
+from ._shared import format_timestamp as _fmt_ts
 from ._shared import html_e as _e
 from ._shared import html_table as _html_table
 from ._shared import md_table as _table
@@ -76,7 +78,7 @@ def render_markdown(doc: AuditDocument) -> str:
     h = doc.health
     c = doc.complexity
     out: list[str] = [f"# {md.report_name} — Audit & Health Report\n"]
-    out.append(f"_{md.target_audience or ''} · generated {md.generated_at or ''}_\n")
+    out.append(f"_{md.target_audience or ''} · generated {_fmt_ts(md.generated_at)}_\n")
     if doc.narrative_overview:
         out.append(f"\n{doc.narrative_overview}\n")
 
@@ -149,7 +151,21 @@ def _severity_pill(severity: str) -> str:
     return f'<span class="pill {severity.lower()}">{_e(severity)}</span>'
 
 
-def render_html(doc: AuditDocument) -> str:
+def _measure_cell(name: str, technical_href: str | None) -> str:
+    """A measure name, linked to its entry in the technical document's
+    Measure Catalog when that sibling doc was generated in the same job —
+    never a dead link when it wasn't (2.7)."""
+    if not technical_href:
+        return _e(name)
+    return f'<a href="{_e(technical_href)}#measure-{_e(anchor_slug(name))}">{_e(name)}</a>'
+
+
+def render_html(
+    doc: AuditDocument, *,
+    doc_links: list[tuple[str, str]] | None = None,
+    sibling_hrefs: dict[str, str] | None = None,
+) -> str:
+    technical_href = (sibling_hrefs or {}).get("technical")
     md = doc.metadata
     h = doc.health
     c = doc.complexity
@@ -188,7 +204,8 @@ def render_html(doc: AuditDocument) -> str:
     o.append(f'<h2 id="sec3">{_e(_SECTION_TITLES[2])}</h2>')
     o.append(_html_table(
         ["Measure", "Table", "Finding", "Severity", "Detail"],
-        [[_e(f.measure), _e(f.table or "—"), _e(_kind_label(f.kind)), _severity_pill(f.severity), _e(f.detail)]
+        [[_measure_cell(f.measure, technical_href), _e(f.table or "—"), _e(_kind_label(f.kind)),
+          _severity_pill(f.severity), _e(f.detail)]
          for f in doc.dax_findings],
         "No DAX findings — no duplicate logic, overly long expressions, missing descriptions, "
         "or naming issues detected.",
@@ -239,8 +256,9 @@ def render_html(doc: AuditDocument) -> str:
 
     return page_shell(
         title=f"{md.report_name} — Audit & Health Report",
-        subtitle=f"{md.target_audience or ''} · generated {md.generated_at or ''}",
-        toc=toc, kpis=kpis, body_html="\n".join(o),
+        subtitle=f"{md.target_audience or ''} · generated {_fmt_ts(md.generated_at)}",
+        toc=toc, kpis=kpis, body_html="\n".join(o), doc_links=doc_links,
+        owner=md.owner, version=md.version, status=md.status,
     )
 
 
@@ -254,7 +272,7 @@ def render_docx(doc: AuditDocument, out_path) -> Path:
     c = doc.complexity
 
     d.heading(0, f"{md.report_name} — Audit & Health Report")
-    d.para([d._run(f"{md.target_audience or ''} · generated {md.generated_at or ''}", italic=True)])
+    d.para([d._run(f"{md.target_audience or ''} · generated {_fmt_ts(md.generated_at)}", italic=True)])
     if doc.narrative_overview:
         d.para(doc.narrative_overview)
 

@@ -62,6 +62,51 @@ def _print_summary(model: SemanticModel) -> None:
             print(f"  ! {w}")
 
 
+def _hub_stats(dtype: str, doc) -> list[tuple[str, object]]:
+    """A couple of quick stats per doc type for the hub's cards — best
+    effort, never required (the hub still renders fine without them)."""
+    if dtype == "technical":
+        return [("tables", doc.stats.get("tables", 0)), ("measures", doc.stats.get("measures", 0))]
+    if dtype == "audit":
+        return [("score", f"{doc.health.overall}/100")]
+    if dtype == "executive":
+        return [("KPIs", len(doc.key_kpis))]
+    if dtype == "user-guide":
+        return [("pages", len(doc.pages))]
+    return []
+
+
+def _write_hub(model: SemanticModel, docs: dict, out_path: Path, ext: str, *, quiet: bool) -> None:
+    """Write a documentation hub (``{stem}.index.html``) linking every
+    document just generated, using the exact filenames the multi-document
+    ``-o`` path above just wrote them under — this only runs from the CLI,
+    where those filenames are fully known at render time (unlike the hosted
+    service, whose per-job download names depend on the upload filename;
+    that needs the zip-bundle work (5.7) to get a fixed naming scheme
+    before a hub can link to it safely)."""
+    from .render._shared import format_timestamp
+    from .render.hub import render_hub
+
+    entries = [
+        {"type": dtype, "href": out_path.with_name(f"{out_path.stem}.{dtype}{ext}").name,
+         "stats": _hub_stats(dtype, doc)}
+        for dtype, doc in docs.items()
+    ]
+    health_score = None
+    audit_doc = docs.get("audit")
+    if audit_doc is not None:
+        health_score = {"overall": audit_doc.health.overall, "band": audit_doc.health.band}
+
+    hub_html = render_hub(
+        entries, report_name=model.report_name,
+        generated_at=format_timestamp(model.meta.generated_at), health_score=health_score,
+    )
+    hub_path = out_path.with_name(f"{out_path.stem}.index.html")
+    hub_path.write_text(hub_html, encoding="utf-8")
+    if not quiet:
+        print(f"Wrote {hub_path} (hub)", file=sys.stderr)
+
+
 def main(argv: list[str] | None = None) -> int:
     # Force UTF-8 on the console so non-Latin-1 content (e.g. "↔" in model
     # risks, or Unicode table/column names) doesn't crash on Windows cp1252.
@@ -205,17 +250,33 @@ def main(argv: list[str] | None = None) -> int:
             return 1
 
         multi = len(document_types) > 1
+        # Cross-document doc-switcher links (2.7) only make sense when every
+        # sibling's filename is known up front — true here (the CLI's
+        # multi-doc naming is deterministic), unlike the hosted service
+        # (job-filename-dependent download names; needs the zip-bundle work
+        # first). Label + relative href per sibling, plus the hub.
+        html_filenames: dict[str, str] = {}
+        if multi and args.out and fmt == "html":
+            html_filenames = {d: args.out.with_name(f"{args.out.stem}.{d}.html").name for d in document_types}
+
         for dtype, doc in docs.items():
             renderers = registry.RENDERERS[dtype]
             out_path = args.out
             if out_path and multi:
                 out_path = out_path.with_name(f"{out_path.stem}.{dtype}{ext_map[fmt]}")
+            doc_links = None
+            if html_filenames:
+                from .render.hub import _DOC_LABELS
+                doc_links = [(_DOC_LABELS.get(d, d.title()), href)
+                            for d, href in html_filenames.items() if d != dtype]
+                doc_links.append(("← Documentation hub", f"{args.out.stem}.index.html"))
             try:
                 if fmt in ("json", "md", "html"):
                     content = {
                         "json": doc.to_json,
                         "md": lambda: renderers["md"](doc),
-                        "html": lambda: renderers["html"](doc),
+                        "html": lambda: renderers["html"](doc, doc_links=doc_links,
+                                                          sibling_hrefs=html_filenames or None),
                     }[fmt]()
                     if out_path:
                         out_path.write_text(content, encoding="utf-8")
@@ -226,7 +287,12 @@ def main(argv: list[str] | None = None) -> int:
                 elif fmt == "docx":
                     renderers["docx"](doc, out_path)
                 elif fmt == "pdf":
-                    pandoc.to_pdf(renderers["md"](doc), out_path)
+                    from .render._shared import format_timestamp
+                    pandoc.to_pdf(
+                        renderers["md"](doc), out_path,
+                        title=doc.metadata.report_name, author=doc.metadata.owner,
+                        date=format_timestamp(doc.metadata.generated_at),
+                    )
             except pandoc.PandocError as exc:
                 print(f"error: {exc}", file=sys.stderr)
                 return 1
@@ -236,6 +302,9 @@ def main(argv: list[str] | None = None) -> int:
 
             if out_path and not args.quiet:
                 print(f"Wrote {out_path} ({fmt})", file=sys.stderr)
+
+        if multi and fmt == "html" and args.out:
+            _write_hub(model, docs, args.out, ext_map[fmt], quiet=args.quiet)
         return 0
 
     if args.command == "serve":

@@ -11,10 +11,12 @@ from __future__ import annotations
 
 from ..schemas.document import Document
 from ._shared import HEALTH_COMPONENT_LABELS
+from ._shared import format_timestamp as _fmt_ts
 from ._shared import is_local_path as _is_local_path
 from ._shared import md_table as _table
 from ._shared import md_todo as _todo
 from ._shared import non_data_note as _non_data_note
+from ._shared import slicer_field_label as _slicer_label
 
 
 def render_markdown(doc: Document) -> str:
@@ -22,7 +24,7 @@ def render_markdown(doc: Document) -> str:
     s = doc.stats
     out: list[str] = [f"# {md.report_name} — Power BI Documentation\n"]
     out.append(
-        f"_{md.target_audience or ''} · generated {md.generated_at or ''}_\n\n"
+        f"_{md.target_audience or ''} · generated {_fmt_ts(md.generated_at)}_\n\n"
         f"**At a glance:** {s.get('tables',0)} tables · {s.get('columns',0)} columns · "
         f"{s.get('measures',0)} measures · {s.get('relationships',0)} relationships · "
         f"{s.get('pages',0)} pages · {s.get('visuals',0)} visuals\n"
@@ -41,7 +43,7 @@ def render_markdown(doc: Document) -> str:
         ["Classification", md.classification or "_not specified_"],
         ["Target audience", md.target_audience or "—"],
         ["Refresh schedule", md.refresh_schedule or "_not specified_"],
-        ["Generated", md.generated_at or ""],
+        ["Generated", _fmt_ts(md.generated_at)],
     ]
     out.append(_table(["Field", "Value"], doc_control))
     
@@ -191,7 +193,7 @@ def render_markdown(doc: Document) -> str:
     for line in es.navigation_guide:
         out.append(f"- {line}")
     out.append("")
-    out.append(_table(["Slicer field", "Page"], [[x["field"], x["page"]] for x in doc.slicers], "_No slicers found._"))
+    out.append(_table(["Slicer field", "Page"], [[_slicer_label(x), x["page"]] for x in doc.slicers], "_No slicers found._"))
     drill = [p["name"] for p in doc.report_pages if p.get("drillthrough")]
     if drill:
         out.append(f"\n**Drill-through pages:** {', '.join(drill)}.\n")

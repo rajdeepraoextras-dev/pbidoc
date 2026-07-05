@@ -24,6 +24,7 @@ from typing import Callable
 from ..agents import generate_document, get_client
 from ..agents.generators import DOCUMENT_TYPES
 from ..render import pandoc, registry
+from ..render._shared import format_timestamp
 from .ingest import ingest_to_model
 from .jobs import JobStore
 from .sandbox import JobSandbox
@@ -155,7 +156,11 @@ def process_job(store: JobStore, job_id: str, upload_path: Path,
             if pandoc.pandoc_available() and pandoc.find_pdf_engine():
                 try:
                     pdf_path = sandbox.path(f"out.{dtype}.pdf")
-                    pandoc.to_pdf(renderers["md"](doc), pdf_path)
+                    pandoc.to_pdf(
+                        renderers["md"](doc), pdf_path,
+                        title=doc.metadata.report_name, author=doc.metadata.owner,
+                        date=format_timestamp(doc.metadata.generated_at),
+                    )
                     outputs[key("pdf")] = pdf_path.read_bytes()
                 except pandoc.PandocError as exc:
                     log.info("job %s pdf skipped for %s: %s", job_id, dtype, type(exc).__name__)

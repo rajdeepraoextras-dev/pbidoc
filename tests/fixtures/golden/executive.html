@@ -1,19 +1,19 @@
-"""Shared HTML page shell — doctype, fonts, CSS, sidebar/TOC, header card,
-KPI strip, and the scroll-spy script — reused by every document-type HTML
-renderer (technical, audit, and future executive/user-guide renderers).
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<title>SampleSales — Executive Summary — Documentation</title>
 
-Extracted out of ``html.py`` so new HTML renderers don't re-author a full
-HTML document from scratch; they only need to build their own section body
-HTML and hand it to :func:`page_shell`.
-"""
+<script>
+(function () {
+  try {
+    var saved = localStorage.getItem('pbicompass-theme');
+    if (saved === 'dark' || saved === 'light') {
+      document.documentElement.setAttribute('data-theme', saved);
+    }
+  } catch (e) {}
+})();
+</script>
 
-from __future__ import annotations
-
-import json
-
-from ._shared import html_e as _e
-
-_CSS = """
+<style>
 :root {
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
   --bg-main: #f8fafc;
@@ -851,22 +851,84 @@ details.collapsible > .code-block pre {
     white-space: nowrap;
   }
 }
-"""
+</style></head><body>
+<a href="#main-content" class="skip-link">Skip to content</a>
+<button type="button" class="mobile-toc-toggle" aria-label="Open table of contents" aria-expanded="false">&#9776;</button>
+<div class="sidebar-scrim"></div>
+<div class="print-cover">
+<div class="print-cover-mark">PBICompass</div>
+<h1>SampleSales — Executive Summary</h1>
+<p class="print-cover-subtitle">Managers, executives, and project owners · generated TIMESTAMP</p>
+<dl class="print-cover-meta">
+<dt>Version</dt><dd>Not specified</dd>
+<dt>Status</dt><dd>Not specified</dd>
+<dt>Owner</dt><dd>Not specified</dd>
+</dl>
+</div>
+<script type="application/json" id="search-index">[{"title": "Business Purpose", "type": "section", "anchor": "sec1"}, {"title": "Key KPIs", "type": "section", "anchor": "sec2"}, {"title": "Data Sources", "type": "section", "anchor": "sec3"}, {"title": "Refresh Schedule", "type": "section", "anchor": "sec4"}, {"title": "Security Overview", "type": "section", "anchor": "sec5"}, {"title": "High-Level Architecture", "type": "section", "anchor": "sec6"}, {"title": "Model & Report Statistics", "type": "section", "anchor": "sec7"}, {"title": "Business Value", "type": "section", "anchor": "sec8"}, {"title": "Known Risks", "type": "section", "anchor": "sec9"}, {"title": "Maintenance Overview", "type": "section", "anchor": "sec10"}, {"title": "Future Recommendations", "type": "section", "anchor": "sec11"}]</script>
+<nav class="sidebar" aria-label="Table of contents">
+<div class="sidebar-logo">
+<svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
+<span>PBICompass</span>
+</div>
+<button type="button" class="theme-toggle" aria-label="Toggle dark mode">🌙 Dark mode</button>
+<div class="search-box">
+<input type="text" class="search-input" placeholder="Search this document…" aria-label="Search this document" autocomplete="off">
+<ul class="search-results" hidden></ul>
+</div>
+<ul class="toc-list">
+<li class="toc-item"><a href="#sec1" class="toc-link">Business Purpose</a></li>
+<li class="toc-item"><a href="#sec2" class="toc-link">Key KPIs</a></li>
+<li class="toc-item"><a href="#sec3" class="toc-link">Data Sources</a></li>
+<li class="toc-item"><a href="#sec4" class="toc-link">Refresh Schedule</a></li>
+<li class="toc-item"><a href="#sec5" class="toc-link">Security Overview</a></li>
+<li class="toc-item"><a href="#sec6" class="toc-link">High-Level Architecture</a></li>
+<li class="toc-item"><a href="#sec7" class="toc-link">Model &amp; Report Statistics</a></li>
+<li class="toc-item"><a href="#sec8" class="toc-link">Business Value</a></li>
+<li class="toc-item"><a href="#sec9" class="toc-link">Known Risks</a></li>
+<li class="toc-item"><a href="#sec10" class="toc-link">Maintenance Overview</a></li>
+<li class="toc-item"><a href="#sec11" class="toc-link">Future Recommendations</a></li>
+</ul></nav>
+<div class="content-wrapper">
+<main class="main-content" id="main-content">
+<div class="header-card">
+<h1>SampleSales — Executive Summary</h1>
+<p class="subtitle">Managers, executives, and project owners · generated TIMESTAMP</p>
+</div>
+<div class="kpis">
+<div class="kpi"><div class="n">4</div><div class="l">Tables</div></div>
+<div class="kpi"><div class="n">4</div><div class="l">Measures</div></div>
+<div class="kpi"><div class="n">2</div><div class="l">Report Pages</div></div>
+<div class="kpi"><div class="n">5</div><div class="l">Known Risks</div></div>
+</div>
+<h2 id="sec1">1. Business Purpose</h2>
+<p>&#x27;SampleSales&#x27; reports on Sales, tracking Avg Order Value, Total Revenue, Revenue YTD across Customer, Date. It spans 2 report page(s), documented individually below. This purpose statement is derived from the model contents alone — the business context requires confirmation from the report owner.</p>
+<h2 id="sec2">2. Key KPIs</h2>
+<ul><li>Total Revenue — Computes the total of Quantity * UnitPrice, evaluated row by row over FILTER ( Sales, Status &lt;&gt; &quot;Canceled&quot; ).</li><li>Avg Order Value — A ratio: Total Revenue divided by DISTINCTCOUNT ( SalesKey ).</li></ul>
+<h2 id="sec3">3. Data Sources</h2>
+<ul><li>Sql.Database: prod-sql.contoso.com/SalesDW</li></ul>
+<p><strong>Also depends on:</strong> Parameter: ServerName.</p>
+<h2 id="sec4">4. Refresh Schedule</h2>
+<p><span class="muted">Not documented.</span></p>
+<h2 id="sec5">5. Security Overview</h2>
+<p>2 row-level security role(s) restrict access to this report: Regional Manager, Sales Rep.</p>
+<h2 id="sec6">6. High-Level Architecture</h2>
+<p>The data model uses a star schema centred on the &#x27;Sales&#x27; fact table, integrating 1 fact table(s) and 2 dimension table(s) via 3 relationship(s).</p>
+<h2 id="sec7">7. Model &amp; Report Statistics</h2>
+<h3>Model</h3>
+<table><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody><tr><td>Tables</td><td><span class="num">4</span></td></tr><tr><td>Columns</td><td><span class="num">18</span></td></tr><tr><td>Measures</td><td><span class="num">4</span></td></tr><tr><td>Relationships</td><td><span class="num">3</span></td></tr><tr><td>Security Roles</td><td><span class="num">2</span></td></tr><tr><td>Pages</td><td><span class="num">3</span></td></tr><tr><td>Visuals</td><td><span class="num">5</span></td></tr><tr><td>Data Sources</td><td><span class="num">1</span></td></tr></tbody></table>
+<h3>Report</h3>
+<table><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody><tr><td>Pages</td><td><span class="num">3</span></td></tr><tr><td>Visible Pages</td><td><span class="num">2</span></td></tr><tr><td>Hidden Pages</td><td><span class="num">1</span></td></tr><tr><td>Drill-through Pages</td><td><span class="num">1</span></td></tr><tr><td>Visuals</td><td><span class="num">5</span></td></tr></tbody></table>
+<h2 id="sec8">8. Business Value</h2>
+<p>This report gives stakeholders direct visibility into Total Revenue, Avg Order Value, reducing reliance on manual reporting and supporting faster, data-driven decisions.</p>
+<h2 id="sec9">9. Known Risks</h2>
+<ul><li>[High] Some relationships use bidirectional cross-filtering. Bidirectional filters can create ambiguous filter paths and materially slow down query performance.</li><li>[Medium] Row-level security gaps were found. Without RLS (or with roles that have no members configured), sensitive rows may be visible to more users than intended.</li><li>[Medium] Description coverage across measures and columns is low. Missing descriptions increase onboarding time and the risk of misinterpreting a field&#x27;s meaning.</li><li>[Medium] No owner or data classification was specified for this report. Without a named owner, there&#x27;s no clear point of contact for questions, incidents, or change requests.</li><li>[Low] Some ID/key-style columns are visible to report authors. Visible technical join keys clutter the field list and can be mis-used in visuals by mistake.</li></ul>
+<h2 id="sec10">10. Maintenance Overview</h2>
+<p>No refresh schedule has been documented yet. 5 modeling best-practice gap(s) and 3 governance finding(s) from the latest audit should be reviewed periodically. No owner has been assigned for ongoing accountability.</p>
+<h2 id="sec11">11. Future Recommendations</h2>
+<ul><li>Some relationships use bidirectional cross-filtering. More predictable filtering and better query performance.</li><li>Many measures/columns have no description. Faster onboarding and self-documenting metadata in Power BI Desktop tooltips.</li><li>Row-level security gaps were found. Data access that matches the intended audience.</li></ul>
+</main></div>
 
-_THEME_INIT_SCRIPT = """
-<script>
-(function () {
-  try {
-    var saved = localStorage.getItem('pbicompass-theme');
-    if (saved === 'dark' || saved === 'light') {
-      document.documentElement.setAttribute('data-theme', saved);
-    }
-  } catch (e) {}
-})();
-</script>
-"""
-
-_SCRIPT = """
 <script>
 document.addEventListener('DOMContentLoaded', () => {
   const links = document.querySelectorAll('.toc-link');
@@ -1109,119 +1171,5 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 </script>
-"""
 
-_LOGO_SVG = (
-    '<svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z'
-    'm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>'
-)
-
-
-_WATERMARK_CLASSIFICATIONS = {"confidential", "restricted"}
-
-
-def page_shell(
-    *,
-    title: str,
-    subtitle: str,
-    toc: list[tuple[str, str]],
-    kpis: list[tuple[str, str]],
-    body_html: str,
-    search_index: list[dict] | None = None,
-    doc_links: list[tuple[str, str]] | None = None,
-    owner: str | None = None,
-    version: str | None = None,
-    status: str | None = None,
-    classification: str | None = None,
-) -> str:
-    """Wrap ``body_html`` (a renderer's own section content) in the full HTML
-    document: doctype, head/fonts/CSS, sidebar TOC + search, header card with
-    title/subtitle/KPIs, a print-only cover page, and the closing scroll-spy
-    script.
-
-    ``toc`` is a list of ``(anchor_id, label)`` pairs. ``kpis`` is a list of
-    ``(label, value)`` pairs — pass an empty list to omit the KPI strip.
-    ``search_index`` is a list of ``{"title", "type", "anchor"}`` dicts for
-    the sidebar search box; defaults to one entry per ``toc`` section when a
-    renderer doesn't build a richer one (measures, tables, findings, ...).
-    ``doc_links`` is a list of ``(label, href)`` pairs — sibling documents
-    (and the hub) generated in the same job — rendered as a doc-switcher
-    block above the TOC. Plain relative hrefs, so they work unzipped on disk
-    with no web server; omit (or pass ``None``) for a single-document run,
-    where there's nothing valid to link to.
-    ``owner``/``version``/``status``/``classification`` populate the
-    print-only cover page (2.8); a diagonal watermark is added automatically
-    when ``classification`` is "Confidential" or "Restricted" (case-
-    insensitive) — never shown on screen, only when printed/exported to PDF.
-    """
-    if search_index is None:
-        search_index = [{"title": sec_title, "type": "section", "anchor": sec_id} for sec_id, sec_title in toc]
-
-    o: list[str] = ["<!DOCTYPE html>", '<html lang="en"><head><meta charset="utf-8">']
-    o.append(f"<title>{_e(title)} — Documentation</title>")
-    o.append(_THEME_INIT_SCRIPT)
-    o.append(f"<style>{_CSS}</style></head><body>")
-
-    o.append('<a href="#main-content" class="skip-link">Skip to content</a>')
-    o.append('<button type="button" class="mobile-toc-toggle" aria-label="Open table of contents" '
-             'aria-expanded="false">&#9776;</button>')
-    o.append('<div class="sidebar-scrim"></div>')
-
-    o.append('<div class="print-cover">')
-    o.append('<div class="print-cover-mark">PBICompass</div>')
-    o.append(f"<h1>{_e(title)}</h1>")
-    o.append(f'<p class="print-cover-subtitle">{_e(subtitle)}</p>')
-    o.append('<dl class="print-cover-meta">')
-    for label, value in (("Version", version), ("Status", status), ("Owner", owner)):
-        o.append(f"<dt>{_e(label)}</dt><dd>{_e(value) if value else 'Not specified'}</dd>")
-    o.append("</dl>")
-    if classification:
-        o.append(f'<div class="print-cover-classification">{_e(classification)}</div>')
-    o.append("</div>")
-    if classification and classification.strip().lower() in _WATERMARK_CLASSIFICATIONS:
-        o.append(f'<div class="print-watermark">{_e(classification.upper())}</div>')
-
-    index_json = json.dumps(search_index, ensure_ascii=False).replace("<", "\\u003c")
-    o.append(f'<script type="application/json" id="search-index">{index_json}</script>')
-
-    o.append('<nav class="sidebar" aria-label="Table of contents">')
-    o.append('<div class="sidebar-logo">')
-    o.append(_LOGO_SVG)
-    o.append('<span>PBICompass</span>')
-    o.append('</div>')
-    o.append('<button type="button" class="theme-toggle" aria-label="Toggle dark mode">🌙 Dark mode</button>')
-    if doc_links:
-        o.append('<nav class="doc-switcher" aria-label="Other documents in this job">')
-        for label, href in doc_links:
-            o.append(f'<a href="{_e(href)}">{_e(label)}</a>')
-        o.append('</nav>')
-    o.append('<div class="search-box">')
-    o.append('<input type="text" class="search-input" placeholder="Search this document…" '
-             'aria-label="Search this document" autocomplete="off">')
-    o.append('<ul class="search-results" hidden></ul>')
-    o.append('</div>')
-    o.append('<ul class="toc-list">')
-    for sec_id, sec_title in toc:
-        o.append(f'<li class="toc-item"><a href="#{sec_id}" class="toc-link">{_e(sec_title)}</a></li>')
-    o.append('</ul></nav>')
-
-    o.append('<div class="content-wrapper">')
-    o.append('<main class="main-content" id="main-content">')
-
-    o.append('<div class="header-card">')
-    o.append(f"<h1>{_e(title)}</h1>")
-    o.append(f'<p class="subtitle">{_e(subtitle)}</p>')
-    o.append("</div>")
-
-    if kpis:
-        o.append('<div class="kpis">')
-        for label, value in kpis:
-            o.append(f'<div class="kpi"><div class="n">{_e(value)}</div><div class="l">{_e(label)}</div></div>')
-        o.append("</div>")
-
-    o.append(body_html)
-
-    o.append("</main></div>")
-    o.append(_SCRIPT)
-    o.append("</body></html>")
-    return "\n".join(o)
+</body></html>

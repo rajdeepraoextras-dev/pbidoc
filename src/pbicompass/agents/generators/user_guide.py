@@ -23,20 +23,8 @@ from ...schemas.user_guide_document import GlossaryTerm, PageGuide, UserGuideDoc
 from .. import io
 from ..deterministic import business_analyst_deterministic, translate_dax
 from ..llm import LLMClient
-from ..report_facts import report_pages, slicers
-from .base import Warn, build_core_metadata, call_llm
-
-_CATEGORY_DEFINITIONS = {
-    "Revenue": "Money earned, typically before deductions like tax or discounts.",
-    "Cost": "Money spent or costs incurred.",
-    "Ratio": "A comparison between two values, such as an average or a percentage.",
-    "Count": "The number of records or items that match certain criteria.",
-    "Time-Intelligence": "How a metric performs over a specific period of time, such as year-to-date.",
-    "Ranking": "A ranking of items from highest to lowest (or vice versa) to highlight top or bottom performers.",
-    "Text": "A combined or formatted piece of text-based information.",
-    "Aggregation": "A summary of a group of values, such as a total or an average.",
-    "Other": "A custom metric specific to this report.",
-}
+from ..report_facts import declassify, first_sentence, report_pages, slicers
+from .base import Warn, build_core_metadata, call_llm_with_retry
 
 _DIMENSION_DEFINITIONS = [
     (("date", "calendar", "month", "year", "quarter"),
@@ -58,17 +46,23 @@ def _dimension_definition(name: str) -> str:
 
 
 def _build_glossary(model) -> list[GlossaryTerm]:
+    """Priority order per measure: human-provided description -> the DAX
+    Translator's deterministic business definition -> a typed fallback for
+    the rare measure with neither. Never the generic "a custom metric
+    specific to this report" bucket — a business glossary that can't tell
+    two measures apart isn't documentation."""
     terms: list[GlossaryTerm] = []
     seen_measure_names = set()
     for m in model.all_measures():
         if m.is_hidden or m.name in seen_measure_names:
             continue
         seen_measure_names.add(m.name)
-        _, _, category = translate_dax(m.name, m.expression, m.format_string)
-        terms.append(GlossaryTerm(
-            term=m.name,
-            plain_definition=_CATEGORY_DEFINITIONS.get(category, _CATEGORY_DEFINITIONS["Other"]),
-        ))
+        if m.description:
+            definition = first_sentence(m.description)
+        else:
+            english, _, _ = translate_dax(m.name, m.expression, m.format_string)
+            definition = declassify(first_sentence(english)) or "Definition pending — see the technical documentation."
+        terms.append(GlossaryTerm(term=m.name, plain_definition=definition))
 
     measure_names = {m.name for m in model.all_measures()}
     seen_dims: set[str] = set()
@@ -93,10 +87,63 @@ def _simple_visual_description(visual: dict) -> str:
     return "Provides supporting detail for this page."
 
 
-def _business_questions(metrics: list[str], dims: list[str]) -> list[str]:
-    questions = [f"What is our {m.lower()}?" for m in metrics[:2]]
-    if metrics and dims:
-        questions.append(f"How does {metrics[0].lower()} vary by {dims[0].lower()}?")
+_TIME_KEYWORDS = ("date", "calendar", "month", "year", "quarter", "period", "week", "day")
+_GEO_KEYWORDS = ("region", "country", "city", "state", "territory", "continent", "province", "postal", "zip", "geography")
+_GEO_CATEGORIES = {"address", "city", "continent", "country", "county", "place",
+                   "postalcode", "stateorprovince", "region"}
+
+
+def _column_lookup(model) -> dict:
+    lookup = {}
+    for t in model.tables:
+        for c in t.columns:
+            lookup.setdefault(c.name, c)
+    return lookup
+
+
+def _dimension_kind(name: str, columns: dict) -> str:
+    """Classify a dimension as "time", "geo", or "other" — from the parsed
+    column's data_type/data_category when available, else from its name.
+    Drives which question template a chart pair earns (1.3)."""
+    col = columns.get(name)
+    if col is not None:
+        if col.data_type in ("date", "dateTime"):
+            return "time"
+        if col.data_category and col.data_category.lower() in _GEO_CATEGORIES:
+            return "geo"
+    lower = name.lower()
+    if any(k in lower for k in _TIME_KEYWORDS):
+        return "time"
+    if any(k in lower for k in _GEO_KEYWORDS):
+        return "geo"
+    return "other"
+
+
+def _chart_pair_questions(visuals: list[dict], columns: dict) -> list[str]:
+    """Business questions grounded in the metric+dimension pairs actually
+    charted together on the page — never invented beyond what a visual
+    shows. A visual with no metric+dimension pair contributes nothing (no
+    pair -> no question), so a page with no such visual gets no section at
+    all, per the "no mad-libs" quality floor."""
+    questions: list[str] = []
+    seen: set[str] = set()
+    for v in visuals:
+        metrics, dims = v.get("metrics", []), v.get("dimensions", [])
+        if not (metrics and dims):
+            continue
+        metric, dim = metrics[0], dims[0]
+        kind = _dimension_kind(dim, columns)
+        if kind == "time":
+            question = f"How has {metric} trended by {dim}?"
+        elif kind == "geo":
+            question = f"How does {metric} compare across {dim}?"
+        else:
+            question = f"How is {metric} distributed by {dim}?"
+        if question not in seen:
+            seen.add(question)
+            questions.append(question)
+        if len(questions) >= 3:
+            break
     return questions
 
 
@@ -107,17 +154,6 @@ def _navigation_tips(page_filters: list[str], visual_count: int) -> list[str]:
     if visual_count > 1:
         tips.append("Click on any chart to highlight the related data across the rest of the page.")
     return tips
-
-
-def _common_scenarios(metrics: list[str], dims: list[str], filters: list[str]) -> list[str]:
-    scenarios = []
-    if metrics:
-        scenarios.append(f"Use this page when you want to check {metrics[0].lower()} at a glance.")
-    if filters:
-        scenarios.append(f"Filter by '{filters[0]}' when you only care about one {filters[0].lower()} at a time.")
-    if metrics and dims:
-        scenarios.append(f"Compare {metrics[0].lower()} across different {dims[0].lower()} values to spot trends.")
-    return scenarios
 
 
 def _drillthrough_actions(drillthrough_page_names: list[str]) -> list[str]:
@@ -166,6 +202,7 @@ class BusinessGuideGenerator:
 
         pages_facts = report_pages(model)
         slicer_facts = slicers(model)
+        columns = _column_lookup(model)
         drillthrough_page_names = [pf["name"] for pf in pages_facts if pf["drillthrough"]]
 
         pages: list[PageGuide] = []
@@ -175,8 +212,12 @@ class BusinessGuideGenerator:
             name = pf["name"]
             visuals = pf["visuals"]
             metrics = sorted({m for v in visuals for m in v["metrics"]})
-            dims = sorted({d for v in visuals for d in v["dimensions"]})
-            page_filters = [s["field"].split(".")[-1] for s in slicer_facts if s["page"] == name]
+            page_slicers = [s for s in slicer_facts if s["page"] == name]
+            filter_fields = [s["field"].split(".")[-1] for s in page_slicers]
+            page_filters = [
+                f"{field} ({s['count']} slicers)" if s["count"] > 1 else field
+                for field, s in zip(filter_fields, page_slicers)
+            ]
 
             visual_descriptions = [
                 {"visual": v["label"],
@@ -190,12 +231,12 @@ class BusinessGuideGenerator:
                 main_kpis=metrics[:5],
                 visual_descriptions=visual_descriptions,
                 filters=page_filters,
-                navigation_tips=_navigation_tips(page_filters, len(visuals)),
-                business_questions_answered=_business_questions(metrics, dims),
+                navigation_tips=_navigation_tips(filter_fields, len(visuals)),
+                business_questions_answered=_chart_pair_questions(visuals, columns),
                 drillthrough_actions=[] if pf["drillthrough"] else _drillthrough_actions(drillthrough_page_names),
                 bookmarks=[],
                 tooltips=[],
-                common_scenarios=_common_scenarios(metrics, dims, page_filters),
+                common_scenarios=[],
             ))
 
         introduction = _introduction(model, analyst.core_purpose)
@@ -203,27 +244,33 @@ class BusinessGuideGenerator:
         getting_started = _getting_started(pages)
 
         if client is not None:
-            data = call_llm(
-                client, io.USER_GUIDE_WRITER_SYSTEM,
-                io.user_guide_writer_input(
-                    report_name=model.report_name,
-                    introduction_draft=introduction,
-                    pages=[
-                        {"page_title": p.page_title, "purpose_draft": p.purpose,
-                         "common_scenarios_draft": p.common_scenarios}
-                        for p in pages
-                    ],
-                ),
-                io.USER_GUIDE_WRITER_SCHEMA, warn, "User Guide Writer",
-            )
-            if data:
-                introduction = data.get("introduction") or introduction
-                polished_by_title = {p["page_title"]: p for p in data.get("pages", [])}
-                for page in pages:
-                    polished = polished_by_title.get(page.page_title)
-                    if polished:
-                        page.purpose = polished.get("purpose") or page.purpose
-                        page.common_scenarios = polished.get("common_scenarios") or page.common_scenarios
+            # Batched by page (io.user_guide_writer_batches) with one retry per
+            # batch: a failed/invalid batch degrades only the pages it covers
+            # (kept on their deterministic purpose/common_scenarios), rather
+            # than silently falling back for the whole guide (1.4).
+            page_drafts = [
+                {"page_title": p.page_title, "purpose_draft": p.purpose,
+                 "common_scenarios_draft": p.common_scenarios}
+                for p in pages
+            ]
+            introduction_set = False
+            offset = 0
+            for batch in io.user_guide_writer_batches(model.report_name, introduction, page_drafts):
+                batch_titles = [p["page_title"] for p in batch["pages"]]
+                data = call_llm_with_retry(client, io.USER_GUIDE_WRITER_SYSTEM, batch, io.USER_GUIDE_WRITER_SCHEMA)
+                if data:
+                    if not introduction_set and data.get("introduction"):
+                        introduction, introduction_set = data["introduction"], True
+                    polished_by_title = {p["page_title"]: p for p in data.get("pages", [])}
+                    for page in pages[offset:offset + len(batch_titles)]:
+                        polished = polished_by_title.get(page.page_title)
+                        if polished:
+                            page.purpose = polished.get("purpose") or page.purpose
+                            page.common_scenarios = polished.get("common_scenarios") or page.common_scenarios
+                elif batch_titles:
+                    warn(f"User Guide Writer: AI narrative unavailable for pages: {', '.join(batch_titles)} "
+                         f"— deterministic summary used")
+                offset += len(batch_titles)
 
         return UserGuideDocument(
             metadata=build_core_metadata(

@@ -1,19 +1,19 @@
-"""Shared HTML page shell — doctype, fonts, CSS, sidebar/TOC, header card,
-KPI strip, and the scroll-spy script — reused by every document-type HTML
-renderer (technical, audit, and future executive/user-guide renderers).
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<title>SampleSales — Business User Guide — Documentation</title>
 
-Extracted out of ``html.py`` so new HTML renderers don't re-author a full
-HTML document from scratch; they only need to build their own section body
-HTML and hand it to :func:`page_shell`.
-"""
+<script>
+(function () {
+  try {
+    var saved = localStorage.getItem('pbicompass-theme');
+    if (saved === 'dark' || saved === 'light') {
+      document.documentElement.setAttribute('data-theme', saved);
+    }
+  } catch (e) {}
+})();
+</script>
 
-from __future__ import annotations
-
-import json
-
-from ._shared import html_e as _e
-
-_CSS = """
+<style>
 :root {
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
   --bg-main: #f8fafc;
@@ -851,22 +851,77 @@ details.collapsible > .code-block pre {
     white-space: nowrap;
   }
 }
-"""
+</style></head><body>
+<a href="#main-content" class="skip-link">Skip to content</a>
+<button type="button" class="mobile-toc-toggle" aria-label="Open table of contents" aria-expanded="false">&#9776;</button>
+<div class="sidebar-scrim"></div>
+<div class="print-cover">
+<div class="print-cover-mark">PBICompass</div>
+<h1>SampleSales — Business User Guide</h1>
+<p class="print-cover-subtitle">Business users · generated TIMESTAMP</p>
+<dl class="print-cover-meta">
+<dt>Version</dt><dd>Not specified</dd>
+<dt>Status</dt><dd>Not specified</dd>
+<dt>Owner</dt><dd>Not specified</dd>
+</dl>
+</div>
+<script type="application/json" id="search-index">[{"title": "Introduction", "type": "section", "anchor": "sec1"}, {"title": "Getting Started", "type": "section", "anchor": "sec2"}, {"title": "Report Pages", "type": "section", "anchor": "sec3"}, {"title": "Glossary", "type": "section", "anchor": "sec4"}]</script>
+<nav class="sidebar" aria-label="Table of contents">
+<div class="sidebar-logo">
+<svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
+<span>PBICompass</span>
+</div>
+<button type="button" class="theme-toggle" aria-label="Toggle dark mode">🌙 Dark mode</button>
+<div class="search-box">
+<input type="text" class="search-input" placeholder="Search this document…" aria-label="Search this document" autocomplete="off">
+<ul class="search-results" hidden></ul>
+</div>
+<ul class="toc-list">
+<li class="toc-item"><a href="#sec1" class="toc-link">Introduction</a></li>
+<li class="toc-item"><a href="#sec2" class="toc-link">Getting Started</a></li>
+<li class="toc-item"><a href="#sec3" class="toc-link">Report Pages</a></li>
+<li class="toc-item"><a href="#sec4" class="toc-link">Glossary</a></li>
+</ul></nav>
+<div class="content-wrapper">
+<main class="main-content" id="main-content">
+<div class="header-card">
+<h1>SampleSales — Business User Guide</h1>
+<p class="subtitle">Business users · generated TIMESTAMP</p>
+</div>
+<div class="kpis">
+<div class="kpi"><div class="n">2</div><div class="l">Pages</div></div>
+<div class="kpi"><div class="n">7</div><div class="l">Glossary Terms</div></div>
+</div>
+<h2 id="sec1">1. Introduction</h2>
+<p>Welcome! This guide explains how to use the &#x27;SampleSales&#x27; report — no technical background needed. &#x27;SampleSales&#x27; reports on Sales, tracking Avg Order Value, Total Revenue, Revenue YTD across Customer, Date. It spans 2 report page(s), documented individually below. This purpose statement is derived from the model contents alone — the business context requires confirmation from the report owner.</p>
+<h2 id="sec2">2. Getting Started</h2>
+<ul><li>Start on the &#x27;Sales Overview&#x27; page for an overview.</li><li>Use the filters at the top of each page to focus on what matters to you.</li><li>Right-click any data point to see more options, including drill-through where available.</li></ul>
+<h2 id="sec3">3. Report Pages</h2>
+<div class="card-section">
+<h3>Sales Overview</h3>
+<p>Presents 3 visual(s) — 1 column chart, 1 slicer, 1 decomposition tree. Key fields: Year, Total Revenue, Date, Region, Segment.</p>
+<p><strong>What to look at:</strong> Total Revenue</p>
+<table><thead><tr><th>Visual</th><th>What it shows</th></tr></thead><tbody><tr><td>Revenue by Year</td><td>Shows Total Revenue broken down by Year.</td></tr><tr><td>Revenue Breakdown</td><td>A decomposition tree breaks a measure down one field at a time. Click the + on a node and pick a field to expand by; the tree shows which categories contribute most to the total.</td></tr></tbody></table>
+<p class="caveat"><strong>Filters on this page:</strong> Date.</p>
+<p><strong>How to navigate this page</strong></p>
+<ul><li>Use the &#x27;Date&#x27; filter to narrow down what you see on this page.</li><li>Click on any chart to highlight the related data across the rest of the page.</li></ul>
+<p><strong>Questions this page answers</strong></p>
+<ul><li>How has Total Revenue trended by Year?</li><li>How does Total Revenue compare across Region?</li></ul>
+<p><strong>Drilling into detail</strong></p>
+<ul><li>Right-click a data point and choose Drill through to open &#x27;Region Detail&#x27; for more detail.</li></ul>
+</div>
+<div class="card-section">
+<h3>Region Detail</h3>
+<p>Presents 1 visual(s) — 1 map. Key fields: Region, Total Revenue. Drill-through detail page reached from other pages.</p>
+<p><strong>What to look at:</strong> Total Revenue</p>
+<table><thead><tr><th>Visual</th><th>What it shows</th></tr></thead><tbody><tr><td>Revenue by Region</td><td>A map plots values geographically. Bubble size or colour encodes the measure — compare regions visually and zoom for detail.</td></tr></tbody></table>
+<p><strong>Questions this page answers</strong></p>
+<ul><li>How does Total Revenue compare across Region?</li></ul>
+</div>
+<h2 id="sec4">4. Glossary of Business Terms</h2>
+<table><thead><tr><th>Term</th><th>What it means</th></tr></thead><tbody><tr><td><code>Avg Order Value</code></td><td>A ratio: Total Revenue divided by DISTINCTCOUNT ( SalesKey ).</td></tr><tr><td><code>Total Revenue</code></td><td>Computes the total of Quantity * UnitPrice, evaluated row by row over FILTER ( Sales, Status &lt;&gt; &quot;Canceled&quot; ).</td></tr><tr><td><code>Revenue YTD</code></td><td>A time-intelligence calculation: the year-to-date value of Total Revenue.</td></tr><tr><td><code>Year</code></td><td>A time period used to filter and compare data across days, months, or years.</td></tr><tr><td><code>Date</code></td><td>A time period used to filter and compare data across days, months, or years.</td></tr><tr><td><code>Region</code></td><td>A geographic area used to compare performance across locations.</td></tr><tr><td><code>Segment</code></td><td>A grouping used to compare different kinds of records.</td></tr></tbody></table>
+</main></div>
 
-_THEME_INIT_SCRIPT = """
-<script>
-(function () {
-  try {
-    var saved = localStorage.getItem('pbicompass-theme');
-    if (saved === 'dark' || saved === 'light') {
-      document.documentElement.setAttribute('data-theme', saved);
-    }
-  } catch (e) {}
-})();
-</script>
-"""
-
-_SCRIPT = """
 <script>
 document.addEventListener('DOMContentLoaded', () => {
   const links = document.querySelectorAll('.toc-link');
@@ -1109,119 +1164,5 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 </script>
-"""
 
-_LOGO_SVG = (
-    '<svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z'
-    'm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>'
-)
-
-
-_WATERMARK_CLASSIFICATIONS = {"confidential", "restricted"}
-
-
-def page_shell(
-    *,
-    title: str,
-    subtitle: str,
-    toc: list[tuple[str, str]],
-    kpis: list[tuple[str, str]],
-    body_html: str,
-    search_index: list[dict] | None = None,
-    doc_links: list[tuple[str, str]] | None = None,
-    owner: str | None = None,
-    version: str | None = None,
-    status: str | None = None,
-    classification: str | None = None,
-) -> str:
-    """Wrap ``body_html`` (a renderer's own section content) in the full HTML
-    document: doctype, head/fonts/CSS, sidebar TOC + search, header card with
-    title/subtitle/KPIs, a print-only cover page, and the closing scroll-spy
-    script.
-
-    ``toc`` is a list of ``(anchor_id, label)`` pairs. ``kpis`` is a list of
-    ``(label, value)`` pairs — pass an empty list to omit the KPI strip.
-    ``search_index`` is a list of ``{"title", "type", "anchor"}`` dicts for
-    the sidebar search box; defaults to one entry per ``toc`` section when a
-    renderer doesn't build a richer one (measures, tables, findings, ...).
-    ``doc_links`` is a list of ``(label, href)`` pairs — sibling documents
-    (and the hub) generated in the same job — rendered as a doc-switcher
-    block above the TOC. Plain relative hrefs, so they work unzipped on disk
-    with no web server; omit (or pass ``None``) for a single-document run,
-    where there's nothing valid to link to.
-    ``owner``/``version``/``status``/``classification`` populate the
-    print-only cover page (2.8); a diagonal watermark is added automatically
-    when ``classification`` is "Confidential" or "Restricted" (case-
-    insensitive) — never shown on screen, only when printed/exported to PDF.
-    """
-    if search_index is None:
-        search_index = [{"title": sec_title, "type": "section", "anchor": sec_id} for sec_id, sec_title in toc]
-
-    o: list[str] = ["<!DOCTYPE html>", '<html lang="en"><head><meta charset="utf-8">']
-    o.append(f"<title>{_e(title)} — Documentation</title>")
-    o.append(_THEME_INIT_SCRIPT)
-    o.append(f"<style>{_CSS}</style></head><body>")
-
-    o.append('<a href="#main-content" class="skip-link">Skip to content</a>')
-    o.append('<button type="button" class="mobile-toc-toggle" aria-label="Open table of contents" '
-             'aria-expanded="false">&#9776;</button>')
-    o.append('<div class="sidebar-scrim"></div>')
-
-    o.append('<div class="print-cover">')
-    o.append('<div class="print-cover-mark">PBICompass</div>')
-    o.append(f"<h1>{_e(title)}</h1>")
-    o.append(f'<p class="print-cover-subtitle">{_e(subtitle)}</p>')
-    o.append('<dl class="print-cover-meta">')
-    for label, value in (("Version", version), ("Status", status), ("Owner", owner)):
-        o.append(f"<dt>{_e(label)}</dt><dd>{_e(value) if value else 'Not specified'}</dd>")
-    o.append("</dl>")
-    if classification:
-        o.append(f'<div class="print-cover-classification">{_e(classification)}</div>')
-    o.append("</div>")
-    if classification and classification.strip().lower() in _WATERMARK_CLASSIFICATIONS:
-        o.append(f'<div class="print-watermark">{_e(classification.upper())}</div>')
-
-    index_json = json.dumps(search_index, ensure_ascii=False).replace("<", "\\u003c")
-    o.append(f'<script type="application/json" id="search-index">{index_json}</script>')
-
-    o.append('<nav class="sidebar" aria-label="Table of contents">')
-    o.append('<div class="sidebar-logo">')
-    o.append(_LOGO_SVG)
-    o.append('<span>PBICompass</span>')
-    o.append('</div>')
-    o.append('<button type="button" class="theme-toggle" aria-label="Toggle dark mode">🌙 Dark mode</button>')
-    if doc_links:
-        o.append('<nav class="doc-switcher" aria-label="Other documents in this job">')
-        for label, href in doc_links:
-            o.append(f'<a href="{_e(href)}">{_e(label)}</a>')
-        o.append('</nav>')
-    o.append('<div class="search-box">')
-    o.append('<input type="text" class="search-input" placeholder="Search this document…" '
-             'aria-label="Search this document" autocomplete="off">')
-    o.append('<ul class="search-results" hidden></ul>')
-    o.append('</div>')
-    o.append('<ul class="toc-list">')
-    for sec_id, sec_title in toc:
-        o.append(f'<li class="toc-item"><a href="#{sec_id}" class="toc-link">{_e(sec_title)}</a></li>')
-    o.append('</ul></nav>')
-
-    o.append('<div class="content-wrapper">')
-    o.append('<main class="main-content" id="main-content">')
-
-    o.append('<div class="header-card">')
-    o.append(f"<h1>{_e(title)}</h1>")
-    o.append(f'<p class="subtitle">{_e(subtitle)}</p>')
-    o.append("</div>")
-
-    if kpis:
-        o.append('<div class="kpis">')
-        for label, value in kpis:
-            o.append(f'<div class="kpi"><div class="n">{_e(value)}</div><div class="l">{_e(label)}</div></div>')
-        o.append("</div>")
-
-    o.append(body_html)
-
-    o.append("</main></div>")
-    o.append(_SCRIPT)
-    o.append("</body></html>")
-    return "\n".join(o)
+</body></html>

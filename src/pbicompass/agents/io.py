@@ -115,6 +115,31 @@ def business_analyst_input(model: SemanticModel) -> dict:
     }
 
 
+# Batch cap for the Business Analyst prompt's per-page work. Mirrors
+# ``dax_translator_batches`` below: a bad/invalid response degrades only the
+# pages in its own batch, not the whole document's narrative (1.4).
+BUSINESS_ANALYST_BATCH_SIZE = 6
+
+
+def business_analyst_batches(model: SemanticModel, batch_size: int = BUSINESS_ANALYST_BATCH_SIZE) -> list[dict]:
+    """Split the report's *visible* pages into bounded batches, each shaped
+    like :func:`business_analyst_input`'s return value (same report-wide
+    ``tables``/``key_measures`` context, a subset of ``pages``). Hidden pages
+    are never sent — the system prompt only asks for a summary "for EVERY
+    visible page", so a batch boundary always lines up exactly with a
+    contiguous slice of the deterministic visible-pages list callers already
+    have, letting a failed batch be mapped straight back to the pages it
+    covers."""
+    base = business_analyst_input(model)
+    visible_pages = [p for p in base["pages"] if not p["is_hidden"]]
+    if not visible_pages:
+        return [base]
+    return [
+        {**base, "pages": visible_pages[i:i + batch_size]}
+        for i in range(0, len(visible_pages), batch_size)
+    ]
+
+
 # --------------------------------------------------------------------------
 # DAX Translator Agent  (-> Measure Catalog plain-English, §V)
 # --------------------------------------------------------------------------
@@ -448,3 +473,23 @@ def user_guide_writer_input(
         "introduction_draft": introduction_draft,
         "pages": pages,
     }
+
+
+# Batch cap mirroring ``business_analyst_batches`` — a failed/invalid batch
+# only degrades the pages in that batch, not the whole guide (1.4).
+USER_GUIDE_WRITER_BATCH_SIZE = 8
+
+
+def user_guide_writer_batches(
+    report_name: str, introduction_draft: str, pages: list[dict],
+    batch_size: int = USER_GUIDE_WRITER_BATCH_SIZE,
+) -> list[dict]:
+    """Split ``pages`` (each ``{page_title, purpose_draft, common_scenarios_draft}``)
+    into bounded batches, each shaped like :func:`user_guide_writer_input`'s
+    return value."""
+    if not pages:
+        return [user_guide_writer_input(report_name, introduction_draft, [])]
+    return [
+        user_guide_writer_input(report_name, introduction_draft, pages[i:i + batch_size])
+        for i in range(0, len(pages), batch_size)
+    ]

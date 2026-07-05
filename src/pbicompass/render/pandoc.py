@@ -59,8 +59,37 @@ def to_docx(markdown_text: str, out_path, *, reference_doc: Optional[str] = None
     return out_path
 
 
-def to_pdf(markdown_text: str, out_path, *, engine: Optional[str] = None) -> Path:
-    """Convert Markdown to PDF via Pandoc + a PDF engine."""
+def _yaml_scalar(value: str) -> str:
+    """A YAML double-quoted scalar, safe for arbitrary title/author text
+    (escapes backslashes and double quotes; YAML double-quoted strings don't
+    otherwise treat Markdown/DAX special characters specially)."""
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _title_block(title: Optional[str], author: Optional[str], date: Optional[str]) -> str:
+    """A Pandoc YAML metadata block (2.8's "Markdown title block"). LaTeX-
+    family engines (tectonic/xelatex/lualatex/pdflatex) render this as a
+    ``\\maketitle`` cover page via Pandoc's default template; HTML-family
+    engines (wkhtmltopdf/weasyprint) only use it for the document's
+    ``<title>`` — a harmless no-op there, not a regression."""
+    if not title:
+        return ""
+    lines = ["---", f'title: "{_yaml_scalar(title)}"']
+    if author:
+        lines.append(f'author: "{_yaml_scalar(author)}"')
+    if date:
+        lines.append(f'date: "{_yaml_scalar(date)}"')
+    lines.append("---\n")
+    return "\n".join(lines)
+
+
+def to_pdf(
+    markdown_text: str, out_path, *, engine: Optional[str] = None,
+    title: Optional[str] = None, author: Optional[str] = None, date: Optional[str] = None,
+) -> Path:
+    """Convert Markdown to PDF via Pandoc + a PDF engine. ``title``/``author``/
+    ``date`` prepend a YAML metadata block so PDF engines that render one get
+    a cover/title page (2.8) — omit them for byte-identical output to before."""
     if not pandoc_available():
         raise PandocError(
             "PDF output needs Pandoc, which is not installed. Install it from "
@@ -75,5 +104,6 @@ def to_pdf(markdown_text: str, out_path, *, engine: Optional[str] = None) -> Pat
             "use your browser's 'Print > Save as PDF'."
         )
     out_path = Path(out_path)
-    _run(["pandoc", "-f", "gfm", f"--pdf-engine={engine}", "-o", str(out_path)], markdown_text)
+    content = _title_block(title, author, date) + markdown_text
+    _run(["pandoc", "-f", "gfm", f"--pdf-engine={engine}", "-o", str(out_path)], content)
     return out_path

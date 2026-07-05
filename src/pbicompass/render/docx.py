@@ -14,8 +14,10 @@ from pathlib import Path
 from ..schemas.document import Document
 from ._docx_writer import _Docx
 from ._shared import HEALTH_COMPONENT_LABELS
+from ._shared import format_timestamp as _fmt_ts
 from ._shared import is_local_path as _is_local_path
 from ._shared import non_data_note as _non_data_note
+from ._shared import slicer_field_label as _slicer_label
 
 
 def _add_para_with_md(d: _Docx, text: str, style_name: str | None = None):
@@ -41,7 +43,7 @@ def render_docx(doc: Document, out_path) -> Path:
     d = _Docx()
     md = doc.metadata
     d.heading(0, f"{md.report_name} — Documentation")
-    d.para([d._run(f"{md.target_audience or ''} · generated {md.generated_at or ''}", italic=True)])
+    d.para([d._run(f"{md.target_audience or ''} · generated {_fmt_ts(md.generated_at)}", italic=True)])
 
     def todo(t):
         d.para([d._run("✎ To complete: " + t, italic=True)])
@@ -61,7 +63,7 @@ def render_docx(doc: Document, out_path) -> Path:
     d.label("Classification", md.classification or "—")
     d.label("Target audience", md.target_audience or "—")
     d.label("Refresh schedule", md.refresh_schedule or "—")
-    d.label("Generated", md.generated_at or "")
+    d.label("Generated", _fmt_ts(md.generated_at))
     
     missing_doc_control = [f for f, v in [("Version", md.version), ("Status", md.status), ("Author", md.author), 
                                           ("Reviewer", md.reviewer), ("Classification", md.classification)] if not v]
@@ -189,7 +191,7 @@ def render_docx(doc: Document, out_path) -> Path:
 
     # 9. Filters, Slicers & Navigation
     d.heading(1, "9. Filters, Slicers & Navigation")
-    d.table(["Slicer field", "Page"], _t([[x["field"], x["page"]] for x in doc.slicers]) or [["—", "—"]])
+    d.table(["Slicer field", "Page"], _t([[_slicer_label(x), x["page"]] for x in doc.slicers]) or [["—", "—"]])
     drill = [p["name"] for p in doc.report_pages if p.get("drillthrough")]
     if drill:
         d.para([d._run("Drill-through pages: ", bold=True), d._run(", ".join(drill) + ".")])

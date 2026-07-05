@@ -84,9 +84,95 @@ class HtmlRenderTest(unittest.TestCase):
         self.assertEqual(positions, sorted(positions))
 
     def test_escapes_dax_markup(self):
-        # the 'Total Revenue' DAX contains <> and quotes; they must be escaped
+        # the 'Total Revenue' DAX contains <> and quotes; they must be escaped.
+        # Scoped to the literal DAX fragment rather than a bare "<>" search —
+        # the shared shell's own JS legitimately contains that 2-char
+        # substring inside a regex character class (escapeHtml's [&<>"']).
         self.assertIn("&lt;&gt;", self.html)
-        self.assertNotIn("<>", self.html)
+        self.assertNotIn("Status <>", self.html)
+
+    def test_no_external_network_calls(self):
+        # 1.11: zero CDN calls anywhere in the generated HTML — the document
+        # must render and look correct fully offline/air-gapped.
+        for banned in ("fonts.googleapis.com", "fonts.gstatic.com"):
+            self.assertNotIn(banned, self.html)
+
+    def test_dark_mode_toggle_and_mobile_toc_present(self):
+        # 2.5/2.9: every HTML doc ships a theme toggle and a mobile
+        # hamburger — via the shared shell, so this covers all four
+        # doc-type renderers, not just the technical one.
+        self.assertIn('class="theme-toggle"', self.html)
+        self.assertIn('class="mobile-toc-toggle"', self.html)
+        self.assertIn("pbicompass-theme", self.html)
+
+    def test_dax_highlighting_and_copy_button(self):
+        # 2.3: measure DAX renders through the tokenizer with a copy button,
+        # not as a raw unhighlighted <pre> block.
+        self.assertIn('class="copy-btn"', self.html)
+        self.assertIn("tok-keyword", self.html)
+
+    def test_long_dax_measure_collapses_behind_details(self):
+        # 2.4: a >10-line DAX expression collapses behind <details>, summary
+        # = measure name.
+        doc = generate_document(detect_and_parse(FIXTURE))
+        long_measure = doc.measure_catalog.measures[0]
+        long_measure.dax = "\n".join(f"VAR Step{i} = {i}" for i in range(12)) + "\nRETURN Step0"
+        html = render_html(doc)
+        self.assertIn(f'<details class="collapsible"><summary>{long_measure.name}', html)
+
+    def test_short_dax_measure_is_not_collapsed(self):
+        # every SampleSales measure is a one-liner — none should be wrapped
+        # in a <details> disclosure.
+        self.assertNotIn('<details class="collapsible">', self.html)
+
+    def test_interactive_diagram_nodes_and_edges(self):
+        # 2.6: table nodes are clickable/hoverable, edges carry endpoints and
+        # a join-column tooltip, and each table row in "Key tables" has a
+        # stable anchor the diagram can jump to.
+        self.assertIn('class="dm-node" data-table="Sales"', self.html)
+        self.assertIn('class="dm-edge" data-from=', self.html)
+        self.assertIn('id="table-sales"', self.html)
+        self.assertIn("→", self.html)  # join-column tooltip text
+
+    def test_client_side_search_index_present(self):
+        # 2.2: a JSON search index (sections + measures + tables) and the
+        # search box markup, no CDN/lunr dependency.
+        self.assertIn('id="search-index"', self.html)
+        self.assertIn('class="search-input"', self.html)
+        self.assertIn('"type": "measure"', self.html)
+        self.assertIn('"type": "table"', self.html)
+        self.assertIn("Total Revenue", self.html.split('id="search-index"')[1].split("</script>")[0])
+
+    def test_print_cover_page_present(self):
+        # 2.8: a print-only cover page (hidden on screen, shown via
+        # @media print) carries title/version/status/owner.
+        self.assertIn('class="print-cover"', self.html)
+        self.assertIn("Not specified", self.html)  # no owner/version/status set on this doc
+
+    def test_print_watermark_only_for_confidential_or_restricted(self):
+        # 2.8: the diagonal watermark only appears for Confidential/
+        # Restricted classifications, never for an unset or benign one.
+        doc = generate_document(detect_and_parse(FIXTURE), classification="Confidential")
+        self.assertIn('<div class="print-watermark">CONFIDENTIAL</div>', render_html(doc))
+
+        doc_internal = generate_document(detect_and_parse(FIXTURE), classification="Internal")
+        self.assertNotIn('class="print-watermark"', render_html(doc_internal))
+
+        self.assertNotIn('class="print-watermark"', self.html)  # no classification set at all
+
+    def test_accessibility_landmarks_present(self):
+        # 2.10: skip link, semantic nav/main landmarks, and a labeled model
+        # diagram SVG.
+        self.assertIn('class="skip-link"', self.html)
+        self.assertIn('<nav class="sidebar"', self.html)
+        self.assertIn('id="main-content"', self.html)
+        self.assertIn('role="img" aria-labelledby="model-diagram-title"', self.html)
+
+    def test_no_microsecond_timestamp(self):
+        # 1.8: the raw ISO generated_at (with microseconds) must never leak
+        # into rendered output; the header/Document Control show the
+        # human-readable form instead.
+        self.assertNotRegex(self.html, r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+")
 
     def test_contains_content(self):
         self.assertIn("SampleSales", self.html)
@@ -195,6 +281,23 @@ class PandocAdapterTest(unittest.TestCase):
             with self.assertRaises(pandoc.PandocError):
                 pandoc.to_docx("# Hi", "x.docx")
 
+    def test_title_block_renders_yaml_metadata(self):
+        # 2.8: title/author/date become a Pandoc YAML metadata block, which
+        # LaTeX-family engines render as a \\maketitle cover page.
+        block = pandoc._title_block("My Report", "Jane Doe", "4 July 2026")
+        self.assertTrue(block.startswith("---\n"))
+        self.assertIn('title: "My Report"', block)
+        self.assertIn('author: "Jane Doe"', block)
+        self.assertIn('date: "4 July 2026"', block)
+
+    def test_title_block_escapes_quotes(self):
+        block = pandoc._title_block('Report "v2"', None, None)
+        self.assertIn('title: "Report \\"v2\\""', block)
+        self.assertNotIn("author:", block)
+
+    def test_title_block_empty_without_title(self):
+        self.assertEqual(pandoc._title_block(None, "Jane", "today"), "")
+
 
 _AUDIT_SECTION_TITLES = [
     "1. Overall Health Score",
@@ -237,6 +340,11 @@ class AuditHtmlRenderTest(unittest.TestCase):
         positions = [self.html.find(t) for t in _AUDIT_SECTION_TITLES]
         self.assertNotIn(-1, positions)
         self.assertEqual(positions, sorted(positions))
+
+    def test_no_external_network_calls(self):
+        # 1.11: the shared _html_shell must not pull the Google Fonts CDN.
+        for banned in ("fonts.googleapis.com", "fonts.gstatic.com"):
+            self.assertNotIn(banned, self.html)
 
     def test_uses_shared_page_shell(self):
         # the same sidebar/TOC scaffold as the technical renderer
@@ -300,9 +408,8 @@ _EXECUTIVE_SECTION_TITLES = [
     "7. Model & Report Statistics",
     "8. Business Value",
     "9. Known Risks",
-    "10. Dependencies",
-    "11. Maintenance Overview",
-    "12. Future Recommendations",
+    "10. Maintenance Overview",
+    "11. Future Recommendations",
 ]
 
 

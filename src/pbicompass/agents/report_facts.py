@@ -65,8 +65,7 @@ def report_pages(model: SemanticModel) -> list[dict]:
     measure_names = {m.name for m in model.all_measures()}
     out = []
     for p in model.pages:
-        visuals, decorative = [], 0
-        visuals_raw = []
+        visuals_raw, decorative = [], 0
         for v in p.visuals:
             if v.is_slicer:
                 continue
@@ -79,20 +78,29 @@ def report_pages(model: SemanticModel) -> list[dict]:
             visuals_raw.append({
                 "label": visual_label(v.title, v.type, metrics, dims),
                 "type": FRIENDLY_VISUAL.get(v.type, v.type),
-                "metrics": metrics, "dimensions": dims,
+                "metrics": metrics, "dimensions": dims, "_title": v.title,
             })
 
-        # Disambiguate duplicate visual names on the same page
-        label_counts = {}
+        # Group visuals identical in every way that matters to a reader (same
+        # explicit title-or-lack-of-one, type, metrics, and dimensions) into
+        # one row with a count, instead of one near-duplicate row per instance
+        # (e.g. five "Sale_Value" cards, each explained "Shows Sale_Value.").
+        groups: dict[tuple, dict] = {}
+        order: list[tuple] = []
         for vis in visuals_raw:
-            label_counts[vis["label"]] = label_counts.get(vis["label"], 0) + 1
+            key = (vis["_title"], vis["type"], frozenset(vis["metrics"]), frozenset(vis["dimensions"]))
+            if key not in groups:
+                groups[key] = {"label": vis["label"], "type": vis["type"],
+                               "metrics": vis["metrics"], "dimensions": vis["dimensions"], "count": 1}
+                order.append(key)
+            else:
+                groups[key]["count"] += 1
 
-        label_seen = {}
-        for vis in visuals_raw:
-            lbl = vis["label"]
-            if label_counts[lbl] > 1:
-                label_seen[lbl] = label_seen.get(lbl, 0) + 1
-                vis["label"] = f"{lbl} [{label_seen[lbl]}]"
+        visuals = []
+        for key in order:
+            vis = groups[key]
+            if vis["count"] > 1:
+                vis["label"] = f"{vis['label']} — {vis['type']} ×{vis['count']}"
             visuals.append(vis)
 
         out.append({"name": p.display_name, "hidden": p.is_hidden, "drillthrough": p.is_drillthrough,
@@ -101,10 +109,22 @@ def report_pages(model: SemanticModel) -> list[dict]:
 
 
 def slicers(model: SemanticModel) -> list[dict]:
-    return [
-        {"field": (v.fields[0] if v.fields else (v.title or "—")), "page": p.display_name}
-        for p in model.pages for v in p.visuals if v.is_slicer
-    ]
+    """One row per distinct (page, field) slicer. Multiple slicer visuals
+    bound to the same field on the same page collapse into a single row —
+    ``count`` tells the caller how many, so callers can note the multiplicity
+    ("Type (2 slicers)") instead of repeating the same filter bullet twice."""
+    counts: dict[tuple[str, str], int] = {}
+    order: list[tuple[str, str]] = []
+    for p in model.pages:
+        for v in p.visuals:
+            if not v.is_slicer:
+                continue
+            field = v.fields[0] if v.fields else (v.title or "—")
+            key = (p.display_name, field)
+            if key not in counts:
+                order.append(key)
+            counts[key] = counts.get(key, 0) + 1
+    return [{"field": field, "page": page, "count": counts[(page, field)]} for page, field in order]
 
 
 def calc_columns(model: SemanticModel) -> list[dict]:
@@ -129,6 +149,28 @@ def detect_hardcoded_years(dax: str) -> list[str]:
     return [y for y in years if 1990 <= int(y) <= 2040]
 
 
+def first_sentence(text: str) -> str:
+    """First sentence of a description — glossaries reference the fuller
+    definition living elsewhere (the Measure Catalog, DAX translation) rather
+    than repeating it in full."""
+    text = (text or "").strip()
+    m = re.match(r"(.+?[.!?])(?:\s|$)", text)
+    return m.group(1) if m else text
+
+
+_TABLE_COLUMN_RE = re.compile(r"(?:'[^']+'|[A-Za-z_][A-Za-z0-9_]*)\[([^\]]+)\]")
+
+
+def declassify(text: str) -> str:
+    """Strip ``Table[Column]``/``'Table Name'[Column]`` bracket notation down
+    to the bare field name. Business-facing prose surfaces (the user guide's
+    glossary, the executive doc's Key KPIs) reuse the deterministic DAX-to-
+    English translator as their offline fallback for a real per-measure
+    meaning (1.5/1.6) — this keeps that text free of DAX-flavored syntax even
+    though the translator itself is written for a technical audience."""
+    return _TABLE_COLUMN_RE.sub(r"\1", text)
+
+
 def data_source_summaries(model: SemanticModel) -> list[str]:
     """One human-readable line per data source, e.g. ``"Sql.Database:
     prod-sql.contoso.com/SalesDW"``. Shared by the technical document's
@@ -140,3 +182,22 @@ def data_source_summaries(model: SemanticModel) -> list[str]:
             target = f"{target}/{ds.database}" if target else ds.database
         sources.append(f"{ds.type or 'Source'}: {target}".rstrip(": "))
     return sources
+
+
+_LOCAL_PATH_RE = re.compile(r"^[A-Za-z]:[\\/]")
+
+
+def local_path_sources(model: SemanticModel) -> list[str]:
+    """Data-source targets that look like a hardcoded local path (a drive
+    letter or a user-profile directory) rather than a server/gateway address
+    — these break refresh as soon as the report runs on any machine other
+    than the report author's. Shared by the technical document's Data Model
+    risks and the deterministic audit engine's governance findings."""
+    paths = []
+    for ds in model.data_sources:
+        target = ds.server or ds.detail or ""
+        if ds.database:
+            target = f"{target}/{ds.database}" if target else ds.database
+        if _LOCAL_PATH_RE.search(target) or "Users/" in target or "Users\\" in target:
+            paths.append(target)
+    return paths
