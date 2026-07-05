@@ -147,7 +147,6 @@ class Document:
     report_pages: list[dict[str, Any]] = field(default_factory=list)
     slicers: list[dict[str, Any]] = field(default_factory=list)
     calculated_columns: list[dict[str, Any]] = field(default_factory=list)
-    inferred_requirements: list[dict[str, str]] = field(default_factory=list)
     glossary_entries: list[dict[str, str]] = field(default_factory=list)
     # Model health score computed by the deterministic audit rules:
     # {overall, band, component_scores: {...}, component_notes: {...}}

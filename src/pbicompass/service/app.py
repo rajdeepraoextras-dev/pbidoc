@@ -34,6 +34,7 @@ _CONTENT_TYPES = {
     "html": "text/html; charset=utf-8",
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "pdf": "application/pdf",
+    "zip": "application/zip",
 }
 _STATIC = Path(__file__).parent / "static"
 

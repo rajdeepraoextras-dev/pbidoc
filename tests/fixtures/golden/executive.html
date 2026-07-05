@@ -726,19 +726,21 @@ details.collapsible > .code-block pre {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
 }
 
-/* Theme toggle — sits under the sidebar logo on desktop. */
+/* Theme toggle — icon-only, sits under the sidebar logo on desktop. */
 .theme-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
   margin-bottom: 20px;
-  padding: 6px 10px;
+  padding: 0;
   border: 1px solid var(--border-color);
   border-radius: 8px;
   background: var(--bg-main);
   color: var(--text-muted);
-  font-size: 0.78rem;
-  font-weight: 600;
+  font-size: 1.05rem;
+  line-height: 1;
   cursor: pointer;
 }
 .theme-toggle:hover {
@@ -865,13 +867,13 @@ details.collapsible > .code-block pre {
 <dt>Owner</dt><dd>Not specified</dd>
 </dl>
 </div>
-<script type="application/json" id="search-index">[{"title": "Business Purpose", "type": "section", "anchor": "sec1"}, {"title": "Key KPIs", "type": "section", "anchor": "sec2"}, {"title": "Data Sources", "type": "section", "anchor": "sec3"}, {"title": "Refresh Schedule", "type": "section", "anchor": "sec4"}, {"title": "Security Overview", "type": "section", "anchor": "sec5"}, {"title": "High-Level Architecture", "type": "section", "anchor": "sec6"}, {"title": "Model & Report Statistics", "type": "section", "anchor": "sec7"}, {"title": "Business Value", "type": "section", "anchor": "sec8"}, {"title": "Known Risks", "type": "section", "anchor": "sec9"}, {"title": "Maintenance Overview", "type": "section", "anchor": "sec10"}, {"title": "Future Recommendations", "type": "section", "anchor": "sec11"}]</script>
+<script type="application/json" id="search-index">[{"title": "Business Purpose", "type": "section", "anchor": "sec1"}, {"title": "Key KPIs", "type": "section", "anchor": "sec2"}, {"title": "Data Sources", "type": "section", "anchor": "sec3"}, {"title": "Refresh Schedule", "type": "section", "anchor": "sec4"}, {"title": "Security Overview", "type": "section", "anchor": "sec5"}, {"title": "High-Level Architecture", "type": "section", "anchor": "sec6"}, {"title": "Model & Report Statistics", "type": "section", "anchor": "sec7"}, {"title": "Business Value", "type": "section", "anchor": "sec8"}, {"title": "Known Risks", "type": "section", "anchor": "sec9"}, {"title": "Maintenance Overview", "type": "section", "anchor": "sec10"}, {"title": "Future Recommendations", "type": "section", "anchor": "sec11"}, {"title": "Total Revenue", "type": "KPI", "anchor": "kpi-0"}, {"title": "Avg Order Value", "type": "KPI", "anchor": "kpi-1"}, {"title": "[High] Some relationships use bidirectional cross-filtering. Bidirectional filters can create ambiguous filter paths and materially slow down query performance.", "type": "risk", "anchor": "risk-0"}, {"title": "[Medium] Row-level security gaps were found. Without RLS (or with roles that have no members configured), sensitive rows may be visible to more users than intended.", "type": "risk", "anchor": "risk-1"}, {"title": "[Medium] Description coverage across measures and columns is low. Missing descriptions increase onboarding time and the risk of misinterpreting a field's meaning.", "type": "risk", "anchor": "risk-2"}, {"title": "[Medium] No owner or data classification was specified for this report. Without a named owner, there's no clear point of contact for questions, incidents, or change requests.", "type": "risk", "anchor": "risk-3"}, {"title": "[Low] Some ID/key-style columns are visible to report authors. Visible technical join keys clutter the field list and can be mis-used in visuals by mistake.", "type": "risk", "anchor": "risk-4"}]</script>
 <nav class="sidebar" aria-label="Table of contents">
 <div class="sidebar-logo">
 <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
 <span>PBICompass</span>
 </div>
-<button type="button" class="theme-toggle" aria-label="Toggle dark mode">🌙 Dark mode</button>
+<button type="button" class="theme-toggle" aria-label="Toggle dark mode" title="Toggle dark mode">🌙</button>
 <div class="search-box">
 <input type="text" class="search-input" placeholder="Search this document…" aria-label="Search this document" autocomplete="off">
 <ul class="search-results" hidden></ul>
@@ -904,7 +906,7 @@ details.collapsible > .code-block pre {
 <h2 id="sec1">1. Business Purpose</h2>
 <p>&#x27;SampleSales&#x27; reports on Sales, tracking Avg Order Value, Total Revenue, Revenue YTD across Customer, Date. It spans 2 report page(s), documented individually below. This purpose statement is derived from the model contents alone — the business context requires confirmation from the report owner.</p>
 <h2 id="sec2">2. Key KPIs</h2>
-<ul><li>Total Revenue — Computes the total of Quantity * UnitPrice, evaluated row by row over FILTER ( Sales, Status &lt;&gt; &quot;Canceled&quot; ).</li><li>Avg Order Value — A ratio: Total Revenue divided by DISTINCTCOUNT ( SalesKey ).</li></ul>
+<ul><li id="kpi-0">Total Revenue — Computes the total of Quantity * UnitPrice, evaluated row by row over FILTER ( Sales, Status &lt;&gt; &quot;Canceled&quot; ).</li><li id="kpi-1">Avg Order Value — A ratio: Total Revenue divided by the number of unique SalesKey values.</li></ul>
 <h2 id="sec3">3. Data Sources</h2>
 <ul><li>Sql.Database: prod-sql.contoso.com/SalesDW</li></ul>
 <p><strong>Also depends on:</strong> Parameter: ServerName.</p>
@@ -922,11 +924,11 @@ details.collapsible > .code-block pre {
 <h2 id="sec8">8. Business Value</h2>
 <p>This report gives stakeholders direct visibility into Total Revenue, Avg Order Value, reducing reliance on manual reporting and supporting faster, data-driven decisions.</p>
 <h2 id="sec9">9. Known Risks</h2>
-<ul><li>[High] Some relationships use bidirectional cross-filtering. Bidirectional filters can create ambiguous filter paths and materially slow down query performance.</li><li>[Medium] Row-level security gaps were found. Without RLS (or with roles that have no members configured), sensitive rows may be visible to more users than intended.</li><li>[Medium] Description coverage across measures and columns is low. Missing descriptions increase onboarding time and the risk of misinterpreting a field&#x27;s meaning.</li><li>[Medium] No owner or data classification was specified for this report. Without a named owner, there&#x27;s no clear point of contact for questions, incidents, or change requests.</li><li>[Low] Some ID/key-style columns are visible to report authors. Visible technical join keys clutter the field list and can be mis-used in visuals by mistake.</li></ul>
+<ul><li id="risk-0">[High] Some relationships use bidirectional cross-filtering. Bidirectional filters can create ambiguous filter paths and materially slow down query performance.</li><li id="risk-1">[Medium] Row-level security gaps were found. Without RLS (or with roles that have no members configured), sensitive rows may be visible to more users than intended.</li><li id="risk-2">[Medium] Description coverage across measures and columns is low. Missing descriptions increase onboarding time and the risk of misinterpreting a field&#x27;s meaning.</li><li id="risk-3">[Medium] No owner or data classification was specified for this report. Without a named owner, there&#x27;s no clear point of contact for questions, incidents, or change requests.</li><li id="risk-4">[Low] Some ID/key-style columns are visible to report authors. Visible technical join keys clutter the field list and can be mis-used in visuals by mistake.</li></ul>
 <h2 id="sec10">10. Maintenance Overview</h2>
 <p>No refresh schedule has been documented yet. 5 modeling best-practice gap(s) and 3 governance finding(s) from the latest audit should be reviewed periodically. No owner has been assigned for ongoing accountability.</p>
 <h2 id="sec11">11. Future Recommendations</h2>
-<ul><li>Some relationships use bidirectional cross-filtering. More predictable filtering and better query performance.</li><li>Many measures/columns have no description. Faster onboarding and self-documenting metadata in Power BI Desktop tooltips.</li><li>Row-level security gaps were found. Data access that matches the intended audience.</li></ul>
+<ul><li>Many measures/columns have no description. — expected benefit: Faster onboarding and self-documenting metadata in Power BI Desktop tooltips.</li><li>Some measures have no description. — expected benefit: Faster onboarding and fewer misinterpretations of what a measure means.</li><li>Some calculated columns are never used in any report visual. — expected benefit: Smaller model size and faster refreshes.</li></ul>
 </main></div>
 
 <script>
@@ -1050,7 +1052,10 @@ document.addEventListener('DOMContentLoaded', () => {
       return prefersDark ? 'dark' : 'light';
     }
     function updateLabel() {
-      themeBtn.textContent = currentTheme() === 'dark' ? '☀ Light mode' : '🌙 Dark mode';
+      const dark = currentTheme() === 'dark';
+      themeBtn.textContent = dark ? '☀️' : '🌙';
+      themeBtn.setAttribute('aria-label', dark ? 'Switch to light mode' : 'Switch to dark mode');
+      themeBtn.setAttribute('title', dark ? 'Switch to light mode' : 'Switch to dark mode');
     }
     updateLabel();
     themeBtn.addEventListener('click', () => {

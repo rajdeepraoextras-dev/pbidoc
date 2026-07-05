@@ -15,6 +15,7 @@ from pathlib import Path
 from ..schemas.user_guide_document import UserGuideDocument
 from ._docx_writer import _Docx
 from ._html_shell import page_shell
+from ._shared import anchor_slug
 from ._shared import format_timestamp as _fmt_ts
 from ._shared import html_e as _e
 from ._shared import html_table as _html_table
@@ -138,7 +139,7 @@ def render_html(
 
     o.append(f'<h2 id="sec3">{_e(_SECTION_TITLES[2])}</h2>')
     for p in doc.pages:
-        o.append('<div class="card-section">')
+        o.append(f'<div class="card-section" id="page-{_e(anchor_slug(p.page_title))}">')
         o.append(f"<h3>{_e(p.page_title)}</h3>")
         o.append(f"<p>{_e(p.purpose)}</p>")
 
@@ -178,17 +179,31 @@ def render_html(
 
         o.append("</div>")
 
+    term_ids = [f"term-{anchor_slug(g.term)}" for g in doc.glossary]
     o.append(f'<h2 id="sec4">{_e(_SECTION_TITLES[3])}</h2>')
     if doc.glossary:
-        o.append(_html_table(["Term", "What it means"],
-                             [[f"<code>{_e(g.term)}</code>", _e(g.plain_definition)] for g in doc.glossary]))
+        o.append(_html_table(
+            ["Term", "What it means"],
+            [[f"<code>{_e(g.term)}</code>", _e(g.plain_definition)] for g in doc.glossary],
+            row_ids=term_ids,
+        ))
     else:
         o.append('<p class="muted">No glossary terms available.</p>')
+
+    search_index = [{"title": sec_title, "type": "section", "anchor": sec_id} for sec_id, sec_title in toc]
+    search_index += [
+        {"title": p.page_title, "type": "page", "anchor": f"page-{anchor_slug(p.page_title)}"}
+        for p in doc.pages
+    ]
+    search_index += [
+        {"title": g.term, "type": "term", "anchor": tid}
+        for g, tid in zip(doc.glossary, term_ids)
+    ]
 
     return page_shell(
         title=f"{md.report_name} — Business User Guide",
         subtitle=f"{md.target_audience or ''} · generated {_fmt_ts(md.generated_at)}",
-        toc=toc, kpis=kpis, body_html="\n".join(o), doc_links=doc_links,
+        toc=toc, kpis=kpis, body_html="\n".join(o), doc_links=doc_links, search_index=search_index,
         owner=md.owner, version=md.version, status=md.status,
     )
 

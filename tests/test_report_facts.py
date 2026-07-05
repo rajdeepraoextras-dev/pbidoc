@@ -7,7 +7,15 @@ from __future__ import annotations
 
 import unittest
 
-from pbicompass.agents.report_facts import first_sentence, local_path_sources, report_pages, slicers
+from pbicompass.agents.report_facts import (
+    business_plain_english,
+    declassify,
+    first_sentence,
+    local_path_sources,
+    report_pages,
+    simplify_dax_prose,
+    slicers,
+)
 from pbicompass.schemas.model import DataSource, Measure, Page, SemanticModel, Table, Visual
 
 
@@ -91,6 +99,46 @@ class FirstSentenceTest(unittest.TestCase):
     def test_empty_input(self):
         self.assertEqual(first_sentence(""), "")
         self.assertEqual(first_sentence(None), "")
+
+
+class SimplifyDaxProseTest(unittest.TestCase):
+    """P3: a business-facing fallback must never leak raw DAX aggregation
+    syntax, even nested inside another function's argument."""
+
+    def test_distinctcount_becomes_plain_english(self):
+        self.assertEqual(
+            simplify_dax_prose("DISTINCTCOUNT ( Sales[SalesKey] )"),
+            "the number of unique Sales[SalesKey] values",
+        )
+
+    def test_nested_inside_divide_is_also_simplified(self):
+        text = "A ratio: Total Revenue divided by DISTINCTCOUNT ( Sales[SalesKey] )."
+        simplified = simplify_dax_prose(text)
+        self.assertNotIn("DISTINCTCOUNT", simplified)
+        self.assertIn("the number of unique Sales[SalesKey] values", simplified)
+
+    def test_countrows_and_sum_are_simplified(self):
+        self.assertIn("the number of Sales rows", simplify_dax_prose("COUNTROWS ( Sales )"))
+        self.assertIn("the total Sales[Amount]", simplify_dax_prose("SUM ( Sales[Amount] )"))
+
+    def test_text_without_dax_calls_is_unchanged(self):
+        self.assertEqual(simplify_dax_prose("A plain sentence."), "A plain sentence.")
+
+
+class BusinessPlainEnglishTest(unittest.TestCase):
+    def test_never_leaks_raw_function_syntax_or_brackets(self):
+        # Regression (P3): "Avg Order Value" style measures used to render as
+        # "A ratio: Total Revenue divided by DISTINCTCOUNT ( Sales[SalesKey] )."
+        # in business-facing docs — should now read in plain English.
+        text = business_plain_english(
+            "Avg Order Value", "DIVIDE ( [Total Revenue], DISTINCTCOUNT ( Sales[SalesKey] ) )", None,
+        )
+        self.assertNotIn("DISTINCTCOUNT", text)
+        self.assertNotIn("[", text)
+        self.assertIn("number of unique", text)
+
+    def test_declassify_still_strips_bracket_notation(self):
+        self.assertEqual(declassify("Sales[Quantity] * Sales[UnitPrice]"), "Quantity * UnitPrice")
 
 
 if __name__ == "__main__":

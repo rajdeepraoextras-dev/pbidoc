@@ -13,6 +13,7 @@ from __future__ import annotations
 import re
 
 from ..schemas.model import SemanticModel
+from .deterministic import translate_dax
 
 # decorative elements that aren't worth a documentation row when they carry no data
 DECORATIVE = {"image", "shape", "basicShape", "textbox", "actionButton", "visualGroup"}
@@ -169,6 +170,56 @@ def declassify(text: str) -> str:
     meaning (1.5/1.6) — this keeps that text free of DAX-flavored syntax even
     though the translator itself is written for a technical audience."""
     return _TABLE_COLUMN_RE.sub(r"\1", text)
+
+
+# Single-argument DAX aggregation calls translate_dax() only prettifies at
+# the *outermost* level — a nested call inside another function's argument
+# (e.g. "DIVIDE ( Revenue, DISTINCTCOUNT ( Sales[Key] ) )") passes straight
+# through _pretty() untouched, so the raw function-call syntax otherwise
+# leaks into a business-facing KPI/glossary line.
+_SIMPLE_AGG_PHRASES = {
+    "DISTINCTCOUNT": "the number of unique {arg} values",
+    "COUNTROWS": "the number of {arg} rows",
+    "COUNT": "the count of {arg}",
+    "COUNTA": "the count of {arg}",
+    "SUM": "the total {arg}",
+    "AVERAGE": "the average {arg}",
+    "MIN": "the minimum {arg}",
+    "MAX": "the maximum {arg}",
+}
+_SIMPLE_AGG_RE = re.compile(
+    r"\b(" + "|".join(_SIMPLE_AGG_PHRASES) + r")\s*\(\s*([^()]+?)\s*\)"
+)
+
+
+def simplify_dax_prose(text: str) -> str:
+    """Rewrite simple single-argument DAX aggregation calls into plain
+    English, however deeply nested — repeatedly replaces the innermost
+    matching call (one with no parens left in its own argument) until none
+    remain, so nesting inside DIVIDE/CALCULATE/etc. is covered without a
+    full DAX parser. Business-facing surfaces only (technical calculation
+    logic keeps the precise DAX)."""
+    prev = None
+    while prev != text:
+        prev = text
+
+        def _repl(m: re.Match) -> str:
+            func, arg = m.group(1), m.group(2).strip()
+            return _SIMPLE_AGG_PHRASES[func].format(arg=arg)
+
+        text = _SIMPLE_AGG_RE.sub(_repl, text)
+    return text
+
+
+def business_plain_english(name: str, expression: str, format_string: str | None) -> str:
+    """The deterministic, business-safe one-liner for a measure: the same
+    DAX-to-English translation the technical doc's fallback uses, then
+    stripped of DAX-flavored syntax (bracket notation, raw aggregation
+    function calls) that has no place in a glossary or an executive KPI
+    line. Shared by the user guide's glossary and the executive doc's Key
+    KPIs so the two never phrase the same measure differently."""
+    english, _, _ = translate_dax(name, expression, format_string)
+    return declassify(simplify_dax_prose(first_sentence(english)))
 
 
 def data_source_summaries(model: SemanticModel) -> list[str]:

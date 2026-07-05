@@ -13,11 +13,22 @@ default, omitted case, which resolves to ``"technical"`` — output keys stay
 flat (``"md"``, ``"html"``, ...) for exact backward compatibility with
 existing callers. Composite ``"{type}.{format}"`` keys (e.g. ``"audit.html"``)
 are used only when more than one document type is requested.
+
+Multi-document jobs also get a documentation hub (``index.html``) with a
+doc-switcher in every doc's sidebar and cross-document content links (audit
+measure names -> the technical doc, executive risks -> the audit doc). These
+only work when every sibling file sits next to the others under a *fixed*
+relative name — unlike the single-file download endpoint's name (which
+depends on the upload's filename), so the fixed names only ever appear
+together inside the zip bundle this also produces (pulling 5.7 forward),
+never as the individual per-format downloads.
 """
 
 from __future__ import annotations
 
+import io
 import logging
+import zipfile
 from pathlib import Path
 from typing import Callable
 
@@ -25,6 +36,7 @@ from ..agents import generate_document, get_client
 from ..agents.generators import DOCUMENT_TYPES
 from ..render import pandoc, registry
 from ..render._shared import format_timestamp
+from ..render.hub import doc_switcher_links, hub_stats, render_hub
 from .ingest import ingest_to_model
 from .jobs import JobStore
 from .sandbox import JobSandbox
@@ -136,18 +148,29 @@ def process_job(store: JobStore, job_id: str, upload_path: Path,
             warn(client_warning)
         document_types = _resolve_document_types(options.get("document_types"))
         multi = len(document_types) > 1
+        # Fixed relative filenames, valid only inside the zip bundle built
+        # below (never as the individual /download?format= names, which
+        # depend on the upload's filename) — the doc-switcher and
+        # cross-document links below assume these exact names.
+        html_filenames = {d: f"{d}.html" for d in document_types} if multi else {}
 
         outputs: dict[str, bytes] = {}
+        docs: dict[str, object] = {}
         for dtype in document_types:
             doc = _generate_one(dtype, model, client, options, warn)
+            docs[dtype] = doc
             renderers = registry.RENDERERS[dtype]
 
             def key(fmt: str, _dtype: str = dtype) -> str:
                 return f"{_dtype}.{fmt}" if multi else fmt
 
+            doc_links = doc_switcher_links(document_types, dtype, html_filenames, "index.html") if multi else None
+
             outputs[key("md")] = renderers["md"](doc).encode("utf-8")
             outputs[key("json")] = doc.to_json().encode("utf-8")
-            outputs[key("html")] = renderers["html"](doc).encode("utf-8")
+            outputs[key("html")] = renderers["html"](
+                doc, doc_links=doc_links, sibling_hrefs=html_filenames or None,
+            ).encode("utf-8")
 
             docx_path = sandbox.path(f"out.{dtype}.docx")
             renderers["docx"](doc, docx_path)
@@ -164,6 +187,31 @@ def process_job(store: JobStore, job_id: str, upload_path: Path,
                     outputs[key("pdf")] = pdf_path.read_bytes()
                 except pandoc.PandocError as exc:
                     log.info("job %s pdf skipped for %s: %s", job_id, dtype, type(exc).__name__)
+
+        if multi:
+            entries = [
+                {"type": dtype, "href": html_filenames[dtype], "stats": hub_stats(dtype, doc)}
+                for dtype, doc in docs.items()
+            ]
+            health_score = None
+            audit_doc = docs.get("audit")
+            if audit_doc is not None:
+                health_score = {"overall": audit_doc.health.overall, "band": audit_doc.health.band}
+            hub_html = render_hub(
+                entries, report_name=model.report_name,
+                generated_at=format_timestamp(model.meta.generated_at), health_score=health_score,
+            )
+            outputs["index.html"] = hub_html.encode("utf-8")
+
+            # The zip is the only place the fixed "{type}.html" names (and
+            # the doc-switcher/cross-document links built on them) are
+            # actually valid side by side — bundle everything generated so
+            # far under those same names.
+            zip_buf = io.BytesIO()
+            with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                for name, data in outputs.items():
+                    zf.writestr(name, data)
+            outputs["zip"] = zip_buf.getvalue()
 
         store.store_outputs(job_id, outputs)
         store.mark_done(job_id, list(outputs.keys()), warnings)

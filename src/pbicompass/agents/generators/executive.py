@@ -10,10 +10,13 @@ text the Audit & Health Report and technical document show (never re-derived
 independently — that was the earlier source of the three documents
 disagreeing on risk counts and ordering), just filtered to drop the "dax"
 category, whose issue text names DAX constructs directly and belongs in the
-developer-facing documents, not here. Only ``business_purpose``,
-``business_value``, and ``maintenance_overview`` optionally go through an
-LLM for polished prose, with deterministic templated fallbacks so the
-document is always complete offline.
+developer-facing documents, not here. ``business_purpose``, ``business_value``,
+and ``maintenance_overview`` optionally go through an LLM for polished prose;
+Key KPI meanings optionally go through the same DAX Translator agent the
+technical doc's Measure Catalog uses, so a KPI is described the same way
+everywhere instead of falling back to a mechanical DAX-to-English gloss
+whenever an LLM was available but never consulted for it. All with
+deterministic fallbacks so the document is always complete offline.
 """
 
 from __future__ import annotations
@@ -26,7 +29,7 @@ from .. import io
 from .. import usage
 from ..deterministic import business_analyst_deterministic, schema_shape, translate_dax
 from ..llm import LLMClient
-from ..report_facts import data_source_summaries, declassify, first_sentence
+from ..report_facts import business_plain_english, data_source_summaries, first_sentence
 from .base import Warn, build_core_metadata, call_llm
 
 
@@ -53,27 +56,44 @@ def _measure_visual_counts(model) -> dict[str, int]:
     return counts
 
 
-def _key_kpis(model, limit: int = 5) -> list[str]:
+def _key_kpis(model, client: Optional[LLMClient], warn: Warn, limit: int = 5) -> list[str]:
     """Top measures by real usage — (#visuals using it) x (#pages it appears
     on) — rather than the first N in model order, which can surface a
     title/text-label measure as a "KPI". Excludes hidden measures, orphaned
     measures (never bound to a visual), and Text-category measures. Each
-    entry carries a one-line meaning from the same source as the glossary
-    (1.5): the measure's own description if set, else the deterministic DAX
-    translation."""
+    entry carries a one-line meaning: the measure's own description if set,
+    else the DAX Translator's actual business definition when a client is
+    available (the same call the technical doc's Measure Catalog and the
+    user guide's glossary make, so all three describe a measure the same
+    way — see user_guide.py's ``_build_glossary``), else the deterministic
+    business-safe fallback."""
     usage_pages = usage.measure_usage(model)
     used = usage.used_measure_names(model)
     visual_counts = _measure_visual_counts(model)
+
+    llm_translations: dict[str, str] = {}
+    if client is not None:
+        for batch in io.dax_translator_batches(model):
+            data = call_llm(client, io.DAX_TRANSLATOR_SYSTEM, batch, io.DAX_TRANSLATOR_SCHEMA, warn, "DAX Translator")
+            if data:
+                for t in data.get("translations", []):
+                    if t.get("plain_english"):
+                        llm_translations[t["name"]] = first_sentence(t["plain_english"])
 
     scored = []
     for i, m in enumerate(model.all_measures()):
         if m.is_hidden or m.name not in used:
             continue
-        english, _, category = translate_dax(m.name, m.expression, m.format_string)
+        _, _, category = translate_dax(m.name, m.expression, m.format_string)
         if category == "Text":
             continue
         score = visual_counts.get(m.name, 0) * len(usage_pages.get(m.name, []))
-        meaning = first_sentence(m.description) if m.description else declassify(first_sentence(english))
+        if m.description:
+            meaning = first_sentence(m.description)
+        elif m.name in llm_translations:
+            meaning = llm_translations[m.name]
+        else:
+            meaning = business_plain_english(m.name, m.expression, m.format_string)
         scored.append((score, i, m.name, meaning))
 
     scored.sort(key=lambda t: (-t[0], t[1]))
@@ -83,7 +103,7 @@ def _key_kpis(model, limit: int = 5) -> list[str]:
 _IMPLEMENTATION_JARGON = ("DAX", "CROSSFILTER", "USERELATIONSHIP", "VAR")
 
 
-def _known_risks(recommendations, limit: int = 5) -> list[str]:
+def _known_risks(recommendations, limit: int = 5) -> tuple[list[str], set[int]]:
     """Executive-safe known risks: the same deterministic recommendation
     engine behind the Audit & Health Report and the technical document's
     Model Health section (`audit_rules.build_recommendations`), filtered to
@@ -94,7 +114,9 @@ def _known_risks(recommendations, limit: int = 5) -> list[str]:
     in the technical/audit documents, not here. Capped to the top
     severities. Keeps the three documents' risk lists consistent — same
     underlying findings, same severity order — without re-deriving risk
-    detection here."""
+    detection here. Also returns the ``id()`` of every recommendation shown
+    here, so ``_future_recommendations`` can skip them — otherwise the same
+    top-severity items surface twice (P6: §11 repeating §9)."""
     safe = []
     for r in recommendations:
         if r.category == "dax":
@@ -103,7 +125,8 @@ def _known_risks(recommendations, limit: int = 5) -> list[str]:
         if any(term in text for term in _IMPLEMENTATION_JARGON):
             continue
         safe.append(r)
-    return [f"[{r.priority}] {r.issue} {r.why_it_matters}" for r in safe[:limit]]
+    shown = safe[:limit]
+    return [f"[{r.priority}] {r.issue} {r.why_it_matters}" for r in shown], {id(r) for r in shown}
 
 
 def _report_statistics(model) -> dict[str, int]:
@@ -160,12 +183,15 @@ def _maintenance_overview(
     return " ".join(parts)
 
 
-def _future_recommendations(recommendations) -> list[str]:
-    # issue + expected_benefit only — the audit's suggested_fix text is
-    # written for BI developers (VAR, CROSSFILTER(), DAX-level detail) and
-    # doesn't belong in a document that explicitly excludes implementation
-    # detail.
-    return [f"{r.issue} {r.expected_benefit}" for r in recommendations[:3]]
+def _future_recommendations(recommendations, shown_as_risks: set[int], limit: int = 3) -> list[str]:
+    """Next-highest-priority items *not already listed* under Known Risks
+    (P6: §11 must not repeat §9) — the audit's suggested_fix text is written
+    for BI developers (VAR, CROSSFILTER(), DAX-level detail) and doesn't
+    belong in a document that explicitly excludes implementation detail, so
+    each item is phrased as ask + benefit on their own clause rather than run
+    together into one mashed sentence."""
+    remaining = [r for r in recommendations if id(r) not in shown_as_risks]
+    return [f"{r.issue} — expected benefit: {r.expected_benefit}" for r in remaining[:limit]]
 
 
 class ExecutiveSummaryGenerator:
@@ -203,9 +229,9 @@ class ExecutiveSummaryGenerator:
         )
         failed_practice_count = sum(1 for c in best_practices if not c.passed)
 
-        key_kpis = _key_kpis(model)
+        key_kpis = _key_kpis(model, client, warn)
         key_kpi_names = [k.split(" — ", 1)[0] for k in key_kpis]
-        model_risks = _known_risks(recommendations)
+        model_risks, risk_ids = _known_risks(recommendations)
 
         business_purpose = _deterministic_business_purpose(model)
         business_value = _business_value(key_kpi_names, audience)
@@ -248,5 +274,5 @@ class ExecutiveSummaryGenerator:
             known_risks=model_risks,
             dependencies=_dependencies(model),
             maintenance_overview=maintenance_overview,
-            future_recommendations=_future_recommendations(recommendations),
+            future_recommendations=_future_recommendations(recommendations, risk_ids),
         )

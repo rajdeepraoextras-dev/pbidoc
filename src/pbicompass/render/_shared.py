@@ -97,11 +97,23 @@ def html_todo(text: str) -> str:
     return f'<div class="todo"><b>✎ To complete:</b> {html_e(text)}</div>'
 
 
-def html_table(headers: list[str], rows: list[list[str]], empty: str = "None.") -> str:
+def html_table(
+    headers: list[str], rows: list[list[str]], empty: str = "None.",
+    row_ids: list[str] | None = None,
+) -> str:
     """HTML table. Headers/``empty`` are escaped here; row cells are inserted
-    as-is since callers commonly pre-build cell HTML (e.g. ``<span>`` markup)."""
+    as-is since callers commonly pre-build cell HTML (e.g. ``<span>`` markup).
+    ``row_ids``, when given, adds a stable ``id`` per ``<tr>`` (one per row,
+    same order) — e.g. so search results and cross-document links can jump
+    straight to a specific finding instead of just the section."""
     if not rows:
         return f'<p class="muted">{html_e(empty)}</p>'
     head = "".join(f"<th>{html_e(h)}</th>" for h in headers)
-    body = "".join("<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>" for r in rows)
+    if row_ids:
+        body = "".join(
+            f'<tr id="{html_e(rid)}">' + "".join(f"<td>{c}</td>" for c in r) + "</tr>"
+            for r, rid in zip(rows, row_ids)
+        )
+    else:
+        body = "".join("<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>" for r in rows)
     return f"<table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>"

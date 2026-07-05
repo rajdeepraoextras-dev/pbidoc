@@ -726,19 +726,21 @@ details.collapsible > .code-block pre {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
 }
 
-/* Theme toggle — sits under the sidebar logo on desktop. */
+/* Theme toggle — icon-only, sits under the sidebar logo on desktop. */
 .theme-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
   margin-bottom: 20px;
-  padding: 6px 10px;
+  padding: 0;
   border: 1px solid var(--border-color);
   border-radius: 8px;
   background: var(--bg-main);
   color: var(--text-muted);
-  font-size: 0.78rem;
-  font-weight: 600;
+  font-size: 1.05rem;
+  line-height: 1;
   cursor: pointer;
 }
 .theme-toggle:hover {
@@ -871,7 +873,7 @@ details.collapsible > .code-block pre {
 <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
 <span>PBICompass</span>
 </div>
-<button type="button" class="theme-toggle" aria-label="Toggle dark mode">🌙 Dark mode</button>
+<button type="button" class="theme-toggle" aria-label="Toggle dark mode" title="Toggle dark mode">🌙</button>
 <div class="search-box">
 <input type="text" class="search-input" placeholder="Search this document…" aria-label="Search this document" autocomplete="off">
 <ul class="search-results" hidden></ul>
@@ -921,7 +923,7 @@ details.collapsible > .code-block pre {
 </div>
 <div class="todo"><b>✎ To complete:</b> Specify the primary business decision this dashboard drives (e.g. weekly sales planning).</div>
 <h2 id="sec3">3. Business Requirements</h2>
-<table><thead><tr><th>ID</th><th>Inferred Requirement</th><th>Source Visual</th><th>Priority</th><th>Status</th></tr></thead><tbody><tr><td>REQ-01</td><td>Provide the &#x27;Sales Overview&#x27; analysis view (inferred from the page; confirm scope with the business owner).</td><td>Page: Sales Overview</td><td>TBC</td><td>Draft</td></tr><tr><td>REQ-02</td><td>Provide the &#x27;Region Detail&#x27; analysis view (inferred from the page; confirm scope with the business owner).</td><td>Page: Region Detail</td><td>TBC</td><td>Draft</td></tr><tr><td>REQ-03</td><td>Report &#x27;Revenue by Year&#x27; (inferred from the visual; confirm with the business owner).</td><td>Visual: Revenue by Year (Sales Overview)</td><td>TBC</td><td>Draft</td></tr><tr><td>REQ-04</td><td>Report &#x27;Revenue Breakdown&#x27; (inferred from the visual; confirm with the business owner).</td><td>Visual: Revenue Breakdown (Sales Overview)</td><td>TBC</td><td>Draft</td></tr><tr><td>REQ-05</td><td>Report &#x27;Revenue by Region&#x27; (inferred from the visual; confirm with the business owner).</td><td>Visual: Revenue by Region (Region Detail)</td><td>TBC</td><td>Draft</td></tr></tbody></table>
+<div class="todo"><b>✎ To complete:</b> Business requirements have not yet been captured; confirm scope with the business owner.</div>
 <h2 id="sec4">4. Audience &amp; Stakeholders</h2>
 <table><thead><tr><th>Role</th><th>Name / Group</th><th>Access</th></tr></thead><tbody><tr><td>Business Owner</td><td><span class="muted">—</span></td><td>Edit / sign-off</td></tr><tr><td>Primary Users</td><td>BI developers and business stakeholders</td><td>View</td></tr><tr><td>Author / Creator</td><td><span class="muted">—</span></td><td>Modify / Publish</td></tr></tbody></table>
 <div class="todo"><b>✎ To complete:</b> Confirm other stakeholders (Data Owner, Developer/Maintainer, and per-group access levels).</div>
@@ -1235,7 +1237,10 @@ document.addEventListener('DOMContentLoaded', () => {
       return prefersDark ? 'dark' : 'light';
     }
     function updateLabel() {
-      themeBtn.textContent = currentTheme() === 'dark' ? '☀ Light mode' : '🌙 Dark mode';
+      const dark = currentTheme() === 'dark';
+      themeBtn.textContent = dark ? '☀️' : '🌙';
+      themeBtn.setAttribute('aria-label', dark ? 'Switch to light mode' : 'Switch to dark mode');
+      themeBtn.setAttribute('title', dark ? 'Switch to light mode' : 'Switch to dark mode');
     }
     updateLabel();
     themeBtn.addEventListener('click', () => {

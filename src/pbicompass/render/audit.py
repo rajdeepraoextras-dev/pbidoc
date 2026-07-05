@@ -201,6 +201,7 @@ def render_html(
         ["Max relationship depth", f'<span class="num">{c.max_relationship_depth}</span>'],
     ]))
 
+    dax_ids = [f"finding-dax-{i}" for i in range(len(doc.dax_findings))]
     o.append(f'<h2 id="sec3">{_e(_SECTION_TITLES[2])}</h2>')
     o.append(_html_table(
         ["Measure", "Table", "Finding", "Severity", "Detail"],
@@ -209,16 +210,20 @@ def render_html(
          for f in doc.dax_findings],
         "No DAX findings — no duplicate logic, overly long expressions, missing descriptions, "
         "or naming issues detected.",
+        row_ids=dax_ids,
     ))
 
+    check_ids = [f"check-{_e(bp.id)}" for bp in doc.best_practices]
     o.append(f'<h2 id="sec4">{_e(_SECTION_TITLES[3])}</h2>')
     o.append(_html_table(
         ["Check", "Result", "Detail"],
         [[_e(bp.name), f'<span class="pill {"pass" if bp.passed else "fail"}">'
                        f'{"Pass" if bp.passed else "Fail"}</span>', _e(bp.detail)]
          for bp in doc.best_practices],
+        row_ids=check_ids,
     ))
 
+    perf_ids = [f"finding-perf-{i}" for i in range(len(doc.performance_risks))]
     o.append(f'<h2 id="sec5">{_e(_SECTION_TITLES[4])}</h2>')
     o.append(f'<p class="caveat">{_e(_severity_note())}</p>')
     o.append(_html_table(
@@ -226,13 +231,16 @@ def render_html(
         [[_e(_kind_label(r.kind)), _e(r.object_name), _e(r.table or "—"), _severity_pill(r.severity),
           _e(r.detail)] for r in doc.performance_risks],
         "No performance risk signals detected.",
+        row_ids=perf_ids,
     ))
 
+    gov_ids = [f"finding-gov-{i}" for i in range(len(doc.governance))]
     o.append(f'<h2 id="sec6">{_e(_SECTION_TITLES[5])}</h2>')
     o.append(_html_table(
         ["Area", "Severity", "Detail"],
         [[_e(_area_label(g.area)), _severity_pill(g.severity), _e(g.detail)] for g in doc.governance],
         "No governance gaps detected.",
+        row_ids=gov_ids,
     ))
 
     o.append(f'<h2 id="sec7">{_e(_SECTION_TITLES[6])}</h2>')
@@ -243,8 +251,8 @@ def render_html(
 
     o.append(f'<h2 id="sec8">{_e(_SECTION_TITLES[7])}</h2>')
     if doc.recommendations:
-        for r in doc.recommendations:
-            o.append('<div class="card-section">')
+        for i, r in enumerate(doc.recommendations):
+            o.append(f'<div class="card-section" id="rec-{i}">')
             o.append(f'<h3>{_severity_pill(r.priority)} {_e(r.issue)}</h3>')
             o.append(f'<p><strong>Why it matters:</strong> {_e(r.why_it_matters)}</p>')
             o.append(f'<p><strong>Suggested fix:</strong> {_e(r.suggested_fix)}</p>')
@@ -254,10 +262,32 @@ def render_html(
     else:
         o.append('<p class="muted">No recommendations — the model passed every deterministic check.</p>')
 
+    search_index = [{"title": sec_title, "type": "section", "anchor": sec_id} for sec_id, sec_title in toc]
+    search_index += [
+        {"title": f"{f.measure} — {_kind_label(f.kind)}", "type": "finding", "anchor": rid}
+        for f, rid in zip(doc.dax_findings, dax_ids)
+    ]
+    search_index += [
+        {"title": bp.name, "type": "check", "anchor": rid}
+        for bp, rid in zip(doc.best_practices, check_ids) if not bp.passed
+    ]
+    search_index += [
+        {"title": f"{r.object_name} — {_kind_label(r.kind)}", "type": "finding", "anchor": rid}
+        for r, rid in zip(doc.performance_risks, perf_ids)
+    ]
+    search_index += [
+        {"title": _area_label(g.area), "type": "finding", "anchor": rid}
+        for g, rid in zip(doc.governance, gov_ids)
+    ]
+    search_index += [
+        {"title": r.issue, "type": "recommendation", "anchor": f"rec-{i}"}
+        for i, r in enumerate(doc.recommendations)
+    ]
+
     return page_shell(
         title=f"{md.report_name} — Audit & Health Report",
         subtitle=f"{md.target_audience or ''} · generated {_fmt_ts(md.generated_at)}",
-        toc=toc, kpis=kpis, body_html="\n".join(o), doc_links=doc_links,
+        toc=toc, kpis=kpis, body_html="\n".join(o), doc_links=doc_links, search_index=search_index,
         owner=md.owner, version=md.version, status=md.status,
     )
 

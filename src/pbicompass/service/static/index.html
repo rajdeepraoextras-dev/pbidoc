@@ -1737,10 +1737,14 @@ function finishProgress(success) {
   if (elapsed) text.textContent = `Finished in ${elapsed[1]}s`;
 }
 
-const FORMATS = { html: "HTML Document", docx: "Word Document", pdf: "PDF Report", md: "Markdown", json: "Raw JSON Schema" };
+const FORMATS = {
+  html: "HTML Document", docx: "Word Document", pdf: "PDF Report", md: "Markdown",
+  json: "Raw JSON Schema", zip: "Download All (.zip)",
+};
 const DOC_TYPE_LABELS = {
   technical: "Technical Documentation", audit: "Audit & Health Report",
   executive: "Executive Summary", "user-guide": "Business User Guide",
+  index: "Documentation Hub",
 };
 const DL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>';
 

@@ -726,19 +726,21 @@ details.collapsible > .code-block pre {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
 }
 
-/* Theme toggle — sits under the sidebar logo on desktop. */
+/* Theme toggle — icon-only, sits under the sidebar logo on desktop. */
 .theme-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
   margin-bottom: 20px;
-  padding: 6px 10px;
+  padding: 0;
   border: 1px solid var(--border-color);
   border-radius: 8px;
   background: var(--bg-main);
   color: var(--text-muted);
-  font-size: 0.78rem;
-  font-weight: 600;
+  font-size: 1.05rem;
+  line-height: 1;
   cursor: pointer;
 }
 .theme-toggle:hover {
@@ -865,13 +867,13 @@ details.collapsible > .code-block pre {
 <dt>Owner</dt><dd>Not specified</dd>
 </dl>
 </div>
-<script type="application/json" id="search-index">[{"title": "Introduction", "type": "section", "anchor": "sec1"}, {"title": "Getting Started", "type": "section", "anchor": "sec2"}, {"title": "Report Pages", "type": "section", "anchor": "sec3"}, {"title": "Glossary", "type": "section", "anchor": "sec4"}]</script>
+<script type="application/json" id="search-index">[{"title": "Introduction", "type": "section", "anchor": "sec1"}, {"title": "Getting Started", "type": "section", "anchor": "sec2"}, {"title": "Report Pages", "type": "section", "anchor": "sec3"}, {"title": "Glossary", "type": "section", "anchor": "sec4"}, {"title": "Sales Overview", "type": "page", "anchor": "page-sales-overview"}, {"title": "Region Detail", "type": "page", "anchor": "page-region-detail"}, {"title": "Avg Order Value", "type": "term", "anchor": "term-avg-order-value"}, {"title": "Total Revenue", "type": "term", "anchor": "term-total-revenue"}, {"title": "Revenue YTD", "type": "term", "anchor": "term-revenue-ytd"}, {"title": "Year", "type": "term", "anchor": "term-year"}, {"title": "Date", "type": "term", "anchor": "term-date"}, {"title": "Region", "type": "term", "anchor": "term-region"}, {"title": "Segment", "type": "term", "anchor": "term-segment"}]</script>
 <nav class="sidebar" aria-label="Table of contents">
 <div class="sidebar-logo">
 <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
 <span>PBICompass</span>
 </div>
-<button type="button" class="theme-toggle" aria-label="Toggle dark mode">🌙 Dark mode</button>
+<button type="button" class="theme-toggle" aria-label="Toggle dark mode" title="Toggle dark mode">🌙</button>
 <div class="search-box">
 <input type="text" class="search-input" placeholder="Search this document…" aria-label="Search this document" autocomplete="off">
 <ul class="search-results" hidden></ul>
@@ -897,7 +899,7 @@ details.collapsible > .code-block pre {
 <h2 id="sec2">2. Getting Started</h2>
 <ul><li>Start on the &#x27;Sales Overview&#x27; page for an overview.</li><li>Use the filters at the top of each page to focus on what matters to you.</li><li>Right-click any data point to see more options, including drill-through where available.</li></ul>
 <h2 id="sec3">3. Report Pages</h2>
-<div class="card-section">
+<div class="card-section" id="page-sales-overview">
 <h3>Sales Overview</h3>
 <p>Presents 3 visual(s) — 1 column chart, 1 slicer, 1 decomposition tree. Key fields: Year, Total Revenue, Date, Region, Segment.</p>
 <p><strong>What to look at:</strong> Total Revenue</p>
@@ -910,7 +912,7 @@ details.collapsible > .code-block pre {
 <p><strong>Drilling into detail</strong></p>
 <ul><li>Right-click a data point and choose Drill through to open &#x27;Region Detail&#x27; for more detail.</li></ul>
 </div>
-<div class="card-section">
+<div class="card-section" id="page-region-detail">
 <h3>Region Detail</h3>
 <p>Presents 1 visual(s) — 1 map. Key fields: Region, Total Revenue. Drill-through detail page reached from other pages.</p>
 <p><strong>What to look at:</strong> Total Revenue</p>
@@ -919,7 +921,7 @@ details.collapsible > .code-block pre {
 <ul><li>How does Total Revenue compare across Region?</li></ul>
 </div>
 <h2 id="sec4">4. Glossary of Business Terms</h2>
-<table><thead><tr><th>Term</th><th>What it means</th></tr></thead><tbody><tr><td><code>Avg Order Value</code></td><td>A ratio: Total Revenue divided by DISTINCTCOUNT ( SalesKey ).</td></tr><tr><td><code>Total Revenue</code></td><td>Computes the total of Quantity * UnitPrice, evaluated row by row over FILTER ( Sales, Status &lt;&gt; &quot;Canceled&quot; ).</td></tr><tr><td><code>Revenue YTD</code></td><td>A time-intelligence calculation: the year-to-date value of Total Revenue.</td></tr><tr><td><code>Year</code></td><td>A time period used to filter and compare data across days, months, or years.</td></tr><tr><td><code>Date</code></td><td>A time period used to filter and compare data across days, months, or years.</td></tr><tr><td><code>Region</code></td><td>A geographic area used to compare performance across locations.</td></tr><tr><td><code>Segment</code></td><td>A grouping used to compare different kinds of records.</td></tr></tbody></table>
+<table><thead><tr><th>Term</th><th>What it means</th></tr></thead><tbody><tr id="term-avg-order-value"><td><code>Avg Order Value</code></td><td>A ratio: Total Revenue divided by the number of unique SalesKey values.</td></tr><tr id="term-total-revenue"><td><code>Total Revenue</code></td><td>Computes the total of Quantity * UnitPrice, evaluated row by row over FILTER ( Sales, Status &lt;&gt; &quot;Canceled&quot; ).</td></tr><tr id="term-revenue-ytd"><td><code>Revenue YTD</code></td><td>A time-intelligence calculation: the year-to-date value of Total Revenue.</td></tr><tr id="term-year"><td><code>Year</code></td><td>A time period used to filter and compare data across days, months, or years.</td></tr><tr id="term-date"><td><code>Date</code></td><td>A time period used to filter and compare data across days, months, or years.</td></tr><tr id="term-region"><td><code>Region</code></td><td>A geographic area used to compare performance across locations.</td></tr><tr id="term-segment"><td><code>Segment</code></td><td>A grouping used to compare different kinds of records.</td></tr></tbody></table>
 </main></div>
 
 <script>
@@ -1043,7 +1045,10 @@ document.addEventListener('DOMContentLoaded', () => {
       return prefersDark ? 'dark' : 'light';
     }
     function updateLabel() {
-      themeBtn.textContent = currentTheme() === 'dark' ? '☀ Light mode' : '🌙 Dark mode';
+      const dark = currentTheme() === 'dark';
+      themeBtn.textContent = dark ? '☀️' : '🌙';
+      themeBtn.setAttribute('aria-label', dark ? 'Switch to light mode' : 'Switch to dark mode');
+      themeBtn.setAttribute('title', dark ? 'Switch to light mode' : 'Switch to dark mode');
     }
     updateLabel();
     themeBtn.addEventListener('click', () => {

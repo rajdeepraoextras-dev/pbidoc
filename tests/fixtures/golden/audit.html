@@ -726,19 +726,21 @@ details.collapsible > .code-block pre {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
 }
 
-/* Theme toggle — sits under the sidebar logo on desktop. */
+/* Theme toggle — icon-only, sits under the sidebar logo on desktop. */
 .theme-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
   margin-bottom: 20px;
-  padding: 6px 10px;
+  padding: 0;
   border: 1px solid var(--border-color);
   border-radius: 8px;
   background: var(--bg-main);
   color: var(--text-muted);
-  font-size: 0.78rem;
-  font-weight: 600;
+  font-size: 1.05rem;
+  line-height: 1;
   cursor: pointer;
 }
 .theme-toggle:hover {
@@ -865,13 +867,13 @@ details.collapsible > .code-block pre {
 <dt>Owner</dt><dd>Not specified</dd>
 </dl>
 </div>
-<script type="application/json" id="search-index">[{"title": "Overall Health Score", "type": "section", "anchor": "sec1"}, {"title": "Model Complexity", "type": "section", "anchor": "sec2"}, {"title": "DAX Review", "type": "section", "anchor": "sec3"}, {"title": "Model Best Practices", "type": "section", "anchor": "sec4"}, {"title": "Performance Risks", "type": "section", "anchor": "sec5"}, {"title": "Governance", "type": "section", "anchor": "sec6"}, {"title": "Unused Assets", "type": "section", "anchor": "sec7"}, {"title": "Recommendations", "type": "section", "anchor": "sec8"}]</script>
+<script type="application/json" id="search-index">[{"title": "Overall Health Score", "type": "section", "anchor": "sec1"}, {"title": "Model Complexity", "type": "section", "anchor": "sec2"}, {"title": "DAX Review", "type": "section", "anchor": "sec3"}, {"title": "Model Best Practices", "type": "section", "anchor": "sec4"}, {"title": "Performance Risks", "type": "section", "anchor": "sec5"}, {"title": "Governance", "type": "section", "anchor": "sec6"}, {"title": "Unused Assets", "type": "section", "anchor": "sec7"}, {"title": "Recommendations", "type": "section", "anchor": "sec8"}, {"title": "Avg Order Value — Missing Description", "type": "finding", "anchor": "finding-dax-0"}, {"title": "Total Revenue — Missing Description", "type": "finding", "anchor": "finding-dax-1"}, {"title": "Revenue YTD — Missing Description", "type": "finding", "anchor": "finding-dax-2"}, {"title": "Orphan Margin — Missing Description", "type": "finding", "anchor": "finding-dax-3"}, {"title": "Description coverage", "type": "check", "anchor": "check-description_coverage"}, {"title": "Hidden technical/key columns", "type": "check", "anchor": "check-hidden_technical_columns"}, {"title": "Unused calculated columns", "type": "check", "anchor": "check-unused_calculated_columns"}, {"title": "Inactive relationships", "type": "check", "anchor": "check-inactive_relationships"}, {"title": "Bidirectional cross-filtering", "type": "check", "anchor": "check-bidirectional_filters"}, {"title": "CustomerKey — High Cardinality Signal", "type": "finding", "anchor": "finding-perf-0"}, {"title": "OrderDateKey — High Cardinality Signal", "type": "finding", "anchor": "finding-perf-1"}, {"title": "ShipDateKey — High Cardinality Signal", "type": "finding", "anchor": "finding-perf-2"}, {"title": "RLS", "type": "finding", "anchor": "finding-gov-0"}, {"title": "Descriptions", "type": "finding", "anchor": "finding-gov-1"}, {"title": "Ownership", "type": "finding", "anchor": "finding-gov-2"}, {"title": "Some relationships use bidirectional cross-filtering.", "type": "recommendation", "anchor": "rec-0"}, {"title": "Many measures/columns have no description.", "type": "recommendation", "anchor": "rec-1"}, {"title": "Row-level security gaps were found.", "type": "recommendation", "anchor": "rec-2"}, {"title": "Description coverage across measures and columns is low.", "type": "recommendation", "anchor": "rec-3"}, {"title": "No owner or data classification was specified for this report.", "type": "recommendation", "anchor": "rec-4"}, {"title": "Some measures have no description.", "type": "recommendation", "anchor": "rec-5"}, {"title": "Some ID/key-style columns are visible to report authors.", "type": "recommendation", "anchor": "rec-6"}, {"title": "Some calculated columns are never used in any report visual.", "type": "recommendation", "anchor": "rec-7"}, {"title": "Some relationships are inactive.", "type": "recommendation", "anchor": "rec-8"}, {"title": "Some visible columns look like high-cardinality identifiers.", "type": "recommendation", "anchor": "rec-9"}, {"title": "12 unused asset(s) were found (measures, columns, tables, calculated columns, or hidden non-drillthrough pages).", "type": "recommendation", "anchor": "rec-10"}]</script>
 <nav class="sidebar" aria-label="Table of contents">
 <div class="sidebar-logo">
 <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
 <span>PBICompass</span>
 </div>
-<button type="button" class="theme-toggle" aria-label="Toggle dark mode">🌙 Dark mode</button>
+<button type="button" class="theme-toggle" aria-label="Toggle dark mode" title="Toggle dark mode">🌙</button>
 <div class="search-box">
 <input type="text" class="search-input" placeholder="Search this document…" aria-label="Search this document" autocomplete="off">
 <ul class="search-results" hidden></ul>
@@ -910,89 +912,89 @@ details.collapsible > .code-block pre {
 <p>Low complexity: 4 tables, 4 measures, 3 relationships — a compact model.</p>
 <table><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody><tr><td>Tables</td><td><span class="num">4</span></td></tr><tr><td>Measures</td><td><span class="num">4</span></td></tr><tr><td>Relationships</td><td><span class="num">3</span></td></tr><tr><td>Calculated columns</td><td><span class="num">1</span></td></tr><tr><td>Max relationship depth</td><td><span class="num">2</span></td></tr></tbody></table>
 <h2 id="sec3">3. DAX Review</h2>
-<table><thead><tr><th>Measure</th><th>Table</th><th>Finding</th><th>Severity</th><th>Detail</th></tr></thead><tbody><tr><td>Avg Order Value</td><td>Key Measures</td><td>Missing Description</td><td><span class="pill low">Low</span></td><td>No description set for this measure.</td></tr><tr><td>Total Revenue</td><td>Sales</td><td>Missing Description</td><td><span class="pill low">Low</span></td><td>No description set for this measure.</td></tr><tr><td>Revenue YTD</td><td>Sales</td><td>Missing Description</td><td><span class="pill low">Low</span></td><td>No description set for this measure.</td></tr><tr><td>Orphan Margin</td><td>Sales</td><td>Missing Description</td><td><span class="pill low">Low</span></td><td>No description set for this measure.</td></tr></tbody></table>
+<table><thead><tr><th>Measure</th><th>Table</th><th>Finding</th><th>Severity</th><th>Detail</th></tr></thead><tbody><tr id="finding-dax-0"><td>Avg Order Value</td><td>Key Measures</td><td>Missing Description</td><td><span class="pill low">Low</span></td><td>No description set for this measure.</td></tr><tr id="finding-dax-1"><td>Total Revenue</td><td>Sales</td><td>Missing Description</td><td><span class="pill low">Low</span></td><td>No description set for this measure.</td></tr><tr id="finding-dax-2"><td>Revenue YTD</td><td>Sales</td><td>Missing Description</td><td><span class="pill low">Low</span></td><td>No description set for this measure.</td></tr><tr id="finding-dax-3"><td>Orphan Margin</td><td>Sales</td><td>Missing Description</td><td><span class="pill low">Low</span></td><td>No description set for this measure.</td></tr></tbody></table>
 <h2 id="sec4">4. Model Best Practices</h2>
-<table><thead><tr><th>Check</th><th>Result</th><th>Detail</th></tr></thead><tbody><tr><td>Star schema</td><td><span class="pill pass">Pass</span></td><td>Model follows a star schema — a star schema centred on the &#x27;Sales&#x27; fact table.</td></tr><tr><td>Fact/dimension separation</td><td><span class="pill pass">Pass</span></td><td>1 fact table(s), 2 dimension table(s).</td></tr><tr><td>Table naming conventions</td><td><span class="pill pass">Pass</span></td><td>No generic/default table names detected.</td></tr><tr><td>Display folder usage</td><td><span class="pill pass">Pass</span></td><td>4/4 measures use a display folder.</td></tr><tr><td>Description coverage</td><td><span class="pill fail">Fail</span></td><td>0/17 measures and visible columns have a description.</td></tr><tr><td>Dedicated date table</td><td><span class="pill pass">Pass</span></td><td>&#x27;Date&#x27; looks like the model&#x27;s date table.</td></tr><tr><td>Hidden technical/key columns</td><td><span class="pill fail">Fail</span></td><td>3/6 ID/key-like columns are hidden.</td></tr><tr><td>Unused calculated columns</td><td><span class="pill fail">Fail</span></td><td>1 calculated column(s) are not referenced by any visual: Sales[LineTotal].</td></tr><tr><td>Inactive relationships</td><td><span class="pill fail">Fail</span></td><td>1 inactive relationship(s) — only reachable via USERELATIONSHIP().</td></tr><tr><td>Bidirectional cross-filtering</td><td><span class="pill fail">Fail</span></td><td>1 relationship(s) use bidirectional cross-filtering, which can create ambiguous filter paths.</td></tr><tr><td>Many-to-many relationships</td><td><span class="pill pass">Pass</span></td><td>No many-to-many relationships.</td></tr><tr><td>No circular relationship paths</td><td><span class="pill pass">Pass</span></td><td>No circular relationship paths detected.</td></tr><tr><td>No disconnected fact/dimension tables</td><td><span class="pill pass">Pass</span></td><td>Every fact/dimension table participates in at least one relationship.</td></tr><tr><td>No development leftovers in production model</td><td><span class="pill pass">Pass</span></td><td>No table/column names match common development-leftover patterns.</td></tr></tbody></table>
+<table><thead><tr><th>Check</th><th>Result</th><th>Detail</th></tr></thead><tbody><tr id="check-star_schema"><td>Star schema</td><td><span class="pill pass">Pass</span></td><td>Model follows a star schema — a star schema centred on the &#x27;Sales&#x27; fact table.</td></tr><tr id="check-fact_dimension_separation"><td>Fact/dimension separation</td><td><span class="pill pass">Pass</span></td><td>1 fact table(s), 2 dimension table(s).</td></tr><tr id="check-naming_conventions"><td>Table naming conventions</td><td><span class="pill pass">Pass</span></td><td>No generic/default table names detected.</td></tr><tr id="check-display_folder_usage"><td>Display folder usage</td><td><span class="pill pass">Pass</span></td><td>4/4 measures use a display folder.</td></tr><tr id="check-description_coverage"><td>Description coverage</td><td><span class="pill fail">Fail</span></td><td>0/17 measures and visible columns have a description.</td></tr><tr id="check-date_table_present"><td>Dedicated date table</td><td><span class="pill pass">Pass</span></td><td>&#x27;Date&#x27; looks like the model&#x27;s date table.</td></tr><tr id="check-hidden_technical_columns"><td>Hidden technical/key columns</td><td><span class="pill fail">Fail</span></td><td>3/6 ID/key-like columns are hidden.</td></tr><tr id="check-unused_calculated_columns"><td>Unused calculated columns</td><td><span class="pill fail">Fail</span></td><td>1 calculated column(s) are not referenced by any visual: Sales[LineTotal].</td></tr><tr id="check-inactive_relationships"><td>Inactive relationships</td><td><span class="pill fail">Fail</span></td><td>1 inactive relationship(s) — only reachable via USERELATIONSHIP().</td></tr><tr id="check-bidirectional_filters"><td>Bidirectional cross-filtering</td><td><span class="pill fail">Fail</span></td><td>1 relationship(s) use bidirectional cross-filtering, which can create ambiguous filter paths.</td></tr><tr id="check-many_to_many_relationships"><td>Many-to-many relationships</td><td><span class="pill pass">Pass</span></td><td>No many-to-many relationships.</td></tr><tr id="check-circular_dependency_risk"><td>No circular relationship paths</td><td><span class="pill pass">Pass</span></td><td>No circular relationship paths detected.</td></tr><tr id="check-disconnected_tables"><td>No disconnected fact/dimension tables</td><td><span class="pill pass">Pass</span></td><td>Every fact/dimension table participates in at least one relationship.</td></tr><tr id="check-dev_leftover_naming"><td>No development leftovers in production model</td><td><span class="pill pass">Pass</span></td><td>No table/column names match common development-leftover patterns.</td></tr></tbody></table>
 <h2 id="sec5">5. Performance Risks</h2>
 <p class="caveat">All performance risks below are heuristics inferred from metadata only — no row-level data is ever extracted, so nothing here reflects a measured runtime.</p>
-<table><thead><tr><th>Kind</th><th>Object</th><th>Table</th><th>Severity</th><th>Detail</th></tr></thead><tbody><tr><td>High Cardinality Signal</td><td>CustomerKey</td><td>Sales</td><td><span class="pill low">Low</span></td><td>&#x27;CustomerKey&#x27; is named like an identifier and is visible — heuristic signal of high cardinality from naming/type only, not measured against actual data.</td></tr><tr><td>High Cardinality Signal</td><td>OrderDateKey</td><td>Sales</td><td><span class="pill low">Low</span></td><td>&#x27;OrderDateKey&#x27; is named like an identifier and is visible — heuristic signal of high cardinality from naming/type only, not measured against actual data.</td></tr><tr><td>High Cardinality Signal</td><td>ShipDateKey</td><td>Sales</td><td><span class="pill low">Low</span></td><td>&#x27;ShipDateKey&#x27; is named like an identifier and is visible — heuristic signal of high cardinality from naming/type only, not measured against actual data.</td></tr></tbody></table>
+<table><thead><tr><th>Kind</th><th>Object</th><th>Table</th><th>Severity</th><th>Detail</th></tr></thead><tbody><tr id="finding-perf-0"><td>High Cardinality Signal</td><td>CustomerKey</td><td>Sales</td><td><span class="pill low">Low</span></td><td>&#x27;CustomerKey&#x27; is named like an identifier and is visible — heuristic signal of high cardinality from naming/type only, not measured against actual data.</td></tr><tr id="finding-perf-1"><td>High Cardinality Signal</td><td>OrderDateKey</td><td>Sales</td><td><span class="pill low">Low</span></td><td>&#x27;OrderDateKey&#x27; is named like an identifier and is visible — heuristic signal of high cardinality from naming/type only, not measured against actual data.</td></tr><tr id="finding-perf-2"><td>High Cardinality Signal</td><td>ShipDateKey</td><td>Sales</td><td><span class="pill low">Low</span></td><td>&#x27;ShipDateKey&#x27; is named like an identifier and is visible — heuristic signal of high cardinality from naming/type only, not measured against actual data.</td></tr></tbody></table>
 <h2 id="sec6">6. Governance</h2>
-<table><thead><tr><th>Area</th><th>Severity</th><th>Detail</th></tr></thead><tbody><tr><td>RLS</td><td><span class="pill low">Low</span></td><td>Role &#x27;Regional Manager&#x27; has no members assigned in the model file (membership may be managed in the Power BI Service).</td></tr><tr><td>Descriptions</td><td><span class="pill medium">Medium</span></td><td>Only 0% of measures/visible columns have a description.</td></tr><tr><td>Ownership</td><td><span class="pill medium">Medium</span></td><td>No owner or data classification was specified when this documentation was generated.</td></tr></tbody></table>
+<table><thead><tr><th>Area</th><th>Severity</th><th>Detail</th></tr></thead><tbody><tr id="finding-gov-0"><td>RLS</td><td><span class="pill low">Low</span></td><td>Role &#x27;Regional Manager&#x27; has no members assigned in the model file (membership may be managed in the Power BI Service).</td></tr><tr id="finding-gov-1"><td>Descriptions</td><td><span class="pill medium">Medium</span></td><td>Only 0% of measures/visible columns have a description.</td></tr><tr id="finding-gov-2"><td>Ownership</td><td><span class="pill medium">Medium</span></td><td>No owner or data classification was specified when this documentation was generated.</td></tr></tbody></table>
 <h2 id="sec7">7. Unused Assets</h2>
 <table><thead><tr><th>Asset Type</th><th>Count</th><th>Items</th></tr></thead><tbody><tr><td>Measures</td><td>2</td><td>Revenue YTD, Orphan Margin</td></tr><tr><td>Columns</td><td>8</td><td>Customer[Customer Name], Date[Month Name], Sales[CustomerKey], Sales[OrderDateKey], Sales[ShipDateKey], Sales[Quantity], Sales[UnitPrice], Sales[Status]</td></tr><tr><td>Tables</td><td>0</td><td>—</td></tr><tr><td>Calculated columns</td><td>1</td><td>Sales[LineTotal]</td></tr><tr><td>Report pages</td><td>1</td><td>Data Quality</td></tr></tbody></table>
 <p class="caveat">Hierarchies and calculation groups are not yet parsed by PBICompass, so they are excluded from this audit.</p>
 <h2 id="sec8">8. Recommendations</h2>
-<div class="card-section">
+<div class="card-section" id="rec-0">
 <h3><span class="pill high">High</span> Some relationships use bidirectional cross-filtering.</h3>
 <p><strong>Why it matters:</strong> Bidirectional filters can create ambiguous filter paths and materially slow down query performance.</p>
 <p><strong>Suggested fix:</strong> Switch to single-direction filtering and use CROSSFILTER() in specific DAX measures where bidirectional behavior is truly needed.</p>
 <p><strong>Expected benefit:</strong> More predictable filtering and better query performance.</p>
 <p><strong>Estimated effort:</strong> Medium</p>
 </div>
-<div class="card-section">
+<div class="card-section" id="rec-1">
 <h3><span class="pill medium">Medium</span> Many measures/columns have no description.</h3>
 <p><strong>Why it matters:</strong> Missing descriptions mean new team members must reverse-engineer intent from DAX and column names alone.</p>
 <p><strong>Suggested fix:</strong> Add descriptions to the most-used measures and columns first.</p>
 <p><strong>Expected benefit:</strong> Faster onboarding and self-documenting metadata in Power BI Desktop tooltips.</p>
 <p><strong>Estimated effort:</strong> Low</p>
 </div>
-<div class="card-section">
+<div class="card-section" id="rec-2">
 <h3><span class="pill medium">Medium</span> Row-level security gaps were found.</h3>
 <p><strong>Why it matters:</strong> Without RLS (or with roles that have no members configured), sensitive rows may be visible to more users than intended.</p>
 <p><strong>Suggested fix:</strong> Define RLS roles for any data that should be restricted, and assign members either in the model or in the Power BI Service.</p>
 <p><strong>Expected benefit:</strong> Data access that matches the intended audience.</p>
 <p><strong>Estimated effort:</strong> Medium</p>
 </div>
-<div class="card-section">
+<div class="card-section" id="rec-3">
 <h3><span class="pill medium">Medium</span> Description coverage across measures and columns is low.</h3>
 <p><strong>Why it matters:</strong> Missing descriptions increase onboarding time and the risk of misinterpreting a field&#x27;s meaning.</p>
 <p><strong>Suggested fix:</strong> Prioritize descriptions for the most-used measures and columns first.</p>
 <p><strong>Expected benefit:</strong> Faster onboarding and fewer misunderstandings.</p>
 <p><strong>Estimated effort:</strong> Low</p>
 </div>
-<div class="card-section">
+<div class="card-section" id="rec-4">
 <h3><span class="pill medium">Medium</span> No owner or data classification was specified for this report.</h3>
 <p><strong>Why it matters:</strong> Without a named owner, there&#x27;s no clear point of contact for questions, incidents, or change requests.</p>
 <p><strong>Suggested fix:</strong> Assign a business owner and a data classification (e.g. Internal, Confidential) in the documentation metadata.</p>
 <p><strong>Expected benefit:</strong> Clear accountability and appropriate handling of the data.</p>
 <p><strong>Estimated effort:</strong> Low</p>
 </div>
-<div class="card-section">
+<div class="card-section" id="rec-5">
 <h3><span class="pill low">Low</span> Some measures have no description.</h3>
 <p><strong>Why it matters:</strong> Without a description, business meaning has to be reverse-engineered from the DAX every time.</p>
 <p><strong>Suggested fix:</strong> Add a one-sentence description to each measure explaining what it calculates and why.</p>
 <p><strong>Expected benefit:</strong> Faster onboarding and fewer misinterpretations of what a measure means.</p>
 <p><strong>Estimated effort:</strong> Low</p>
 </div>
-<div class="card-section">
+<div class="card-section" id="rec-6">
 <h3><span class="pill low">Low</span> Some ID/key-style columns are visible to report authors.</h3>
 <p><strong>Why it matters:</strong> Visible technical join keys clutter the field list and can be mis-used in visuals by mistake.</p>
 <p><strong>Suggested fix:</strong> Hide columns that exist only to support relationships.</p>
 <p><strong>Expected benefit:</strong> A cleaner field list focused on business-relevant fields.</p>
 <p><strong>Estimated effort:</strong> Low</p>
 </div>
-<div class="card-section">
+<div class="card-section" id="rec-7">
 <h3><span class="pill low">Low</span> Some calculated columns are never used in any report visual.</h3>
 <p><strong>Why it matters:</strong> Unused calculated columns still consume model size and refresh time for no analytical benefit.</p>
 <p><strong>Suggested fix:</strong> Remove calculated columns that are not referenced anywhere, or confirm they are needed for row-level security/relationships.</p>
 <p><strong>Expected benefit:</strong> Smaller model size and faster refreshes.</p>
 <p><strong>Estimated effort:</strong> Low</p>
 </div>
-<div class="card-section">
+<div class="card-section" id="rec-8">
 <h3><span class="pill low">Low</span> Some relationships are inactive.</h3>
 <p><strong>Why it matters:</strong> Inactive relationships only take effect via USERELATIONSHIP() in DAX — easy to forget and easy to misconfigure.</p>
 <p><strong>Suggested fix:</strong> Document where each inactive relationship is activated, or make it the active relationship if that&#x27;s the common case.</p>
 <p><strong>Expected benefit:</strong> Less risk of a report silently using the wrong relationship.</p>
 <p><strong>Estimated effort:</strong> Low</p>
 </div>
-<div class="card-section">
+<div class="card-section" id="rec-9">
 <h3><span class="pill low">Low</span> Some visible columns look like high-cardinality identifiers.</h3>
 <p><strong>Why it matters:</strong> High-cardinality columns compress poorly and can slow down the model if used in visuals or relationships.</p>
 <p><strong>Suggested fix:</strong> Hide the column if it&#x27;s a technical key, or confirm its cardinality is acceptable for the intended use.</p>
 <p><strong>Expected benefit:</strong> Smaller model size and better query performance, if confirmed unnecessary.</p>
 <p><strong>Estimated effort:</strong> Low</p>
 </div>
-<div class="card-section">
+<div class="card-section" id="rec-10">
 <h3><span class="pill low">Low</span> 12 unused asset(s) were found (measures, columns, tables, calculated columns, or hidden non-drillthrough pages).</h3>
 <p><strong>Why it matters:</strong> Unused assets add to model size, refresh time, and cognitive load for anyone maintaining the report.</p>
 <p><strong>Suggested fix:</strong> Remove unused assets, or confirm they&#x27;re intentionally kept for a documented reason (e.g. future use, RLS support).</p>
@@ -1122,7 +1124,10 @@ document.addEventListener('DOMContentLoaded', () => {
       return prefersDark ? 'dark' : 'light';
     }
     function updateLabel() {
-      themeBtn.textContent = currentTheme() === 'dark' ? '☀ Light mode' : '🌙 Dark mode';
+      const dark = currentTheme() === 'dark';
+      themeBtn.textContent = dark ? '☀️' : '🌙';
+      themeBtn.setAttribute('aria-label', dark ? 'Switch to light mode' : 'Switch to dark mode');
+      themeBtn.setAttribute('title', dark ? 'Switch to light mode' : 'Switch to dark mode');
     }
     updateLabel();
     themeBtn.addEventListener('click', () => {

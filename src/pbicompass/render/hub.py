@@ -121,6 +121,38 @@ _DOC_BLURBS = {
 }
 
 
+def hub_stats(dtype: str, doc) -> list[tuple[str, object]]:
+    """A couple of quick stats per doc type for the hub's cards — best
+    effort, never required (the hub still renders fine without them). Shared
+    by both callers that build a hub (the CLI's multi-doc ``-o`` path and the
+    hosted service's worker) so the cards look the same everywhere."""
+    if dtype == "technical":
+        return [("tables", doc.stats.get("tables", 0)), ("measures", doc.stats.get("measures", 0))]
+    if dtype == "audit":
+        return [("score", f"{doc.health.overall}/100")]
+    if dtype == "executive":
+        return [("KPIs", len(doc.key_kpis))]
+    if dtype == "user-guide":
+        return [("pages", len(doc.pages))]
+    return []
+
+
+def doc_switcher_links(
+    document_types: list[str], current: str, html_filenames: dict[str, str], hub_href: str,
+) -> list[tuple[str, str]]:
+    """``(label, href)`` pairs for every *other* doc type in the same job,
+    plus a trailing link back to the hub — the sidebar doc-switcher block.
+    ``html_filenames`` maps each doc type to its actual relative HTML
+    filename in this job/bundle (the CLI and the hosted service each name
+    these differently, so this never assumes a fixed convention itself)."""
+    links = [
+        (_DOC_LABELS.get(d, d.title()), html_filenames[d])
+        for d in document_types if d != current
+    ]
+    links.append(("← Documentation hub", hub_href))
+    return links
+
+
 def render_hub(
     entries: list[dict],
     *,

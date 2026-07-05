@@ -126,10 +126,14 @@ def render_markdown(doc: ExecutiveDocument) -> str:
 
 
 # -- HTML -------------------------------------------------------------------------
-def _bullet_list(items: list[str], empty: str) -> str:
+def _bullet_list(items: list[str], empty: str, item_ids: list[str] | None = None) -> str:
     if not items:
         return f'<p class="muted">{_e(empty)}</p>'
-    return "<ul>" + "".join(f"<li>{_e(i)}</li>" for i in items) + "</ul>"
+    if item_ids:
+        lis = "".join(f'<li id="{_e(iid)}">{_e(i)}</li>' for i, iid in zip(items, item_ids))
+    else:
+        lis = "".join(f"<li>{_e(i)}</li>" for i in items)
+    return f"<ul>{lis}</ul>"
 
 
 def render_html(
@@ -152,8 +156,9 @@ def render_html(
     o.append(f'<h2 id="sec1">{_e(_SECTION_TITLES[0])}</h2>')
     o.append(f"<p>{_e(doc.business_purpose)}</p>")
 
+    kpi_ids = [f"kpi-{i}" for i in range(len(doc.key_kpis))]
     o.append(f'<h2 id="sec2">{_e(_SECTION_TITLES[1])}</h2>')
-    o.append(_bullet_list(doc.key_kpis, "No KPIs identified."))
+    o.append(_bullet_list(doc.key_kpis, "No KPIs identified.", kpi_ids))
 
     o.append(f'<h2 id="sec3">{_e(_SECTION_TITLES[2])}</h2>')
     o.append(_bullet_list(doc.data_sources_summary, "No external data sources detected."))
@@ -183,13 +188,15 @@ def render_html(
     o.append(f'<h2 id="sec8">{_e(_SECTION_TITLES[7])}</h2>')
     o.append(f"<p>{_e(doc.business_value)}</p>")
 
+    risk_ids = [f"risk-{i}" for i in range(len(doc.known_risks))]
     o.append(f'<h2 id="sec9">{_e(_SECTION_TITLES[8])}</h2>')
     if doc.known_risks:
         # Every risk here is sourced from the audit engine's recommendations
         # (1.10) — link to the full write-up there when audit was generated
         # in the same job, never a dead link otherwise (2.7).
         suffix = f' — <a href="{_e(audit_href)}#sec8">full detail</a>' if audit_href else ""
-        o.append("<ul>" + "".join(f"<li>{_e(r)}{suffix}</li>" for r in doc.known_risks) + "</ul>")
+        o.append("<ul>" + "".join(f'<li id="{rid}">{_e(r)}{suffix}</li>' for r, rid in zip(doc.known_risks, risk_ids))
+                 + "</ul>")
     else:
         o.append('<p class="muted">No known modeling risks.</p>')
 
@@ -200,10 +207,20 @@ def render_html(
     o.append(_bullet_list(doc.future_recommendations,
                           "No open recommendations — the latest audit found nothing to act on."))
 
+    search_index = [{"title": sec_title, "type": "section", "anchor": sec_id} for sec_id, sec_title in toc]
+    search_index += [
+        {"title": kpi.split(" — ", 1)[0], "type": "KPI", "anchor": kid}
+        for kpi, kid in zip(doc.key_kpis, kpi_ids)
+    ]
+    search_index += [
+        {"title": risk, "type": "risk", "anchor": rid}
+        for risk, rid in zip(doc.known_risks, risk_ids)
+    ]
+
     return page_shell(
         title=f"{md.report_name} — Executive Summary",
         subtitle=f"{md.target_audience or ''} · generated {_fmt_ts(md.generated_at)}",
-        toc=toc, kpis=kpis, body_html="\n".join(o), doc_links=doc_links,
+        toc=toc, kpis=kpis, body_html="\n".join(o), doc_links=doc_links, search_index=search_index,
         owner=md.owner, version=md.version, status=md.status,
     )
 

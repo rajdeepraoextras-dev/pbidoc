@@ -9,10 +9,12 @@ user's guide has no reason to document a page nobody sees. ``bookmarks``/
 ``tooltips`` are always empty (today's ``model.json`` has no such data — a
 future parser enhancement, out of scope here).
 
-Only the introduction and each page's ``purpose``/``common_scenarios``
-optionally go through an LLM for warmer prose, with an explicit
-jargon-avoidance instruction (see ``io.USER_GUIDE_WRITER_SYSTEM``) and a
-deterministic fallback so the document is always complete offline.
+The introduction and each page's ``purpose``/``common_scenarios`` optionally
+go through an LLM for warmer prose (``io.USER_GUIDE_WRITER_SYSTEM``), and the
+glossary optionally goes through the same DAX Translator agent the technical
+doc's Measure Catalog uses (``io.DAX_TRANSLATOR_SYSTEM``) for a real business
+definition instead of a mechanical DAX gloss — both with a deterministic
+fallback so the document is always complete offline.
 """
 
 from __future__ import annotations
@@ -21,10 +23,10 @@ from typing import Optional
 
 from ...schemas.user_guide_document import GlossaryTerm, PageGuide, UserGuideDocument
 from .. import io
-from ..deterministic import business_analyst_deterministic, translate_dax
+from ..deterministic import business_analyst_deterministic
 from ..llm import LLMClient
-from ..report_facts import declassify, first_sentence, report_pages, slicers
-from .base import Warn, build_core_metadata, call_llm_with_retry
+from ..report_facts import business_plain_english, first_sentence, report_pages, slicers
+from .base import Warn, build_core_metadata, call_llm, call_llm_with_retry
 
 _DIMENSION_DEFINITIONS = [
     (("date", "calendar", "month", "year", "quarter"),
@@ -45,12 +47,31 @@ def _dimension_definition(name: str) -> str:
     return f"A field used to filter or group the data by {name}."
 
 
-def _build_glossary(model) -> list[GlossaryTerm]:
+def _build_glossary(model, client: Optional[LLMClient], warn: Warn) -> list[GlossaryTerm]:
     """Priority order per measure: human-provided description -> the DAX
-    Translator's deterministic business definition -> a typed fallback for
-    the rare measure with neither. Never the generic "a custom metric
-    specific to this report" bucket — a business glossary that can't tell
-    two measures apart isn't documentation."""
+    Translator's *actual* business definition (an LLM call, when a client is
+    available — the same agent the technical doc's Measure Catalog uses, so
+    the two documents describe a measure the same way instead of the
+    glossary falling back to a mechanical DAX-to-English gloss whenever an
+    LLM was available but just never consulted) -> the deterministic
+    business-safe fallback -> a typed fallback for the rare measure with
+    neither. Never the generic "a custom metric specific to this report"
+    bucket — a business glossary that can't tell two measures apart isn't
+    documentation."""
+    llm_translations: dict[str, str] = {}
+    if client is not None:
+        # Same DAX Translator call the technical doc's Measure Catalog makes
+        # (agents/generators/technical.py::_measure_catalog) — batched the
+        # same way, so a real business definition ("users who had sales last
+        # year but not this year") reaches the glossary too, instead of only
+        # ever falling back to the mechanical DAX-to-English gloss.
+        for batch in io.dax_translator_batches(model):
+            data = call_llm(client, io.DAX_TRANSLATOR_SYSTEM, batch, io.DAX_TRANSLATOR_SCHEMA, warn, "DAX Translator")
+            if data:
+                for t in data.get("translations", []):
+                    if t.get("plain_english"):
+                        llm_translations[t["name"]] = first_sentence(t["plain_english"])
+
     terms: list[GlossaryTerm] = []
     seen_measure_names = set()
     for m in model.all_measures():
@@ -59,9 +80,11 @@ def _build_glossary(model) -> list[GlossaryTerm]:
         seen_measure_names.add(m.name)
         if m.description:
             definition = first_sentence(m.description)
+        elif m.name in llm_translations:
+            definition = llm_translations[m.name]
         else:
-            english, _, _ = translate_dax(m.name, m.expression, m.format_string)
-            definition = declassify(first_sentence(english)) or "Definition pending — see the technical documentation."
+            definition = business_plain_english(m.name, m.expression, m.format_string) \
+                or "Definition pending — see the technical documentation."
         terms.append(GlossaryTerm(term=m.name, plain_definition=definition))
 
     measure_names = {m.name for m in model.all_measures()}
@@ -212,11 +235,23 @@ class BusinessGuideGenerator:
             name = pf["name"]
             visuals = pf["visuals"]
             metrics = sorted({m for v in visuals for m in v["metrics"]})
+            # slicers() dedupes on the full qualified field (e.g. "Orders.Type"
+            # vs "Restaurant.Type" are legitimately distinct there), but a
+            # business user only sees the leaf name — two different fields
+            # that share a leaf name (a common case) must still collapse to
+            # one "Type (2 slicers)" line here, or the duplicate leaks back in
+            # as "Type, Type" and a doubled nav-tip bullet (1.7).
             page_slicers = [s for s in slicer_facts if s["page"] == name]
-            filter_fields = [s["field"].split(".")[-1] for s in page_slicers]
+            leaf_counts: dict[str, int] = {}
+            filter_fields: list[str] = []
+            for s in page_slicers:
+                leaf = s["field"].split(".")[-1]
+                if leaf not in leaf_counts:
+                    filter_fields.append(leaf)
+                leaf_counts[leaf] = leaf_counts.get(leaf, 0) + s["count"]
             page_filters = [
-                f"{field} ({s['count']} slicers)" if s["count"] > 1 else field
-                for field, s in zip(filter_fields, page_slicers)
+                f"{leaf} ({leaf_counts[leaf]} slicers)" if leaf_counts[leaf] > 1 else leaf
+                for leaf in filter_fields
             ]
 
             visual_descriptions = [
@@ -240,7 +275,7 @@ class BusinessGuideGenerator:
             ))
 
         introduction = _introduction(model, analyst.core_purpose)
-        glossary = _build_glossary(model)
+        glossary = _build_glossary(model, client, warn)
         getting_started = _getting_started(pages)
 
         if client is not None:

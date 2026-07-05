@@ -90,11 +90,7 @@ def render_docx(doc: Document, out_path) -> Path:
             if req.strip():
                 d.para(req)
     else:
-        req_rows = [
-            [r["id"], r["requirement"], r["source"], r["priority"], r["status"]]
-            for r in doc.inferred_requirements
-        ]
-        d.table(["ID", "Inferred Requirement", "Source Visual", "Priority", "Status"], _t(req_rows))
+        todo("Business requirements have not yet been captured; confirm scope with the business owner.")
 
     # 4. Audience & Stakeholders
     d.heading(1, "4. Audience & Stakeholders")

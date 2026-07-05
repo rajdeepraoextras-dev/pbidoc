@@ -62,34 +62,18 @@ def _print_summary(model: SemanticModel) -> None:
             print(f"  ! {w}")
 
 
-def _hub_stats(dtype: str, doc) -> list[tuple[str, object]]:
-    """A couple of quick stats per doc type for the hub's cards — best
-    effort, never required (the hub still renders fine without them)."""
-    if dtype == "technical":
-        return [("tables", doc.stats.get("tables", 0)), ("measures", doc.stats.get("measures", 0))]
-    if dtype == "audit":
-        return [("score", f"{doc.health.overall}/100")]
-    if dtype == "executive":
-        return [("KPIs", len(doc.key_kpis))]
-    if dtype == "user-guide":
-        return [("pages", len(doc.pages))]
-    return []
-
-
 def _write_hub(model: SemanticModel, docs: dict, out_path: Path, ext: str, *, quiet: bool) -> None:
     """Write a documentation hub (``{stem}.index.html``) linking every
     document just generated, using the exact filenames the multi-document
-    ``-o`` path above just wrote them under — this only runs from the CLI,
-    where those filenames are fully known at render time (unlike the hosted
-    service, whose per-job download names depend on the upload filename;
-    that needs the zip-bundle work (5.7) to get a fixed naming scheme
-    before a hub can link to it safely)."""
+    ``-o`` path above just wrote them under. The hosted service builds the
+    equivalent hub in ``worker.py`` using fixed ``{type}.html`` names inside
+    its zip bundle instead."""
     from .render._shared import format_timestamp
-    from .render.hub import render_hub
+    from .render.hub import hub_stats, render_hub
 
     entries = [
         {"type": dtype, "href": out_path.with_name(f"{out_path.stem}.{dtype}{ext}").name,
-         "stats": _hub_stats(dtype, doc)}
+         "stats": hub_stats(dtype, doc)}
         for dtype, doc in docs.items()
     ]
     health_score = None
@@ -266,10 +250,10 @@ def main(argv: list[str] | None = None) -> int:
                 out_path = out_path.with_name(f"{out_path.stem}.{dtype}{ext_map[fmt]}")
             doc_links = None
             if html_filenames:
-                from .render.hub import _DOC_LABELS
-                doc_links = [(_DOC_LABELS.get(d, d.title()), href)
-                            for d, href in html_filenames.items() if d != dtype]
-                doc_links.append(("← Documentation hub", f"{args.out.stem}.index.html"))
+                from .render.hub import doc_switcher_links
+                doc_links = doc_switcher_links(
+                    document_types, dtype, html_filenames, f"{args.out.stem}.index.html",
+                )
             try:
                 if fmt in ("json", "md", "html"):
                     content = {

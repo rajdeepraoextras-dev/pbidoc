@@ -54,7 +54,9 @@ class FakeAuditNarratorClient:
 
 
 class FakeExecutiveWriterClient:
-    """Returns canned prose for the Executive Writer system prompt."""
+    """Returns canned prose for the Executive Writer system prompt, and a
+    canned business definition for the DAX Translator prompt Key KPIs also
+    call now (P3)."""
 
     def __init__(self):
         self.calls = 0
@@ -66,6 +68,17 @@ class FakeExecutiveWriterClient:
                 "business_purpose": "FAKE_BUSINESS_PURPOSE",
                 "business_value": "FAKE_BUSINESS_VALUE",
                 "maintenance_overview": "FAKE_MAINTENANCE_OVERVIEW",
+            }
+        if "senior DAX developer" in system:
+            import json as _json
+            payload = _json.loads(user)
+            return {
+                "translations": [
+                    {"name": m["name"], "plain_english": "FAKE_KPI_MEANING.",
+                     "calculation_logic": "FAKE_CALC", "caveats": "",
+                     "category": "Revenue", "confidence": "High"}
+                    for m in payload["measures"]
+                ]
             }
         raise AssertionError("unexpected system prompt")
 
@@ -217,6 +230,22 @@ class ExecutiveGeneratorDeterministicTest(unittest.TestCase):
         self.assertTrue(self.doc.future_recommendations)
         self.assertLessEqual(len(self.doc.future_recommendations), 3)
 
+    def test_future_recommendations_do_not_repeat_known_risks(self):
+        # P6: §11 Future Recommendations used to draw from the same
+        # top-severity slice of the recommendation list as §9 Known Risks,
+        # so the same issue appeared under both headings.
+        risk_issue_fragments = [r.split("] ", 1)[1] for r in self.doc.known_risks]
+        for rec in self.doc.future_recommendations:
+            for fragment in risk_issue_fragments:
+                self.assertNotIn(fragment, rec)
+
+    def test_future_recommendations_keep_ask_and_benefit_distinct(self):
+        # P6: items used to read as one mashed sentence ("...in their DAX.
+        # Calculations stay correct...") with no visual separation between
+        # the problem and the recommended action.
+        for rec in self.doc.future_recommendations:
+            self.assertIn(" — expected benefit: ", rec)
+
     def test_owner_reflected_in_maintenance_overview(self):
         doc = ExecutiveSummaryGenerator.generate(_model(), owner="Jane Doe")
         self.assertIn("Jane Doe", doc.maintenance_overview)
@@ -235,7 +264,10 @@ class ExecutiveGeneratorLlmTest(unittest.TestCase):
         self.assertEqual(doc.business_purpose, "FAKE_BUSINESS_PURPOSE")
         self.assertEqual(doc.business_value, "FAKE_BUSINESS_VALUE")
         self.assertEqual(doc.maintenance_overview, "FAKE_MAINTENANCE_OVERVIEW")
-        self.assertEqual(client.calls, 1)
+        # 1 Executive Writer call + 1 DAX Translator batch call (P3: Key KPI
+        # meanings reuse the same DAX Translator agent as the technical doc).
+        self.assertEqual(client.calls, 2)
+        self.assertTrue(any("FAKE_KPI_MEANING" in kpi for kpi in doc.key_kpis))
         # deterministic facts stay identical regardless of the LLM client
         deterministic_doc = ExecutiveSummaryGenerator.generate(_model())
         self.assertEqual(doc.model_statistics, deterministic_doc.model_statistics)
@@ -253,7 +285,9 @@ class ExecutiveGeneratorLlmTest(unittest.TestCase):
 
 
 class FakeUserGuideWriterClient:
-    """Returns canned prose for the User Guide Writer system prompt."""
+    """Returns canned prose for the User Guide Writer system prompt, and a
+    canned business definition for the DAX Translator prompt the glossary
+    also calls now (P3)."""
 
     def __init__(self):
         self.calls = 0
@@ -270,6 +304,17 @@ class FakeUserGuideWriterClient:
                      "common_scenarios": ["FAKE_SCENARIO"]}
                     for p in payload["pages"]
                 ],
+            }
+        if "senior DAX developer" in system:
+            import json as _json
+            payload = _json.loads(user)
+            return {
+                "translations": [
+                    {"name": m["name"], "plain_english": "FAKE_GLOSSARY_MEANING.",
+                     "calculation_logic": "FAKE_CALC", "caveats": "",
+                     "category": "Revenue", "confidence": "High"}
+                    for m in payload["measures"]
+                ]
             }
         raise AssertionError("unexpected system prompt")
 
@@ -359,6 +404,31 @@ class BusinessGuideGeneratorDeterministicTest(unittest.TestCase):
         for page in self.doc.pages:
             self.assertEqual(len(page.filters), len(set(page.filters)))
 
+    def test_same_leaf_name_different_tables_collapses_for_display(self):
+        # Regression: two slicers on genuinely different fields that happen
+        # to share a leaf column name (e.g. "Orders.Type" and
+        # "Restaurant.Type") must still collapse to one "Type (2 slicers)"
+        # line for a business reader — report_facts.slicers() dedupes on the
+        # full qualified name (correctly keeping them distinct there), but
+        # the business-guide display only shows the leaf name, so it must
+        # dedupe again at that level or "Type, Type" and a doubled nav-tip
+        # bullet leak back in.
+        from pbicompass.schemas.model import Page, SemanticModel, Visual
+
+        page = Page(
+            id="p1", display_name="Overview",
+            visuals=[
+                Visual(id="s1", type="slicer", is_slicer=True, fields=["Orders.Type"]),
+                Visual(id="s2", type="slicer", is_slicer=True, fields=["Restaurant.Type"]),
+            ],
+        )
+        doc = BusinessGuideGenerator.generate(SemanticModel(report_name="R", pages=[page]))
+        guide_page = doc.pages[0]
+        self.assertEqual(guide_page.filters, ["Type (2 slicers)"])
+        self.assertEqual(
+            guide_page.navigation_tips.count("Use the 'Type' filter to narrow down what you see on this page."), 1,
+        )
+
 
 class BusinessGuideGeneratorLlmTest(unittest.TestCase):
     def test_llm_prose_is_used(self):
@@ -367,14 +437,21 @@ class BusinessGuideGeneratorLlmTest(unittest.TestCase):
         self.assertEqual(doc.introduction, "FAKE_INTRODUCTION")
         self.assertTrue(all(p.purpose == "FAKE_PURPOSE" for p in doc.pages))
         self.assertTrue(all(p.common_scenarios == ["FAKE_SCENARIO"] for p in doc.pages))
-        self.assertEqual(client.calls, 1)
-        # deterministic facts stay identical regardless of the LLM client
+        # 1 User Guide Writer call + 1 DAX Translator batch call (P3: the
+        # glossary reuses the same DAX Translator agent as the technical doc
+        # instead of only ever falling back to the deterministic gloss).
+        self.assertEqual(client.calls, 2)
+        measure_terms = [g for g in doc.glossary if g.term in {m.name for m in _model().all_measures()}]
+        self.assertTrue(measure_terms)
+        self.assertTrue(all("FAKE_GLOSSARY_MEANING" in g.plain_definition for g in measure_terms))
+        # deterministic facts (page structure) stay identical regardless of
+        # the LLM client — only the glossary's *meanings* change with one.
         deterministic_doc = BusinessGuideGenerator.generate(_model())
         self.assertEqual(
             [p.visual_descriptions for p in doc.pages],
             [p.visual_descriptions for p in deterministic_doc.pages],
         )
-        self.assertEqual(doc.glossary, deterministic_doc.glossary)
+        self.assertEqual([g.term for g in doc.glossary], [g.term for g in deterministic_doc.glossary])
 
     def test_failing_client_falls_back_to_deterministic_prose(self):
         warnings = []

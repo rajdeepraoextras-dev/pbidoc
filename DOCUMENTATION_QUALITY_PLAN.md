@@ -791,3 +791,40 @@ Sequencing: G.3/G.4 belong in the Phase 1 batch (small, template-level);
 G.1 early in Phase 2 (it changes what the exec renderer emits before polish
 lands on it); G.2 partially now (freshness/limitations from model metadata)
 and fully once enrichment (5.1) supplies contacts.
+
+---
+
+# Part H — Phase 1–2 verification against the 2026-07-05 Zomato output
+
+**Re-score: 74/100** (from 66). Matches the post-Phase-1 projection; short of
+the post-Phase-2 target (80) because the flagship Phase-2 items never reach
+the *service* path — see P1.
+
+Verified landed: shell consolidation (all four docs share one shell), system
+fonts / zero external URLs (1.11), human timestamps (1.8), dark mode (2.5),
+mobile TOC + scrim (2.9), skip-link/aria/nav a11y (2.10), print cover +
+watermark + @page (2.8, on all four docs — G.4 satisfied for print),
+collapsibles + beforeprint (2.4), DAX highlighting + copy buttons (2.3),
+per-object anchors `#table-…`/`#measure-…` (2.7 anchors), interactive diagram
+with dm-node/data-table wiring (2.6), mad-libs deleted + chart-pair questions
+(1.1/1.3), visual dedupe "Card ×5" (1.2), DAX-derived glossary (1.5), exec KPI
+selection excludes text measures (1.6), exec Dependencies section removed
+(1.9), exec risks = top 5 audit findings with severities, counts consistent
+(1.10), dev-leftover rule fires on `test` (1.12), + two new checks
+(disconnected tables, hardcoded paths in governance), hardcoded year now
+Critical in the audit DAX review. Health score honestly dropped 77 → 71 as
+the rule set grew.
+
+## Punch list before Phase 3
+
+| # | Finding | Evidence / root cause | Fix |
+|---|---|---|---|
+| P1 | **Hub, doc-switcher, and cross-doc links exist only in the CLI path.** The hosted service — the actual product — emits none of them. | `service/worker.py` has zero references to `doc_links`/`sibling_hrefs`/hub; `cli.py:253-279` wires them. The 07-05 outputs carry the `.doc-switcher` CSS but no switcher markup. | Wire `doc_links` + `sibling_hrefs` into the worker's render calls using the composite output names; render `index.html` (hub) when multi-type; **pull 5.7 (zip bundle) forward** — relative links only work when the files sit side by side, so the zip is the natural delivery. |
+| P2 | **Search index is sections-only in audit/exec/user-guide.** Only the technical renderer enriches it (measures+tables). Findings, columns, and glossary terms are indexed nowhere — searching "gaint" in the audit doc finds nothing (2.2 acceptance fails). | `render/html.py:559-565` builds the rich index; the other three renderers fall through to the sections-only default in `_html_shell.py:1157`. | Each renderer passes its own entries: audit → findings + checked rules; user-guide → glossary terms + pages; exec → risks + KPIs. |
+| P3 | **Business-language regression in glossary and exec KPIs.** "LostCustomers — Computes FILTER() over CurrYrSale, PrevYrSale, UserCount", "CurrYear — A derived metric: 2020." Executives and business users now read DAX function names. | Glossary/KPI lines take the deterministic DAX paraphrase even when the DAX Translator's business definition exists (technical doc has "Number of users who had sales in the previous year but not the current year"). | Priority order per 1.5: human > LLM business definition > *plain-English* deterministic template ("number of unique user IDs", never `DISTINCTCOUNT`). Ban function-name tokens in exec + user-guide renderers (assert in tests). |
+| P4 | **"Filters on this page: Type, Type." and the doubled 'Use the Type filter' bullet survived** (1.7 not implemented). | `p.filters` is joined raw at `render/user_guide.py:62,153,229`; no dedupe where the list is built. | Dedupe by (table, field) at the point `filters` is populated; render multiplicity as "Type (2 slicers)". Fixes md/html/docx at once. |
+| P5 | **Overview and User Performance still get deterministic-only treatment** while City Performance has LLM narrative — the same ⅔ asymmetry as v0, now degrading gracefully instead of embarrassingly. | Either 1.4's retry isn't recovering those batches or the warning isn't surfacing. | Confirm 1.4 retry landed + warning listing affected pages appears in job output; if retry ran and still failed, log which batch/engine. |
+| P6 | Exec doc: §11 Future Recommendations repeats §9 Known Risks items (bidi, m:n), and items are two mashed sentences ("…in their DAX. Calculations stay correct…"). REQ-01 filler table still renders in technical §3. Screen headers still lack the control strip (print cover has it). | G.1/G.3/G.4-screen were defined after the Phase-2 work started. | Fold into the G batch: G.1 restructure subsumes the §9/§11 overlap; G.3 kills the REQ filler; G.4 adds the screen strip. |
+
+Order: P1 → P2 → P3 (visible product gaps), then P4/P6 (small), P5
+(verification). Then Phase 3 as planned — 3.1 wireframes first.

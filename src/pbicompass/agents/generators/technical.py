@@ -368,63 +368,6 @@ def _audit(model: SemanticModel) -> TechDebtAudit:
     return TechDebtAudit(orphaned_measures=orphaned, hidden_but_used=hidden_used, notes=notes)
 
 
-def _infer_requirements(model: SemanticModel) -> list[dict[str, str]]:
-    requirements = []
-    req_id = 1
-
-    # 1. Page names
-    for p in model.pages:
-        if p.is_hidden:
-            continue
-        requirements.append({
-            "id": f"REQ-{req_id:02d}",
-            "requirement": f"Provide the '{p.display_name}' analysis view (inferred from the page; confirm scope with the business owner).",
-            "source": f"Page: {p.display_name}",
-            "priority": "TBC",
-            "status": "Draft"
-        })
-        req_id += 1
-        if len(requirements) >= 5:
-            break
-
-    # 2. Visual titles / types
-    if len(requirements) < 5:
-        for p in model.pages:
-            if p.is_hidden:
-                continue
-            for v in p.visuals:
-                if v.is_slicer or not v.title:
-                    continue
-                requirements.append({
-                    "id": f"REQ-{req_id:02d}",
-                    "requirement": f"Report '{v.title}' (inferred from the visual; confirm with the business owner).",
-                    "source": f"Visual: {v.title} ({p.display_name})",
-                    "priority": "TBC",
-                    "status": "Draft"
-                })
-                req_id += 1
-                if len(requirements) >= 5:
-                    break
-            if len(requirements) >= 5:
-                break
-
-    # 3. Measures
-    if len(requirements) < 3:
-        for m in model.all_measures()[:5]:
-            requirements.append({
-                "id": f"REQ-{req_id:02d}",
-                "requirement": f"Calculate '{m.name}' (inferred from the measure; confirm with the business owner).",
-                "source": f"Measure: {m.name}",
-                "priority": "TBC",
-                "status": "Draft"
-            })
-            req_id += 1
-            if len(requirements) >= 5:
-                break
-
-    return requirements[:5]
-
-
 TYPOS = {
     "gaint": "giant / gained",
     "calender": "calendar",
@@ -606,7 +549,6 @@ class TechnicalDocumentationGenerator:
             )
             doc.executive_summary.core_purpose += warning_msg
 
-        doc.inferred_requirements = _infer_requirements(model)
         doc.glossary_entries = _infer_glossary(model, doc.measure_catalog, col_descs)
         doc.health_score, doc.ai_recommendations = _health_and_recommendations(
             model, owner, classification,

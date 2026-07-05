@@ -726,19 +726,21 @@ details.collapsible > .code-block pre {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
 }
 
-/* Theme toggle — sits under the sidebar logo on desktop. */
+/* Theme toggle — icon-only, sits under the sidebar logo on desktop. */
 .theme-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
   margin-bottom: 20px;
-  padding: 6px 10px;
+  padding: 0;
   border: 1px solid var(--border-color);
   border-radius: 8px;
   background: var(--bg-main);
   color: var(--text-muted);
-  font-size: 0.78rem;
-  font-weight: 600;
+  font-size: 1.05rem;
+  line-height: 1;
   cursor: pointer;
 }
 .theme-toggle:hover {
@@ -988,7 +990,10 @@ document.addEventListener('DOMContentLoaded', () => {
       return prefersDark ? 'dark' : 'light';
     }
     function updateLabel() {
-      themeBtn.textContent = currentTheme() === 'dark' ? '☀ Light mode' : '🌙 Dark mode';
+      const dark = currentTheme() === 'dark';
+      themeBtn.textContent = dark ? '☀️' : '🌙';
+      themeBtn.setAttribute('aria-label', dark ? 'Switch to light mode' : 'Switch to dark mode');
+      themeBtn.setAttribute('title', dark ? 'Switch to light mode' : 'Switch to dark mode');
     }
     updateLabel();
     themeBtn.addEventListener('click', () => {
@@ -1189,7 +1194,8 @@ def page_shell(
     o.append(_LOGO_SVG)
     o.append('<span>PBICompass</span>')
     o.append('</div>')
-    o.append('<button type="button" class="theme-toggle" aria-label="Toggle dark mode">🌙 Dark mode</button>')
+    o.append('<button type="button" class="theme-toggle" aria-label="Toggle dark mode" '
+             'title="Toggle dark mode">🌙</button>')
     if doc_links:
         o.append('<nav class="doc-switcher" aria-label="Other documents in this job">')
         for label, href in doc_links:

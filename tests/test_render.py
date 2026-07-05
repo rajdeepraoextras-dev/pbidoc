@@ -220,10 +220,13 @@ class HtmlRenderTest(unittest.TestCase):
         self.assertIn(generated_date, md_txt)
         self.assertIn("Obtain sign-off before sharing with stakeholders", md_txt)
         
-        # 2. Inferred requirements
-        self.assertTrue(len(doc.inferred_requirements) >= 3)
-        self.assertIn("REQ-01", html)
-        self.assertIn("REQ-01", md_txt)
+        # 2. G.3: no inferred-filler requirements table when none are captured
+        # ("confirm with the business owner" filler rows) — a plain TODO line
+        # instead.
+        self.assertIn("Business requirements have not yet been captured", html)
+        self.assertIn("Business requirements have not yet been captured", md_txt)
+        self.assertNotIn("REQ-01", html)
+        self.assertNotIn("REQ-01", md_txt)
         
         # 3. Refresh placeholder rows
         self.assertIn("Gateway Name", html)
@@ -350,6 +353,30 @@ class AuditHtmlRenderTest(unittest.TestCase):
         # the same sidebar/TOC scaffold as the technical renderer
         self.assertIn('class="sidebar"', self.html)
         self.assertIn('class="toc-link"', self.html)
+
+    def test_search_index_covers_findings_checks_and_recommendations(self):
+        # P2: the audit doc's search index isn't sections-only — a typo in a
+        # measure name (the "gaint" acceptance scenario) must be findable via
+        # both the measure's own DAX finding and, when it fails a best-
+        # practice check, that check too.
+        self.assertIn('"type": "finding"', self.html)
+        self.assertIn('"type": "recommendation"', self.html)
+
+    def test_searching_a_measure_typo_finds_the_naming_finding(self):
+        from pbicompass.schemas.model import Measure, SemanticModel, Table
+
+        model = SemanticModel(
+            report_name="R",
+            tables=[Table(name="Sales", measures=[
+                Measure(name="GaintCustomers", expression="COUNTROWS(Sales)", table="Sales"),
+            ])],
+        )
+        doc = AuditReportGenerator.generate(model)
+        html = render_audit_html(doc)
+        index_json = html.split('id="search-index">', 1)[1].split("</script>", 1)[0]
+        self.assertIn("GaintCustomers", index_json)
+        naming_finding = next(f for f in doc.dax_findings if f.kind == "naming_issue")
+        self.assertIn(naming_finding.measure, index_json)
 
 
 class AuditDocxRenderTest(unittest.TestCase):

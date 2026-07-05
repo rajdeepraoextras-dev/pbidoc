@@ -242,11 +242,7 @@ def render_html(
                 o.append(f"<p>{_e(req)}</p>")
         o.append('</div>')
     else:
-        req_rows = [
-            [_e(r["id"]), _e(r["requirement"]), _e(r["source"]), _e(r["priority"]), _e(r["status"])]
-            for r in doc.inferred_requirements
-        ]
-        o.append(_table(["ID", "Inferred Requirement", "Source Visual", "Priority", "Status"], req_rows))
+        o.append(_todo("Business requirements have not yet been captured; confirm scope with the business owner."))
 
     # 4. Audience & Stakeholders
     o.append('<h2 id="sec4">4. Audience &amp; Stakeholders</h2>')

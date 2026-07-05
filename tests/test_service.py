@@ -173,9 +173,56 @@ class ServiceTest(unittest.TestCase):
         job = self._wait(job_id, timeout=30.0)
         self.assertEqual(job["status"], "done", job)
         formats = set(job["formats"])
-        self.assertTrue(all(fmt.startswith(("audit.", "executive.")) for fmt in formats))
+        # Per-doc-type outputs only for the two requested types, plus the
+        # job-wide hub + zip bundle (2.1/5.7) every multi-doc job also gets.
+        per_type = formats - {"index.html", "zip"}
+        self.assertTrue(all(fmt.startswith(("audit.", "executive.")) for fmt in per_type), per_type)
         self.assertTrue(any(fmt.startswith("audit.") for fmt in formats))
         self.assertTrue(any(fmt.startswith("executive.") for fmt in formats))
+        self.assertIn("index.html", formats)
+        self.assertIn("zip", formats)
+
+    def test_multi_doc_hub_and_zip_have_working_relative_links(self):
+        # P1: the hosted service, not just the CLI, must ship a working hub
+        # and doc-switcher — the zip bundle is the only place the fixed
+        # "{type}.html" names (and the links built on them) are valid side
+        # by side, since the standalone /download names depend on the
+        # upload filename instead.
+        res = self.client.post(
+            "/jobs",
+            files={"file": ("SampleSales.zip", _zip_fixture(), "application/zip")},
+            data={"provider": "none", "document_types": "all"},
+        )
+        job_id = res.json()["job_id"]
+        job = self._wait(job_id, timeout=30.0)
+        self.assertEqual(job["status"], "done", job)
+
+        hub = self.client.get(f"/jobs/{job_id}/download", params={"format": "index.html"})
+        self.assertEqual(hub.status_code, 200)
+        for dtype in ("technical", "audit", "executive", "user-guide"):
+            self.assertIn(f"{dtype}.html", hub.text)
+
+        technical_html = self.client.get(
+            f"/jobs/{job_id}/download", params={"format": "technical.html"},
+        ).text
+        self.assertIn('class="doc-switcher"', technical_html)
+        self.assertIn("audit.html", technical_html)
+        self.assertIn('id="measure-total-revenue"', technical_html)
+
+        audit_html = self.client.get(f"/jobs/{job_id}/download", params={"format": "audit.html"}).text
+        self.assertIn('href="technical.html#measure-total-revenue"', audit_html)
+
+        zip_resp = self.client.get(f"/jobs/{job_id}/download", params={"format": "zip"})
+        self.assertEqual(zip_resp.status_code, 200)
+        self.assertEqual(zip_resp.headers["content-type"], "application/zip")
+        with zipfile.ZipFile(io.BytesIO(zip_resp.content)) as zf:
+            names = set(zf.namelist())
+            for dtype in ("technical", "audit", "executive", "user-guide"):
+                self.assertIn(f"{dtype}.html", names)
+            self.assertIn("index.html", names)
+            # the zip's own copy of the docs must carry the same working
+            # cross-document links as the standalone downloads above.
+            self.assertIn('href="technical.html#measure-total-revenue"', zf.read("audit.html").decode("utf-8"))
 
 
 @unittest.skipUnless(_HAVE_SERVICE, "service extras not installed")

@@ -72,11 +72,7 @@ def render_markdown(doc: Document) -> str:
     if md.requirements:
         out.append(md.requirements + "\n")
     else:
-        req_rows = [
-            [r["id"], r["requirement"], r["source"], r["priority"], r["status"]]
-            for r in doc.inferred_requirements
-        ]
-        out.append(_table(["ID", "Inferred Requirement", "Source Visual", "Priority", "Status"], req_rows))
+        out.append(_todo("Business requirements have not yet been captured; confirm scope with the business owner."))
 
     # 4. Audience & Stakeholders
     out.append("\n## 4. Audience & Stakeholders\n")
