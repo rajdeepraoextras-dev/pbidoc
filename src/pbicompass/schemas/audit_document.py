@@ -52,6 +52,7 @@ class DaxFinding:
     kind: str  # duplicate_logic | very_long_expression | missing_description | naming_issue | repeated_pattern
     detail: str
     severity: Severity = "Medium"
+    rule_id: str = ""
 
 
 @dataclass
@@ -61,6 +62,7 @@ class BestPracticeCheck:
     passed: bool
     detail: str
     category: str = "modeling"  # schema | naming | documentation | modeling
+    rule_id: str = ""
 
 
 @dataclass
@@ -71,6 +73,7 @@ class PerformanceRisk:
     table: Optional[str]
     detail: str
     severity: Severity = "Medium"
+    rule_id: str = ""
 
 
 @dataclass
@@ -78,6 +81,7 @@ class GovernanceFinding:
     area: str  # rls | descriptions | ownership | sensitive_columns | data_source_consistency
     detail: str
     severity: Severity = "Medium"
+    rule_id: str = ""
 
 
 @dataclass
@@ -113,6 +117,8 @@ class AuditDocument:
     unused_assets: UnusedAssets = field(default_factory=UnusedAssets)
     recommendations: list[Recommendation] = field(default_factory=list)
     narrative_overview: str = ""
+    suppressed_rules: list[str] = field(default_factory=list)
+    changelog: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)

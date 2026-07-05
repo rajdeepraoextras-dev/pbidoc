@@ -22,6 +22,7 @@ dependencies = []
 # environment marker below makes that degrade gracefully at pip-install time
 # on 3.14+ instead of failing.
 pbix = ["pbixray; python_version < '3.14'"]
+enrich = ["PyYAML"]
 agents = ["anthropic", "google-genai", "cohere"]  # Claude / Gemini / Cohere providers (offline engine needs nothing)
 service = ["fastapi", "uvicorn", "python-multipart"]  # async web service + upload UI
 dev = ["pytest", "httpx"]  # httpx backs FastAPI's TestClient

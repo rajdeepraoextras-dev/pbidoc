@@ -117,3 +117,26 @@ def html_table(
     else:
         body = "".join("<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>" for r in rows)
     return f"<table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>"
+
+
+def compute_completeness(metadata: Any) -> tuple[int, int, list[str]]:
+    """Count how many human metadata fields are filled vs total, returning (pct, missing_count, missing_list)."""
+    fields = [
+        "owner", "refresh_schedule", "target_audience", "version", "status",
+        "author", "reviewer", "classification", "business_decision", "requirements",
+        "security_notes", "refresh_notes", "deployment_notes", "access_notes",
+        "glossary", "assumptions", "support_notes"
+    ]
+    from typing import Any as TypAny
+    filled = 0
+    missing = []
+    for f in fields:
+        val = getattr(metadata, f, None)
+        if val and "✎" not in str(val) and "TBC" not in str(val) and "not specified" not in str(val).lower():
+            filled += 1
+        else:
+            missing.append(f)
+            
+    total = len(fields)
+    pct = round(100 * filled / total) if total > 0 else 100
+    return pct, total - filled, missing

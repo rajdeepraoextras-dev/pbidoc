@@ -123,7 +123,7 @@ class HtmlRenderTest(unittest.TestCase):
     def test_short_dax_measure_is_not_collapsed(self):
         # every SampleSales measure is a one-liner — none should be wrapped
         # in a <details> disclosure.
-        self.assertNotIn('<details class="collapsible">', self.html)
+        self.assertNotIn('lines (click to expand)', self.html)
 
     def test_interactive_diagram_nodes_and_edges(self):
         # 2.6: table nodes are clickable/hoverable, edges carry endpoints and

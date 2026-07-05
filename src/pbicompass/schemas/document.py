@@ -46,6 +46,7 @@ class ExecutiveSummary:
     pages: list[PageSummary] = field(default_factory=list)
     navigation_guide: list[str] = field(default_factory=list)
     complex_visual_explainers: list[VisualExplainer] = field(default_factory=list)
+    provenance: str = "✨ AI-inferred"
 
 
 # -- I. Document Metadata -----------------------------------------------------
@@ -71,6 +72,8 @@ class DocumentMetadata:
     glossary: Optional[str] = None
     assumptions: Optional[str] = None
     support_notes: Optional[str] = None
+    score_trend: Optional[str] = None
+    overridden_fields: list[str] = field(default_factory=list)
 
 
 # -- III. Lineage & Architecture ----------------------------------------------
@@ -79,6 +82,10 @@ class LineageArchitecture:
     source_systems: list[str] = field(default_factory=list)
     # name -> plain-English description of the Power Query / ETL transform
     transformations: list[dict[str, str]] = field(default_factory=list)
+    lineage_svg: Optional[str] = None
+    lineage_edges: list[dict[str, str]] = field(default_factory=list)
+    data_sources_inventory: list[dict[str, Any]] = field(default_factory=list)
+    provenance: str = "⚙ Extracted"
 
 
 # -- IV. Semantic Model -------------------------------------------------------
@@ -94,6 +101,7 @@ class SemanticModelDoc:
     # structured table/edge data for the model diagram
     tables: list[dict[str, Any]] = field(default_factory=list)          # {name, kind, columns, measures}
     relationship_edges: list[dict[str, Any]] = field(default_factory=list)  # {from, to, from_card, to_card, cross_filter, is_active}
+    provenance: str = "⚙ Extracted"
 
 
 # -- V. Measure Catalog -------------------------------------------------------
@@ -110,11 +118,15 @@ class MeasureEntry:
     calculation_logic: str = ""   # how it computes, distinct from the business definition
     dependencies: list[str] = field(default_factory=list)  # measures/columns it references
     confidence: str = ""          # High | Medium | Low — inferred business meaning
+    dependency_tree: str = ""
+    provenance: Optional[str] = None
 
 
 @dataclass
 class MeasureCatalog:
     measures: list[MeasureEntry] = field(default_factory=list)
+    dependency_svg: Optional[str] = None
+    provenance: str = "⚙ Extracted"
 
 
 # -- VI. Security & Governance ------------------------------------------------
@@ -122,6 +134,7 @@ class MeasureCatalog:
 class SecurityGovernance:
     roles: list[dict[str, Any]] = field(default_factory=list)
     workspace_constraints: list[str] = field(default_factory=list)
+    provenance: str = "⚙ Extracted"
 
 
 # -- VII. Tech Debt / Audit ---------------------------------------------------
@@ -130,6 +143,9 @@ class TechDebtAudit:
     orphaned_measures: list[str] = field(default_factory=list)
     hidden_but_used: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    unused_assets: dict[str, Any] = field(default_factory=dict)
+    suppressed_rules: list[str] = field(default_factory=list)
+    provenance: str = "⚙ Extracted"
 
 
 @dataclass
@@ -154,6 +170,9 @@ class Document:
     # Prioritized AI recommendations, each
     # {priority, issue, why_it_matters, suggested_fix, expected_benefit, effort}
     ai_recommendations: list[dict[str, str]] = field(default_factory=list)
+    navigation_map_svg: Optional[str] = None
+    navigation_edges: list[dict[str, str]] = field(default_factory=list)
+    changelog: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)

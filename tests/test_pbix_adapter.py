@@ -116,6 +116,40 @@ class PbixrayTransformTest(unittest.TestCase):
         self.assertEqual(kinds["Customer"], "dimension")
 
 
+class PbixrayStatsOptInTest(unittest.TestCase):
+    """Phase 4.4: aggregate VertiPaq stats (cardinality/size) must be
+    opt-in — default output stays byte-identical to a pre-stats parse."""
+
+    def _frames_with_stats(self) -> dict:
+        frames = _sample_frames()
+        frames["schema"][0].update({"Cardinality": 12345, "DictionarySize": 100, "DataSize": 900})
+        return frames
+
+    def test_stats_absent_by_default(self):
+        agg = build_model_from_frames(self._frames_with_stats(), [])
+        amount = next(c for c in agg["tables"] if c.name == "Sales").columns[0]
+        self.assertIsNone(amount.cardinality)
+        self.assertIsNone(amount.size_bytes)
+
+    def test_stats_present_when_opted_in(self):
+        agg = build_model_from_frames(self._frames_with_stats(), [], include_stats=True)
+        amount = next(c for c in agg["tables"] if c.name == "Sales").columns[0]
+        self.assertEqual(amount.cardinality, 12345)
+        self.assertEqual(amount.size_bytes, 1000)
+
+    def test_adapter_never_touches_row_level_apis(self):
+        """Guard: the adapter must only ever read pbixray's metadata frames
+        (schema/dax_measures/.../metadata), never get_table()/get_dataframe()
+        which would materialise actual row data."""
+        import inspect
+        from pbicompass.adapters import pbixray_adapter
+        source = inspect.getsource(pbixray_adapter)
+        # Match actual call sites (a leading dot), not the docstring's prose
+        # description of the guarantee ("we never call ``get_table()``").
+        self.assertNotIn(".get_dataframe(", source)
+        self.assertNotIn(".get_table(", source)
+
+
 class PbixZipFallbackTest(unittest.TestCase):
     """Build a .pbix-shaped ZIP with a legacy Report/Layout and parse it.
 

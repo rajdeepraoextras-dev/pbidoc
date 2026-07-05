@@ -63,6 +63,7 @@ def visual_label(title: str | None, vtype: str, metrics: list[str], dims: list[s
 
 
 def report_pages(model: SemanticModel) -> list[dict]:
+    from ..render._wireframe import render_wireframe
     measure_names = {m.name for m in model.all_measures()}
     out = []
     for p in model.pages:
@@ -104,8 +105,10 @@ def report_pages(model: SemanticModel) -> list[dict]:
                 vis["label"] = f"{vis['label']} — {vis['type']} ×{vis['count']}"
             visuals.append(vis)
 
+        wireframe_svg = render_wireframe(p) or None
         out.append({"name": p.display_name, "hidden": p.is_hidden, "drillthrough": p.is_drillthrough,
-                    "visual_count": len(p.visuals), "visuals": visuals, "decorative_count": decorative})
+                    "visual_count": len(p.visuals), "visuals": visuals, "decorative_count": decorative,
+                    "wireframe_svg": wireframe_svg})
     return out
 
 

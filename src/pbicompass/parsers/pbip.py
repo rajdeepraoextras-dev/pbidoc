@@ -102,7 +102,7 @@ def _classify_tables(model: SemanticModel) -> None:
 
 
 def _assemble(agg: dict, pages: list, report_name: str,
-              source_format: str, source_path: str, warnings: list[str]) -> SemanticModel:
+              source_format: str, source_path: str, warnings: list[str], bookmarks: list = None) -> SemanticModel:
     model = SemanticModel(
         report_name=report_name,
         model_name=agg.get("model_name"),
@@ -111,6 +111,7 @@ def _assemble(agg: dict, pages: list, report_name: str,
         roles=agg.get("roles", []),
         expressions=agg.get("expressions", []),
         pages=pages,
+        bookmarks=bookmarks or [],
         meta=ModelMeta(source_format=source_format, source_path=source_path,
                        warnings=warnings),
     )
@@ -152,14 +153,16 @@ def parse_pbip(path: Path) -> SemanticModel:
         warnings.append("no *.SemanticModel folder found")
 
     pages: list = []
+    bookmarks: list = []
     if report_dir:
         pages = parse_report(report_dir, warnings)
+        bookmarks = getattr(pages, "bookmarks", [])
     else:
         warnings.append("no *.Report folder found")
 
     report_name = (stem or (report_dir.name[:-7] if report_dir else None)
                    or agg.get("model_name") or root.name)
-    return _assemble(agg, pages, report_name, source_format, str(path), warnings)
+    return _assemble(agg, pages, report_name, source_format, str(path), warnings, bookmarks)
 
 
 def _extract_pbix_layout(path: Path, warnings: list[str]) -> list:
@@ -189,13 +192,17 @@ def _extract_pbix_layout(path: Path, warnings: list[str]) -> list:
     return pages
 
 
-def parse_pbix(path: Path) -> SemanticModel:
+def parse_pbix(path: Path, *, include_stats: bool = False) -> SemanticModel:
     """Parse a legacy ``.pbix``: report layout from the ZIP + semantic model
     via the pbixray adapter.
 
     The VertiPaq ``DataModel`` row data is never materialised. If ``pbixray`` is
     not installed the report layout is still returned and a clear warning is
     recorded (graceful degradation rather than a hard failure).
+
+    ``include_stats``: opt-in VertiPaq aggregate stats (column cardinality/
+    size) — see ``adapters.pbixray_adapter.build_model_from_frames``. Off by
+    default so output is byte-identical to a pre-stats parse.
     """
     path = Path(path)
     warnings: list[str] = []
@@ -205,7 +212,7 @@ def parse_pbix(path: Path) -> SemanticModel:
     try:
         from ..adapters import build_model_from_frames, load_frames_from_pbix
         frames = load_frames_from_pbix(path)
-        agg = build_model_from_frames(frames, warnings)
+        agg = build_model_from_frames(frames, warnings, include_stats=include_stats)
     except ImportError:
         warnings.append(
             "pbixray not installed — .pbix semantic-model extraction skipped "
@@ -217,7 +224,7 @@ def parse_pbix(path: Path) -> SemanticModel:
     return _assemble(agg, pages, path.stem, "pbix", str(path), warnings)
 
 
-def detect_and_parse(path: Path) -> SemanticModel:
+def detect_and_parse(path: Path, *, include_stats: bool = False) -> SemanticModel:
     """Entry point: dispatch by file type / directory."""
     path = Path(path)
     if path.is_dir():
@@ -226,5 +233,5 @@ def detect_and_parse(path: Path) -> SemanticModel:
     if suffix == ".pbip":
         return parse_pbip(path)
     if suffix == ".pbix":
-        return parse_pbix(path)
+        return parse_pbix(path, include_stats=include_stats)
     raise ValueError(f"Unsupported input: {path} (expected .pbip, .pbix, or a project dir)")

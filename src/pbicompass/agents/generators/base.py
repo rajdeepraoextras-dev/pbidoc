@@ -14,15 +14,28 @@ from ..llm import LLMClient
 Warn = Callable[[str], None]
 
 
+from ..cache import LLMResponseCache
+
+
 def call_llm(client: LLMClient, system: str, payload: dict, schema: dict,
              warn: Warn, name: str) -> Optional[dict]:
     """Call ``client.complete_json``; on any failure, warn and return ``None``
     so the caller can fall back to its deterministic path."""
+    model_id = getattr(client, "model", "unknown")
+    cache = LLMResponseCache()
     try:
-        return client.complete_json(system, json.dumps(payload, ensure_ascii=False), schema)
+        cached = cache.get(system, payload, schema, model_id)
+        if cached is not None:
+            return cached
+        res = client.complete_json(system, json.dumps(payload, ensure_ascii=False), schema)
+        if res is not None:
+            cache.set(system, payload, schema, model_id, res)
+        return res
     except Exception as exc:  # any failure -> deterministic fallback
         warn(f"{name}: LLM call failed, using deterministic fallback ({exc})")
         return None
+    finally:
+        cache.close()
 
 
 def call_llm_with_retry(
@@ -40,15 +53,26 @@ def call_llm_with_retry(
     more specific warning than this function could, so it does that instead
     of warning here.
     """
-    attempt = 0
-    while True:
-        try:
-            return client.complete_json(system, json.dumps(payload, ensure_ascii=False), schema)
-        except Exception:
-            if attempt >= retries:
-                return None
-            time.sleep(random.uniform(*backoff_range))
-            attempt += 1
+    model_id = getattr(client, "model", "unknown")
+    cache = LLMResponseCache()
+    try:
+        cached = cache.get(system, payload, schema, model_id)
+        if cached is not None:
+            return cached
+        attempt = 0
+        while True:
+            try:
+                res = client.complete_json(system, json.dumps(payload, ensure_ascii=False), schema)
+                if res is not None:
+                    cache.set(system, payload, schema, model_id, res)
+                return res
+            except Exception:
+                if attempt >= retries:
+                    return None
+                attempt += 1
+                time.sleep(random.uniform(*backoff_range))
+    finally:
+        cache.close()
 
 
 def build_core_metadata(
@@ -64,6 +88,7 @@ def build_core_metadata(
 ) -> DocMetadataCore:
     """Assemble the small metadata contract shared by the non-technical
     document types (audit, executive, user guide)."""
+    overridden = getattr(model.meta, "overridden_fields", [])
     return DocMetadataCore(
         report_name=model.report_name,
         document_type=document_type,
@@ -74,4 +99,5 @@ def build_core_metadata(
         generated_at=model.meta.generated_at,
         version=version,
         status=status,
+        overridden_fields=list(overridden),
     )

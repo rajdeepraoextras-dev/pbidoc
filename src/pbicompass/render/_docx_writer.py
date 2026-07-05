@@ -80,8 +80,11 @@ class _Docx:
         style = "Title" if level == 0 else f"Heading{level}"
         self.para([self._run(text)], style=style)
 
-    def bullet(self, text: str) -> None:
-        self.para([self._run("•  " + text)])
+    def bullet(self, text) -> None:
+        if isinstance(text, str):
+            self.para([self._run("•  " + text)])
+        else:
+            self.para([self._run("•  "), *text])
 
     def label(self, label: str, value: str) -> None:
         self.para([self._run(f"{label}: ", bold=True), self._run(value)])

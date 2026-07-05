@@ -39,7 +39,29 @@ data), stdlib-only parsers, graceful degradation, free-tier infra, and the
 > measure anchors, executive→audit recommendations), and print/PDF polish
 > (cover page, Confidential/Restricted watermark, Pandoc YAML title block).
 >
-> Phases 3–5 and Part G are still open.
+> Phase 3 (3.1–3.9) and Phase 4 (4.1–4.5) implemented and test-verified
+> (2026-07-06): page wireframes, a layered lineage graph, per-measure
+> dependency trees, column impact analysis ("Used by" in the data
+> dictionary), a stdlib Power Query M-step parser, an RLS role×table matrix,
+> a bookmarks/drillthrough navigation map, a consolidated data-source
+> inventory table, and unused-assets grouped by table with Tabular Editor
+> C# snippets — plus the rule engine expanded past 50 stable-ID checks with
+> fix snippets, `pbicompass.rules.toml` suppression/severity overrides, an
+> opt-in `--stats` flag for VertiPaq aggregate stats, and score-trend
+> persistence. This work was first drafted by another AI tool and then
+> hardened here: fixed a DOCX-crashing bullet-list bug, an LLM/score-history
+> cache that was silently on by default in the hosted service (a
+> zero-retention violation), a catastrophic-backtracking regex in the M
+> parser (real hang risk, not just "never raises"), an audit rule-ID
+> collision that broke per-rule suppression, an unescaped SVG attribute, an
+> unverified VertiPaq opt-in gate, and a DOCX renderer that silently lacked
+> every one of the new Phase 3/4 sections while HTML/Markdown had them.
+>
+> Phase 5 and Part G are still open. Note: `agents/critic.py` (5.3) and
+> `enrichment.py` (5.1/5.2 — enrichment round-trip, model diff, change log)
+> exist as complete modules but are not yet wired into `cli.py`,
+> `service/worker.py`, or any generator; they are dead code until that
+> wiring is done as part of Phase 5.
 
 ---
 

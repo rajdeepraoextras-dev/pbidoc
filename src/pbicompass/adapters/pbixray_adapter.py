@@ -90,12 +90,20 @@ def _cross_filter(value: Any) -> str:
 
 
 # -- pure transform -----------------------------------------------------------
-def build_model_from_frames(frames: dict[str, list[dict]], warnings: list[str]) -> dict:
+def build_model_from_frames(
+    frames: dict[str, list[dict]], warnings: list[str], *, include_stats: bool = False,
+) -> dict:
     """Map pbixray-shaped records onto canonical building blocks.
 
     ``frames`` keys (each a ``list[dict]`` of records):
     ``schema``, ``dax_measures``, ``dax_columns``, ``dax_tables``,
     ``relationships``, ``power_query``, ``m_parameters``, ``metadata``.
+
+    ``include_stats`` (opt-in, off by default): also read VertiPaq aggregate
+    stats — column cardinality and dictionary/data size — from the ``schema``
+    frame. These are aggregate metadata (never row-level values), but stay
+    behind this flag so default output is byte-identical to before this was
+    added, per the "aggregates ≠ rows, opt-in only" rule.
     """
     tables: dict[str, Table] = {}
 
@@ -111,8 +119,29 @@ def build_model_from_frames(frames: dict[str, list[dict]], warnings: list[str]) 
         cname = _s(_get(row, "ColumnName", "Column", "Name"))
         if not cname:
             continue
+
+        cardinality = None
+        size_bytes = None
+        if include_stats:
+            raw_cardinality = row.get("Cardinality")
+            if isinstance(raw_cardinality, (int, float)):
+                cardinality = int(raw_cardinality)
+
+            size_bytes = row.get("ColumnSize") or row.get("Size")
+            if size_bytes is None:
+                dict_sz = row.get("DictionarySize", 0)
+                data_sz = row.get("DataSize", 0)
+                if dict_sz or data_sz:
+                    size_bytes = dict_sz + data_sz
+            size_bytes = int(size_bytes) if isinstance(size_bytes, (int, float)) else None
+
         table_for(tname).columns.append(
-            Column(name=cname, data_type=_map_dtype(_get(row, "PandasDataType", "DataType", "Type")))
+            Column(
+                name=cname,
+                data_type=_map_dtype(_get(row, "PandasDataType", "DataType", "Type")),
+                cardinality=cardinality,
+                size_bytes=size_bytes
+            )
         )
 
     # calculated columns (overlay onto existing, else add)

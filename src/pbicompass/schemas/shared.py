@@ -6,7 +6,7 @@ untouched for backward compatibility. This is a small, separate contract.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 
@@ -21,3 +21,5 @@ class DocMetadataCore:
     generated_at: Optional[str] = None
     version: Optional[str] = None
     status: Optional[str] = None
+    score_trend: Optional[str] = None
+    overridden_fields: list[str] = field(default_factory=list)

@@ -517,6 +517,9 @@ details.collapsible > .code-block pre {
 .pill.high { background: var(--warning-light); color: #b45309; }
 .pill.medium { background: var(--primary-light); color: var(--primary); }
 .pill.low { background: var(--bg-code-inline); color: var(--text-muted); }
+.pill.extracted { background: #e0f2fe; color: #0369a1; text-transform: none; }
+.pill.ai-inferred { background: #fae8ff; color: #a21caf; text-transform: none; }
+.pill.human-provided { background: #dcfce7; color: #15803d; text-transform: none; }
 
 /* Todo items */
 .todo {
@@ -1138,6 +1141,7 @@ def page_shell(
     version: str | None = None,
     status: str | None = None,
     classification: str | None = None,
+    completeness: tuple[int, int, list[str]] | None = None,
 ) -> str:
     """Wrap ``body_html`` (a renderer's own section content) in the full HTML
     document: doctype, head/fonts/CSS, sidebar TOC + search, header card with
@@ -1217,6 +1221,22 @@ def page_shell(
     o.append('<div class="header-card">')
     o.append(f"<h1>{_e(title)}</h1>")
     o.append(f'<p class="subtitle">{_e(subtitle)}</p>')
+    if completeness:
+        pct, missing_count, missing_fields = completeness
+        o.append('<div class="completeness-bar-container" style="margin-top:10px; font-size:0.85em;">')
+        o.append('<div style="display:flex; justify-content:space-between; margin-bottom:4px;">')
+        o.append(f'<span>Documentation Completeness: <strong>{pct}%</strong></span>')
+        o.append(f'<span>{missing_count} fields awaiting input</span>')
+        o.append('</div>')
+        o.append('<div class="progress-bar-bg" style="background:#e2e8f0; height:6px; border-radius:3px; overflow:hidden; position:relative;">')
+        o.append(f'<div class="progress-bar-fill" style="background:#4f46e5; width:{pct}%; height:100%;"></div>')
+        o.append('</div>')
+        if missing_fields:
+            readable = [f.replace("_", " ").title() for f in missing_fields[:5]]
+            if len(missing_fields) > 5:
+                readable.append(f"+{len(missing_fields)-5} more")
+            o.append(f'<p style="margin-top:4px; color:#64748b;">Missing: {", ".join(readable)}</p>')
+        o.append('</div>')
     o.append("</div>")
 
     if kpis:

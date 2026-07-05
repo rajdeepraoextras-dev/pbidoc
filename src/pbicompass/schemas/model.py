@@ -33,6 +33,9 @@ class Column:
     data_category: Optional[str] = None
     sort_by_column: Optional[str] = None
     is_key: bool = False
+    cardinality: Optional[int] = None
+    size_bytes: Optional[int] = None
+    provenance: Optional[str] = None
     # Calculated columns carry a DAX expression.
     is_calculated: bool = False
     expression: Optional[str] = None
@@ -47,6 +50,7 @@ class Measure:
     display_folder: Optional[str] = None
     description: Optional[str] = None
     is_hidden: bool = False
+    provenance: Optional[str] = None
 
 
 @dataclass
@@ -116,6 +120,13 @@ class DataSource:
 
 
 @dataclass
+class Bookmark:
+    name: str
+    target_page: Optional[str] = None
+    state: Optional[str] = None
+
+
+@dataclass
 class Visual:
     id: str
     type: str = "unknown"          # normalised visualType
@@ -127,6 +138,7 @@ class Visual:
     height: Optional[float] = None
     fields: list[str] = field(default_factory=list)  # "Table.Field" references
     is_slicer: bool = False
+    action: Optional[dict] = None
 
 
 @dataclass
@@ -139,6 +151,7 @@ class Page:
     width: Optional[float] = None
     height: Optional[float] = None
     visuals: list[Visual] = field(default_factory=list)
+    drillthrough_fields: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -151,6 +164,7 @@ class ModelMeta:
     )
     warnings: list[str] = field(default_factory=list)
     counts: dict[str, int] = field(default_factory=dict)
+    overridden_fields: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -164,6 +178,7 @@ class SemanticModel:
     expressions: list[MExpression] = field(default_factory=list)
     data_sources: list[DataSource] = field(default_factory=list)
     pages: list[Page] = field(default_factory=list)
+    bookmarks: list[Bookmark] = field(default_factory=list)
     meta: ModelMeta = field(default_factory=ModelMeta)
 
     # -- convenience -----------------------------------------------------

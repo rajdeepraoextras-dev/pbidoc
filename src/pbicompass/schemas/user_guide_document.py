@@ -42,6 +42,7 @@ class PageGuide:
     bookmarks: list[str] = field(default_factory=list)
     tooltips: list[str] = field(default_factory=list)
     common_scenarios: list[str] = field(default_factory=list)
+    wireframe_svg: Optional[str] = None
 
 
 @dataclass

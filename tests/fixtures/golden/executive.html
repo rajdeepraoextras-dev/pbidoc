@@ -517,6 +517,9 @@ details.collapsible > .code-block pre {
 .pill.high { background: var(--warning-light); color: #b45309; }
 .pill.medium { background: var(--primary-light); color: var(--primary); }
 .pill.low { background: var(--bg-code-inline); color: var(--text-muted); }
+.pill.extracted { background: #e0f2fe; color: #0369a1; text-transform: none; }
+.pill.ai-inferred { background: #fae8ff; color: #a21caf; text-transform: none; }
+.pill.human-provided { background: #dcfce7; color: #15803d; text-transform: none; }
 
 /* Todo items */
 .todo {
@@ -926,7 +929,7 @@ details.collapsible > .code-block pre {
 <h2 id="sec9">9. Known Risks</h2>
 <ul><li id="risk-0">[High] Some relationships use bidirectional cross-filtering. Bidirectional filters can create ambiguous filter paths and materially slow down query performance.</li><li id="risk-1">[Medium] Row-level security gaps were found. Without RLS (or with roles that have no members configured), sensitive rows may be visible to more users than intended.</li><li id="risk-2">[Medium] Description coverage across measures and columns is low. Missing descriptions increase onboarding time and the risk of misinterpreting a field&#x27;s meaning.</li><li id="risk-3">[Medium] No owner or data classification was specified for this report. Without a named owner, there&#x27;s no clear point of contact for questions, incidents, or change requests.</li><li id="risk-4">[Low] Some ID/key-style columns are visible to report authors. Visible technical join keys clutter the field list and can be mis-used in visuals by mistake.</li></ul>
 <h2 id="sec10">10. Maintenance Overview</h2>
-<p>No refresh schedule has been documented yet. 5 modeling best-practice gap(s) and 3 governance finding(s) from the latest audit should be reviewed periodically. No owner has been assigned for ongoing accountability.</p>
+<p>No refresh schedule has been documented yet. 5 modeling best-practice gap(s) and 7 governance finding(s) from the latest audit should be reviewed periodically. No owner has been assigned for ongoing accountability.</p>
 <h2 id="sec11">11. Future Recommendations</h2>
 <ul><li>Many measures/columns have no description. — expected benefit: Faster onboarding and self-documenting metadata in Power BI Desktop tooltips.</li><li>Some measures have no description. — expected benefit: Faster onboarding and fewer misinterpretations of what a measure means.</li><li>Some calculated columns are never used in any report visual. — expected benefit: Smaller model size and faster refreshes.</li></ul>
 </main></div>

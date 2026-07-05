@@ -315,5 +315,62 @@ class HardcodedYearAndPathFindingsTest(unittest.TestCase):
         self.assertFalse(any(f.area == "hardcoded_paths" for f in governance))
 
 
+class RulesEngineTest(unittest.TestCase):
+    def test_load_rules_config_default_empty(self):
+        config = audit_rules.load_rules_config()
+        self.assertIsInstance(config, dict)
+
+    def test_process_finding_severity_override(self):
+        from pbicompass.schemas.audit_document import DaxFinding
+        f = DaxFinding(measure="M", table="T", kind="hardcoded_year", detail="detail", severity="Critical")
+        
+        original_load = audit_rules.load_rules_config
+        try:
+            audit_rules.load_rules_config = lambda: {"rules": {"PBIC-DAX-006": {"severity": "High"}}}
+            keep = audit_rules.process_finding(f, f.kind)
+            self.assertTrue(keep)
+            self.assertEqual(f.severity, "High")
+            self.assertEqual(f.rule_id, "PBIC-DAX-006")
+        finally:
+            audit_rules.load_rules_config = original_load
+
+    def test_process_finding_disabled(self):
+        from pbicompass.schemas.audit_document import DaxFinding
+        f = DaxFinding(measure="M", table="T", kind="hardcoded_year", detail="detail", severity="Critical")
+        
+        original_load = audit_rules.load_rules_config
+        try:
+            audit_rules.load_rules_config = lambda: {"rules": {"PBIC-DAX-006": {"enabled": False}}}
+            audit_rules.reset_suppressed_rules()
+            keep = audit_rules.process_finding(f, f.kind)
+            self.assertFalse(keep)
+            self.assertIn("PBIC-DAX-006", audit_rules.get_suppressed_rules())
+        finally:
+            audit_rules.load_rules_config = original_load
+
+    def test_score_trend_stateful(self):
+        import os
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as td:
+            history_file = Path(td) / "history.json"
+            os.environ["PBICOMPASS_SCORE_HISTORY"] = str(history_file)
+            try:
+                trend1 = audit_rules.get_and_update_score_history("TestReport", 80)
+                self.assertIsNone(trend1)
+
+                trend2 = audit_rules.get_and_update_score_history("TestReport", 85)
+                self.assertIsNotNone(trend2)
+                self.assertIn("80 → 85 (+5)", trend2)
+            finally:
+                del os.environ["PBICOMPASS_SCORE_HISTORY"]
+
+    def test_score_trend_off_by_default(self):
+        """The hosted service never sets PBICOMPASS_SCORE_HISTORY, so this
+        must stay a no-op — the zero-retention guarantee for score trend."""
+        self.assertIsNone(audit_rules.get_and_update_score_history("AnyReport", 80))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

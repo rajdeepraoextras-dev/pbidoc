@@ -21,6 +21,7 @@ venv/
 out/
 *.db
 *.db-journal
+.pbicompass_history.json
 
 # Power BI source files — never commit customer artifacts
 *.pbix

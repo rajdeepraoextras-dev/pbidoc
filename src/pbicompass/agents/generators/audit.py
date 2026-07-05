@@ -67,6 +67,7 @@ class AuditReportGenerator:
         warn = on_warning or (lambda _msg: None)
         model.compute_counts()
 
+        audit_rules.reset_suppressed_rules()
         measures = model.all_measures()
         dax_findings = audit_rules.find_dax_findings(measures)
         best_practices = audit_rules.check_best_practices(model)
@@ -78,7 +79,7 @@ class AuditReportGenerator:
         )
         complexity = audit_rules.compute_complexity(model)
         recommendations = audit_rules.build_recommendations(
-            dax_findings, best_practices, performance_risks, governance, unused_assets,
+            dax_findings, best_practices, performance_risks, governance, unused_assets, model=model,
         )
 
         narrative = _deterministic_overview(
@@ -109,11 +110,17 @@ class AuditReportGenerator:
             if data and data.get("narrative_overview"):
                 narrative = data["narrative_overview"]
 
+        suppressed = audit_rules.get_suppressed_rules()
+        meta = build_core_metadata(
+            model, "audit", default_audience="BI architects, technical leads, and governance teams",
+            owner=owner, audience=audience, refresh=refresh, version=version, status=status,
+        )
+        meta.score_trend = audit_rules.get_and_update_score_history(
+            model.report_name or "UnknownReport",
+            health.overall
+        )
         return AuditDocument(
-            metadata=build_core_metadata(
-                model, "audit", default_audience="BI architects, technical leads, and governance teams",
-                owner=owner, audience=audience, refresh=refresh, version=version, status=status,
-            ),
+            metadata=meta,
             health=health,
             complexity=complexity,
             dax_findings=dax_findings,
@@ -123,4 +130,5 @@ class AuditReportGenerator:
             unused_assets=unused_assets,
             recommendations=recommendations,
             narrative_overview=narrative,
+            suppressed_rules=suppressed,
         )

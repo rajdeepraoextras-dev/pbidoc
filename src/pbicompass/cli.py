@@ -108,10 +108,14 @@ def main(argv: list[str] | None = None) -> int:
     p_parse.add_argument("-o", "--out", type=Path, help="Write model.json to this path")
     p_parse.add_argument("--compact", action="store_true", help="Minified JSON output")
     p_parse.add_argument("--quiet", action="store_true", help="Suppress the summary")
+    p_parse.add_argument("--stats", action="store_true",
+                       help=".pbix only: also read VertiPaq aggregate stats (column cardinality/size). Opt-in — never row-level data.")
 
     p_gen = sub.add_parser("generate", help="Parse a file and generate documentation")
     p_gen.add_argument("path", type=Path, help=".pbip file, project directory, or .pbix")
     p_gen.add_argument("-o", "--out", type=Path, help="Output path (.md or .json by extension)")
+    p_gen.add_argument("--stats", action="store_true",
+                       help=".pbix only: also read VertiPaq aggregate stats (column cardinality/size). Opt-in — never row-level data.")
     p_gen.add_argument("--provider", default="none",
                        help="LLM provider: 'none' (deterministic, default), 'anthropic', 'gemini', or 'cohere'")
     p_gen.add_argument("--model", default="claude-opus-4-8", help="Model id for the LLM provider")
@@ -163,7 +167,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "parse":
         try:
-            model = detect_and_parse(args.path)
+            model = detect_and_parse(args.path, include_stats=args.stats)
         except Exception as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
@@ -179,8 +183,16 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "generate":
+        # LLM response cache (5.4): on by default for the CLI, off by
+        # default for the hosted service (service/worker.py never sets this
+        # env var, so it keeps cache.py's off default). Respect an explicit
+        # override (a custom path, or "off") from the user's environment.
+        os.environ.setdefault("PBICOMPASS_LLM_CACHE", ".pbicompass_cache.db")
+        # Score trend (4.5): same on-CLI/off-service default split.
+        os.environ.setdefault("PBICOMPASS_SCORE_HISTORY", ".pbicompass_history.json")
+
         try:
-            model = detect_and_parse(args.path)
+            model = detect_and_parse(args.path, include_stats=args.stats)
         except Exception as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1

@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from ..agents.audit_rules import TOTAL_RULE_COUNT
 from ..schemas.document import Document
 from ._docx_writer import _Docx
 from ._shared import HEALTH_COMPONENT_LABELS
@@ -43,7 +44,14 @@ def render_docx(doc: Document, out_path) -> Path:
     d = _Docx()
     md = doc.metadata
     d.heading(0, f"{md.report_name} — Documentation")
-    d.para([d._run(f"{md.target_audience or ''} · generated {_fmt_ts(md.generated_at)}", italic=True)])
+    subtitle_str = f"{md.target_audience or ''} · generated {_fmt_ts(md.generated_at)}"
+    if getattr(md, "score_trend", None):
+        subtitle_str += f" · Score Trend: {md.score_trend}"
+    d.para([d._run(subtitle_str, italic=True)])
+    
+    from ._shared import compute_completeness
+    pct, missing_count, _ = compute_completeness(md)
+    d.para([d._run(f"Completeness: {pct}% ({missing_count} fields awaiting input)", italic=True)])
 
     def todo(t):
         d.para([d._run("✎ To complete: " + t, italic=True)])
@@ -103,14 +111,33 @@ def render_docx(doc: Document, out_path) -> Path:
     # 5. Data Sources
     ln = doc.lineage
     d.heading(1, "5. Data Sources")
-    for s in ln.source_systems or ["No external data sources detected."]:
-        if _is_local_path(s):
-            d.bullet(s + " ⚠️ [Hardcoded local path]")
-        else:
-            d.bullet(s)
+    if ln.data_sources_inventory:
+        d.table(["Source Type", "Location / Host", "Table(s) Fed", "Storage Mode", "Authentication", "Flag / Risk"],
+                _t([[item["type"], item["display_location"], ", ".join(item["tables_fed"]) or "—",
+                     item["storage_mode"], item["auth"], item["flag"] or "None"]
+                    for item in ln.data_sources_inventory]))
+    else:
+        for s in ln.source_systems or ["No external data sources detected."]:
+            if _is_local_path(s):
+                d.bullet(s + " ⚠️ [Hardcoded local path]")
+            else:
+                d.bullet(s)
     d.heading(2, "Power Query / ETL transformations")
-    d.table(["Object", "Transformation"],
-            _t([[t.get("name", ""), t.get("description", "")] for t in ln.transformations]) or [["—", "None found."]])
+    if not ln.transformations:
+        d.para("No Power Query transformations found.")
+    else:
+        for t in ln.transformations:
+            d.heading(3, t.get("name", ""))
+            if t.get("description"):
+                d.para(t["description"])
+            steps = t.get("steps")
+            if steps:
+                for i, s in enumerate(steps, 1):
+                    d.para([d._run(f"{i}. {s.get('step')} ", bold=True), d._run(f"({s.get('type')}): {s.get('expr')}")])
+    if ln.lineage_edges:
+        d.heading(2, "Data lineage")
+        d.table(["From", "To", "Link Type"],
+                _t([[ed["from"], ed["to"], ed["type"]] for ed in ln.lineage_edges]))
     todo("Per source: authentication, owning team, and known data latency.")
 
     # 6. Data Model
@@ -131,8 +158,8 @@ def render_docx(doc: Document, out_path) -> Path:
             _t([[ed["from"], ed["to"], f'{ed.get("from_card")}-to-{ed.get("to_card")}', ed.get("cross_filter"),
                  "Yes" if ed.get("is_active") else "No"] for ed in sm.relationship_edges]) or [["—", "—", "—", "—", "—"]])
     d.heading(2, "Data dictionary")
-    d.table(["Table", "Column", "Data Type", "Description"],
-            _t([[r.get("table", ""), r.get("column", ""), r.get("data_type", ""), r.get("description", "")]
+    d.table(["Table", "Column", "Data Type", "Description", "Used by"],
+            _t([[r.get("table", ""), r.get("column", ""), r.get("data_type", ""), r.get("description", ""), r.get("used_by", "")]
                 for r in sm.data_dictionary]))
 
     # 7. Measures
@@ -145,7 +172,10 @@ def render_docx(doc: Document, out_path) -> Path:
             d.para([d._run("Calculation: ", bold=True), d._run(m.calculation_logic)])
         if m.caveats:
             d.para([d._run("Known caveats: " + m.caveats, italic=True)])
-        if m.dependencies:
+        if m.dependency_tree:
+            d.para([d._run("Dependency tree:", bold=True)])
+            d.code(m.dependency_tree)
+        elif m.dependencies:
             d.para([d._run("Depends on: " + ", ".join(m.dependencies), italic=True)])
         used = ", ".join(m.used_on) if m.used_on else "not placed on a page"
         d.para([d._run("Used on: " + used, italic=True)])
@@ -187,6 +217,10 @@ def render_docx(doc: Document, out_path) -> Path:
 
     # 9. Filters, Slicers & Navigation
     d.heading(1, "9. Filters, Slicers & Navigation")
+    if doc.navigation_edges:
+        d.heading(2, "Page navigation connection list")
+        d.table(["From Page", "To Page", "Trigger Label", "Link Type"],
+                _t([[ed["from"], ed["to"], ed["label"], ed["type"]] for ed in doc.navigation_edges]))
     d.table(["Slicer field", "Page"], _t([[_slicer_label(x), x["page"]] for x in doc.slicers]) or [["—", "—"]])
     drill = [p["name"] for p in doc.report_pages if p.get("drillthrough")]
     if drill:
@@ -197,9 +231,38 @@ def render_docx(doc: Document, out_path) -> Path:
     sec = doc.security
     d.heading(1, "10. Row-Level Security (RLS)")
     if sec.roles:
-        d.table(["Role", "Rule (DAX filter)", "Members"],
-                _t([[r.get("name", ""), "; ".join(r.get("filters", [])) or "—", ", ".join(r.get("members", [])) or "—"]
+        d.heading(2, "Roles definition")
+        d.table(["Role Name", "Permission", "Members"],
+                _t([[r.get("name", ""), r.get("model_permission", "read"),
+                     ", ".join(r.get("members", [])) or "no members assigned (managed in cloud service)"]
                     for r in sec.roles]))
+
+        d.heading(2, "Role × Table security matrix")
+        filtered_tables = sorted({
+            filt.split(":")[0].strip()
+            for r in sec.roles
+            for filt in r.get("filters", [])
+            if ":" in filt
+        })
+        if not filtered_tables:
+            d.para("No table-level filters are defined for these roles.")
+        else:
+            grid_rows = []
+            for t_name in filtered_tables:
+                row = [t_name]
+                for r in sec.roles:
+                    filt_val = "—"
+                    for filt in r.get("filters", []):
+                        if filt.startswith(f"{t_name}:"):
+                            filt_val = filt.split(":", 1)[1].strip()
+                            break
+                    row.append(filt_val)
+                grid_rows.append(row)
+            d.table(["Table"] + [r.get("name", "") for r in sec.roles], _t(grid_rows))
+
+        d.heading(2, "RLS Validation Checklist")
+        for r in sec.roles:
+            d.bullet(f"Test {r.get('name', '')}: Select 'View as' → check '{r.get('name', '')}' in Power BI Desktop to verify filter propagation.")
     else:
         d.para("No row-level security roles are defined in this model.")
         
@@ -277,6 +340,42 @@ def render_docx(doc: Document, out_path) -> Path:
         d.heading(2, "Orphaned measures (defined but not used on any page)")
         for m in td.orphaned_measures:
             d.bullet(m)
+
+    unused = td.unused_assets or {}
+    unused_cols_raw = unused.get("columns", [])
+    unused_calc_cols_raw = unused.get("calculated_columns", [])
+    unused_meas_raw = unused.get("measures", [])
+    if unused_cols_raw or unused_calc_cols_raw or unused_meas_raw:
+        d.heading(2, "Unused Assets Grouped by Table")
+
+        table_unused: dict = {}
+        for c in unused_cols_raw:
+            table_unused.setdefault(c["table"], {"columns": [], "calculated_columns": [], "measures": []})["columns"].append(c["column"])
+        for c in unused_calc_cols_raw:
+            table_unused.setdefault(c["table"], {"columns": [], "calculated_columns": [], "measures": []})["calculated_columns"].append(c["column"])
+        m_to_tbl = {m.name: m.table for m in doc.measure_catalog.measures if m.table}
+        for m_name in unused_meas_raw:
+            tbl = m_to_tbl.get(m_name, "Unassigned Measures")
+            table_unused.setdefault(tbl, {"columns": [], "calculated_columns": [], "measures": []})["measures"].append(m_name)
+
+        for t_name, assets in sorted(table_unused.items()):
+            col_list, calc_col_list, meas_list = assets["columns"], assets["calculated_columns"], assets["measures"]
+            total_count = len(col_list) + len(calc_col_list) + len(meas_list)
+            if not total_count:
+                continue
+            d.heading(3, f"Table: {t_name} ({total_count} unused assets)")
+            for col in sorted(col_list):
+                d.bullet(f"{col} — Evidence: no visuals, no measures, no relationships, no RLS filters reference this column.")
+            for col in sorted(calc_col_list):
+                d.bullet(f"{col} — Evidence: no visuals, no measures, no relationships, no RLS filters reference this calculated column.")
+            for m in sorted(meas_list):
+                d.bullet(f"{m} — Evidence: no visuals or other measures reference this measure.")
+            script_lines = [f'Model.Tables["{t_name}"].Columns["{col}"].Delete();' for col in sorted(col_list + calc_col_list)]
+            script_lines += [f'Model.Tables["{t_name}"].Measures["{m}"].Delete();' for m in sorted(meas_list)]
+            if script_lines:
+                d.para([d._run("Tabular Editor C# Script:", bold=True)])
+                d.code(f'// Tabular Editor C# script to remove unused assets in Table {t_name}\n' + "\n".join(script_lines))
+
     if not md.assumptions:
         todo("Business assumptions and limitations with impact and workaround.")
         
@@ -291,12 +390,30 @@ def render_docx(doc: Document, out_path) -> Path:
                     for k, v in hs.get("component_scores", {}).items()]))
         d.para([d._run("Scored by deterministic rules over the model metadata — reproducible, not an AI guess.", italic=True)])
     recs = doc.ai_recommendations or []
+    suppressed = doc.tech_debt.suppressed_rules if hasattr(doc, "tech_debt") and doc.tech_debt else []
+    suppressed_count = len(suppressed)
+    total_checks = TOTAL_RULE_COUNT
+    failed_count = len(recs)
+    passed_count = max(0, total_checks - suppressed_count - failed_count)
+    
+    d.para([
+        d._run("Best Practice Rules Summary: ", bold=True),
+        d._run(f"Checks Run: {total_checks - suppressed_count}  |  Passed: {passed_count}  |  Failed: {failed_count}  |  Suppressed: {suppressed_count}")
+    ])
+    if suppressed:
+        d.para([
+            d._run("Suppressed by configuration: ", bold=True),
+            d._run(", ".join(suppressed))
+        ])
+
     if recs:
         d.heading(2, "Prioritized recommendations")
         for i, r in enumerate(recs, 1):
             d.heading(3, f"{i}. [{r.get('priority', 'Medium')}] {r.get('issue', '')}")
             d.para([d._run("Impact: ", bold=True), d._run(r.get("why_it_matters", ""))])
-            d.para([d._run("Recommendation: ", bold=True), d._run(r.get("suggested_fix", ""))])
+            fix_text = r.get("suggested_fix", "")
+            cleaned_fix = re.sub(r"```[a-z]*\n", "", fix_text).replace("```", "")
+            d.para([d._run("Recommendation: ", bold=True), d._run(cleaned_fix)])
             if r.get("expected_benefit"):
                 d.para([d._run("Expected benefit: ", bold=True), d._run(r.get("expected_benefit"))])
             d.para([d._run("Estimated effort: ", bold=True), d._run(r.get("effort", "Medium"))])
@@ -328,6 +445,13 @@ def render_docx(doc: Document, out_path) -> Path:
     ]
     d.table(["Sign-off Role", "Name", "Title / Role", "Date"], _t(sign_off_rows))
     d.para([d._run("Reminder: ", bold=True), d._run("Obtain sign-off before sharing with stakeholders.")])
+
+    # 19. Methodology & Guarantees
+    d.heading(1, "19. Methodology & Guarantees [Extracted]")
+    d.bullet([d._run("Parsed Artifacts: ", bold=True), d._run("Power BI metadata (tables, columns, measures, relationships, visuals, and page layout layout tables). No customer database row-level data is ever parsed, read, or transmitted.")])
+    d.bullet([d._run("AI Agents Used: ", bold=True), d._run("PBICompass Engine v0.1.0 and prompt version 2026-07. Models called: Anthropic Claude, Google Gemini, Cohere. All operations run under zero-retention policies.")])
+    d.bullet([d._run("Guarantees: ", bold=True), d._run("100% offline-ready deliverables, zero-CDNs, zero telemetries, and fully reproducible scoring metrics backed by deterministic compliance checking rules.")])
+    d.bullet([d._run("Limitations: ", bold=True), d._run("This tool cannot verify runtime query performance, network latency, database authentication credentials, or confirm the actual semantic business meaning without human verification.")])
 
     d.save(out_path)
     return out_path

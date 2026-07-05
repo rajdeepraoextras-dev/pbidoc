@@ -517,6 +517,9 @@ details.collapsible > .code-block pre {
 .pill.high { background: var(--warning-light); color: #b45309; }
 .pill.medium { background: var(--primary-light); color: var(--primary); }
 .pill.low { background: var(--bg-code-inline); color: var(--text-muted); }
+.pill.extracted { background: #e0f2fe; color: #0369a1; text-transform: none; }
+.pill.ai-inferred { background: #fae8ff; color: #a21caf; text-transform: none; }
+.pill.human-provided { background: #dcfce7; color: #15803d; text-transform: none; }
 
 /* Todo items */
 .todo {
@@ -901,9 +904,10 @@ details.collapsible > .code-block pre {
 <h2 id="sec3">3. Report Pages</h2>
 <div class="card-section" id="page-sales-overview">
 <h3>Sales Overview</h3>
+<div class="diagram"><svg viewBox="0 0 480 270" width="100%" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="wireframe-title-page1"><title id="wireframe-title-page1">Wireframe layout for page Sales Overview</title><a href="#visual-sales-overview-revenue-by-year">  <rect x="6.0" y="30.0" width="225.0" height="150.0" rx="3" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.2" style="cursor:pointer; transition:opacity 0.2s;" onmouseover="this.style.opacity=0.8" onmouseout="this.style.opacity=1.0"/>  <text x="118.5" y="108.0" font-size="8" font-family="sans-serif" font-weight="500" fill="#1d4ed8" text-anchor="middle">Revenue by Year</text></a><a href="#visual-sales-overview-slicer">  <rect x="6.0" y="6.0" width="112.5" height="22.5" rx="3" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.2" style="cursor:pointer; transition:opacity 0.2s;" onmouseover="this.style.opacity=0.8" onmouseout="this.style.opacity=1.0"/>  <text x="62.2" y="20.2" font-size="8" font-family="sans-serif" font-weight="500" fill="#b45309" text-anchor="middle">slicer</text></a><a href="#visual-sales-overview-revenue-breakdown">  <rect x="240.0" y="30.0" width="225.0" height="150.0" rx="3" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.2" style="cursor:pointer; transition:opacity 0.2s;" onmouseover="this.style.opacity=0.8" onmouseout="this.style.opacity=1.0"/>  <text x="352.5" y="108.0" font-size="8" font-family="sans-serif" font-weight="500" fill="#1d4ed8" text-anchor="middle">Revenue Brea...</text></a></svg></div>
 <p>Presents 3 visual(s) — 1 column chart, 1 slicer, 1 decomposition tree. Key fields: Year, Total Revenue, Date, Region, Segment.</p>
 <p><strong>What to look at:</strong> Total Revenue</p>
-<table><thead><tr><th>Visual</th><th>What it shows</th></tr></thead><tbody><tr><td>Revenue by Year</td><td>Shows Total Revenue broken down by Year.</td></tr><tr><td>Revenue Breakdown</td><td>A decomposition tree breaks a measure down one field at a time. Click the + on a node and pick a field to expand by; the tree shows which categories contribute most to the total.</td></tr></tbody></table>
+<table><thead><tr><th>Visual</th><th>What it shows</th></tr></thead><tbody><tr id="visual-sales-overview-revenue-by-year"><td>Revenue by Year</td><td>Shows Total Revenue broken down by Year.</td></tr><tr id="visual-sales-overview-revenue-breakdown"><td>Revenue Breakdown</td><td>A decomposition tree breaks a measure down one field at a time. Click the + on a node and pick a field to expand by; the tree shows which categories contribute most to the total.</td></tr></tbody></table>
 <p class="caveat"><strong>Filters on this page:</strong> Date.</p>
 <p><strong>How to navigate this page</strong></p>
 <ul><li>Use the &#x27;Date&#x27; filter to narrow down what you see on this page.</li><li>Click on any chart to highlight the related data across the rest of the page.</li></ul>
@@ -914,9 +918,10 @@ details.collapsible > .code-block pre {
 </div>
 <div class="card-section" id="page-region-detail">
 <h3>Region Detail</h3>
+<div class="diagram"><svg viewBox="0 0 480 270" width="100%" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="wireframe-title-page2"><title id="wireframe-title-page2">Wireframe layout for page Region Detail</title><a href="#visual-region-detail-revenue-by-region">  <rect x="6.0" y="6.0" width="465.0" height="255.0" rx="3" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.2" style="cursor:pointer; transition:opacity 0.2s;" onmouseover="this.style.opacity=0.8" onmouseout="this.style.opacity=1.0"/>  <text x="238.5" y="136.5" font-size="8" font-family="sans-serif" font-weight="500" fill="#1d4ed8" text-anchor="middle">Revenue by R...</text></a></svg></div>
 <p>Presents 1 visual(s) — 1 map. Key fields: Region, Total Revenue. Drill-through detail page reached from other pages.</p>
 <p><strong>What to look at:</strong> Total Revenue</p>
-<table><thead><tr><th>Visual</th><th>What it shows</th></tr></thead><tbody><tr><td>Revenue by Region</td><td>A map plots values geographically. Bubble size or colour encodes the measure — compare regions visually and zoom for detail.</td></tr></tbody></table>
+<table><thead><tr><th>Visual</th><th>What it shows</th></tr></thead><tbody><tr id="visual-region-detail-revenue-by-region"><td>Revenue by Region</td><td>A map plots values geographically. Bubble size or colour encodes the measure — compare regions visually and zoom for detail.</td></tr></tbody></table>
 <p><strong>Questions this page answers</strong></p>
 <ul><li>How does Total Revenue compare across Region?</li></ul>
 </div>

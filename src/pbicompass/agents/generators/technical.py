@@ -60,6 +60,7 @@ def _metadata(model: SemanticModel, owner, audience, refresh,
               classification=None, business_decision=None, requirements=None,
               security_notes=None, refresh_notes=None, deployment_notes=None,
               access_notes=None, glossary=None, assumptions=None, support_notes=None) -> DocumentMetadata:
+    overridden = getattr(model.meta, "overridden_fields", [])
     return DocumentMetadata(
         report_name=model.report_name,
         owner=owner,
@@ -81,6 +82,7 @@ def _metadata(model: SemanticModel, owner, audience, refresh,
         glossary=glossary,
         assumptions=assumptions,
         support_notes=support_notes,
+        overridden_fields=list(overridden),
     )
 
 
@@ -164,19 +166,45 @@ def _summarize_m(m: str) -> str:
 
 
 def _lineage(model: SemanticModel) -> LineageArchitecture:
+    from ...render._lineage import build_lineage_data
+    from ...parsers.m_steps import split_m_steps, classify_step_function
     sources = data_source_summaries(model)
 
     transforms: list[dict[str, str]] = []
     for e in model.expressions:
         if e.expression and e.kind == "expression":
-            transforms.append({"name": e.name, "description": _summarize_m(e.expression)})
+            steps_raw = split_m_steps(e.expression)
+            steps = [{"step": name, "expr": expr, "type": classify_step_function(expr)} for name, expr in steps_raw]
+            transforms.append({
+                "name": e.name,
+                "description": _summarize_m(e.expression),
+                "raw_m": e.expression,
+                "steps": steps
+            })
     for t in model.tables:
         for p in t.partitions:
             if p.source_kind == "m" and p.expression:
-                transforms.append({"name": t.name, "description": _summarize_m(p.expression)})
+                steps_raw = split_m_steps(p.expression)
+                steps = [{"step": name, "expr": expr, "type": classify_step_function(expr)} for name, expr in steps_raw]
+                transforms.append({
+                    "name": t.name,
+                    "description": _summarize_m(p.expression),
+                    "raw_m": p.expression,
+                    "steps": steps
+                })
             elif p.source_kind == "calculated" and p.expression:
                 transforms.append({"name": t.name, "description": "Calculated table defined in DAX."})
-    return LineageArchitecture(source_systems=sources, transformations=transforms)
+
+    edges, svg = build_lineage_data(model)
+    from ...render._lineage import build_data_sources_inventory
+    inventory = build_data_sources_inventory(model)
+    return LineageArchitecture(
+        source_systems=sources,
+        transformations=transforms,
+        lineage_svg=svg,
+        lineage_edges=edges,
+        data_sources_inventory=inventory
+    )
 
 
 # -- IV. Semantic Model -------------------------------------------------------
@@ -214,17 +242,70 @@ def _column_descriptions(model: SemanticModel, client, warn) -> dict[tuple[str, 
 
 
 def _semantic_model(model: SemanticModel, client, warn, col_descs: dict) -> SemanticModelDoc:
-    data_dictionary = [
-        {
-            "table": t.name,
-            "column": c.name,
-            "data_type": c.data_type,
-            "description": col_descs.get((t.name, c.name), c.description or ("Calculated column" if c.is_calculated else "")),
-        }
-        for t in model.tables
-        for c in t.columns
-        if not c.is_hidden
-    ]
+    data_dictionary = []
+    for t in model.tables:
+        for c in t.columns:
+            if c.is_hidden:
+                continue
+            
+            # Relationships
+            rel_list = []
+            for r in model.relationships:
+                if (r.from_table == t.name and r.from_column == c.name) or (r.to_table == t.name and r.to_column == c.name):
+                    other_table = r.to_table if r.from_table == t.name else r.from_table
+                    other_col = r.to_column if r.from_table == t.name else r.from_column
+                    rel_list.append(f"'{other_table}[{other_col}]'")
+            
+            # Measures
+            meas_list = []
+            for m in model.all_measures():
+                ref_pattern1 = f"{t.name}[{c.name}]".lower()
+                ref_pattern2 = f"'{t.name}'[{c.name}]".lower()
+                expr_lower = (m.expression or "").lower()
+                if ref_pattern1 in expr_lower or ref_pattern2 in expr_lower:
+                    meas_list.append(m.name)
+            
+            # Visuals / Pages
+            vis_list = []
+            for p in model.pages:
+                for v in p.visuals:
+                    field_ref = f"{t.name}.{c.name}".lower()
+                    if any(f.lower() == field_ref for f in v.fields):
+                        if p.display_name not in vis_list:
+                            vis_list.append(p.display_name)
+            
+            # RLS
+            rls_list = []
+            for role in model.roles:
+                for tp in role.table_permissions:
+                    if tp.table == t.name and c.name.lower() in tp.filter_expression.lower():
+                        rls_list.append(role.name)
+            
+            parts = []
+            if rel_list:
+                parts.append(f"{len(rel_list)} relationship(s)")
+            if meas_list:
+                parts.append(f"{len(meas_list)} measure(s) ({', '.join(meas_list[:2])}{'...' if len(meas_list) > 2 else ''})")
+            if vis_list:
+                parts.append(f"{len(vis_list)} page(s) ({', '.join(vis_list[:2])}{'...' if len(vis_list) > 2 else ''})")
+            if rls_list:
+                parts.append(f"RLS role(s): {', '.join(rls_list)}")
+                
+            used_by_text = "; ".join(parts) if parts else "not referenced — see unused assets"
+            
+            prov = "extracted"
+            if getattr(c, "provenance", None) == "human":
+                prov = "human"
+            elif (t.name, c.name) in col_descs:
+                prov = "ai"
+            data_dictionary.append({
+                "table": t.name,
+                "column": c.name,
+                "data_type": c.data_type,
+                "description": col_descs.get((t.name, c.name), c.description or ("Calculated column" if c.is_calculated else "")),
+                "used_by": used_by_text,
+                "provenance": prov,
+            })
     rels = relationship_lines(model)
     summary, risks = data_modeler_deterministic(model)
     if client is not None:
@@ -269,7 +350,13 @@ def _measure_catalog(model: SemanticModel, client, warn) -> MeasureCatalog:
                 merged.update({t["name"]: t for t in data.get("translations", [])})
         translations = merged or None
 
+    from ...render._measure_deps import build_measure_dependency_tree, render_measure_dependency_graph_svg
+    from ..deterministic import _measure_refs
     measure_names = {m.name for m in measures}
+    measure_deps_map = {}
+    for m in measures:
+        measure_deps_map[m.name] = [d for d in _measure_refs(m.expression or "") if d in measure_names and d != m.name]
+
     for entry, measure in zip(entries, measures):
         t = translations.get(entry.name) if translations else None
         if t:
@@ -287,8 +374,16 @@ def _measure_catalog(model: SemanticModel, client, warn) -> MeasureCatalog:
             # unverified, hence the explicit Low confidence.
             entry.calculation_logic = entry.plain_english
             entry.confidence = "Low"
+        if getattr(measure, "provenance", None) == "human":
+            entry.provenance = "human"
+        elif t:
+            entry.provenance = "ai"
+        else:
+            entry.provenance = "extracted"
         entry.dependencies = measure_dependencies(measure.expression, measure_names)
         entry.used_on = usage.get(entry.name, [])
+        tree_lines = build_measure_dependency_tree(entry.name, measure_deps_map, {entry.name})
+        entry.dependency_tree = "\n".join(tree_lines)
 
         # Cross-check measure table attribution
         referenced_tables = find_referenced_tables(measure.expression)
@@ -310,7 +405,7 @@ def _measure_catalog(model: SemanticModel, client, warn) -> MeasureCatalog:
                 else:
                     entry.caveats = note
 
-    return MeasureCatalog(measures=entries)
+    return MeasureCatalog(measures=entries, dependency_svg=render_measure_dependency_graph_svg(model))
 
 
 # -- VI. Security & Governance ------------------------------------------------
@@ -365,7 +460,13 @@ def _audit(model: SemanticModel) -> TechDebtAudit:
             year_list = ", ".join(years)
             notes.append(f"Measure '{m.name}' contains a hardcoded year value ({year_list}) in its DAX calculation.")
 
-    return TechDebtAudit(orphaned_measures=orphaned, hidden_but_used=hidden_used, notes=notes)
+    unused = audit_rules.find_unused_assets(model)
+    return TechDebtAudit(
+        orphaned_measures=orphaned,
+        hidden_but_used=hidden_used,
+        notes=notes,
+        unused_assets=dataclasses.asdict(unused)
+    )
 
 
 TYPOS = {
@@ -449,13 +550,11 @@ def _health_and_recommendations(
     model: SemanticModel,
     owner: Optional[str],
     classification: Optional[str],
-) -> tuple[dict, list[dict]]:
+) -> tuple[dict, list[dict], list[str]]:
     """Run the deterministic audit rules over the model and return
-    ``(health_score, ai_recommendations)`` as plain dicts for the technical
-    document. Reuses :mod:`audit_rules` end-to-end — same scoring rubric,
-    findings (including hardcoded years and hardcoded local paths), and
-    templated fixes as the Audit & Health Report, never LLM output — so the
-    two documents never disagree on what the model's risks are."""
+    ``(health_score, ai_recommendations, suppressed_rules)`` as plain dicts/lists for the technical
+    document."""
+    audit_rules.reset_suppressed_rules()
     measures = model.all_measures()
     dax_findings = audit_rules.find_dax_findings(measures)
     best_practices = audit_rules.check_best_practices(model)
@@ -466,9 +565,10 @@ def _health_and_recommendations(
         dax_findings, best_practices, performance_risks, governance, unused_assets,
     )
     recommendations = audit_rules.build_recommendations(
-        dax_findings, best_practices, performance_risks, governance, unused_assets,
+        dax_findings, best_practices, performance_risks, governance, unused_assets, model=model,
     )
-    return dataclasses.asdict(health), [dataclasses.asdict(r) for r in recommendations]
+    suppressed = audit_rules.get_suppressed_rules()
+    return dataclasses.asdict(health), [dataclasses.asdict(r) for r in recommendations], suppressed
 
 
 class TechnicalDocumentationGenerator:
@@ -509,6 +609,8 @@ class TechnicalDocumentationGenerator:
         warn = on_warning or (lambda _msg: None)
         model.compute_counts()
         col_descs = _column_descriptions(model, client, warn)
+        from ...render._nav_map import render_navigation_map
+        nav_edges, nav_map_svg = render_navigation_map(model)
         doc = Document(
             metadata=_metadata(
                 model, owner, audience, refresh,
@@ -529,6 +631,8 @@ class TechnicalDocumentationGenerator:
             report_pages=report_pages(model),
             slicers=slicers(model),
             calculated_columns=calc_columns(model),
+            navigation_map_svg=nav_map_svg or None,
+            navigation_edges=nav_edges,
         )
 
         # Check for hardcoded years for Executive Summary callout
@@ -550,7 +654,16 @@ class TechnicalDocumentationGenerator:
             doc.executive_summary.core_purpose += warning_msg
 
         doc.glossary_entries = _infer_glossary(model, doc.measure_catalog, col_descs)
-        doc.health_score, doc.ai_recommendations = _health_and_recommendations(
+        health_score, ai_recs, suppressed = _health_and_recommendations(
             model, owner, classification,
         )
+        doc.health_score = health_score
+        doc.ai_recommendations = ai_recs
+        doc.tech_debt.suppressed_rules = suppressed
+        
+        trend = audit_rules.get_and_update_score_history(
+            model.report_name or "UnknownReport",
+            health_score.get("overall", 0)
+        )
+        doc.metadata.score_trend = trend
         return doc

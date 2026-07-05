@@ -141,14 +141,18 @@ def render_html(
     for p in doc.pages:
         o.append(f'<div class="card-section" id="page-{_e(anchor_slug(p.page_title))}">')
         o.append(f"<h3>{_e(p.page_title)}</h3>")
+        if p.wireframe_svg:
+            o.append(p.wireframe_svg)
         o.append(f"<p>{_e(p.purpose)}</p>")
 
         if p.main_kpis:
             o.append("<p><strong>What to look at:</strong> " + _e(", ".join(p.main_kpis)) + "</p>")
 
         if p.visual_descriptions:
+            row_ids = [f"visual-{anchor_slug(p.page_title)}-{anchor_slug(v['visual'])}" for v in p.visual_descriptions]
             o.append(_html_table(["Visual", "What it shows"],
-                                 [[_e(v["visual"]), _e(v["what_it_shows"])] for v in p.visual_descriptions]))
+                                 [[_e(v["visual"]), _e(v["what_it_shows"])] for v in p.visual_descriptions],
+                                 row_ids=row_ids))
 
         if p.filters:
             o.append(f'<p class="caveat"><strong>Filters on this page:</strong> {_e(", ".join(p.filters))}.</p>')

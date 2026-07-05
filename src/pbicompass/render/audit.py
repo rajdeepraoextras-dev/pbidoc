@@ -22,6 +22,7 @@ from ._shared import format_timestamp as _fmt_ts
 from ._shared import html_e as _e
 from ._shared import html_table as _html_table
 from ._shared import md_table as _table
+from .html import format_prose_with_code
 
 _SECTION_TITLES = [
     "1. Overall Health Score",
@@ -77,8 +78,15 @@ def render_markdown(doc: AuditDocument) -> str:
     md = doc.metadata
     h = doc.health
     c = doc.complexity
+    subtitle_str = f"{md.target_audience or ''} · generated {_fmt_ts(md.generated_at)}"
+    if getattr(md, "score_trend", None):
+        subtitle_str += f" · Score Trend: {md.score_trend}"
     out: list[str] = [f"# {md.report_name} — Audit & Health Report\n"]
-    out.append(f"_{md.target_audience or ''} · generated {_fmt_ts(md.generated_at)}_\n")
+    out.append(f"_{subtitle_str}_\n")
+    
+    from ._shared import compute_completeness
+    pct, missing_count, _ = compute_completeness(md)
+    out.append(f"**Completeness:** {pct}% ({missing_count} fields awaiting input)\n")
     if doc.narrative_overview:
         out.append(f"\n{doc.narrative_overview}\n")
 
@@ -255,7 +263,7 @@ def render_html(
             o.append(f'<div class="card-section" id="rec-{i}">')
             o.append(f'<h3>{_severity_pill(r.priority)} {_e(r.issue)}</h3>')
             o.append(f'<p><strong>Why it matters:</strong> {_e(r.why_it_matters)}</p>')
-            o.append(f'<p><strong>Suggested fix:</strong> {_e(r.suggested_fix)}</p>')
+            o.append(f'<p><strong>Suggested fix:</strong> {format_prose_with_code(r.suggested_fix)}</p>')
             o.append(f'<p><strong>Expected benefit:</strong> {_e(r.expected_benefit)}</p>')
             o.append(f'<p><strong>Estimated effort:</strong> {_e(getattr(r, "effort", "Medium"))}</p>')
             o.append('</div>')
@@ -284,11 +292,19 @@ def render_html(
         for i, r in enumerate(doc.recommendations)
     ]
 
+    subtitle_str = f"{md.target_audience or ''} · generated {_fmt_ts(md.generated_at)}"
+    if getattr(md, "score_trend", None):
+        subtitle_str += f" · Score Trend: {md.score_trend}"
+
+    from ._shared import compute_completeness
+    comp = compute_completeness(md)
+
     return page_shell(
         title=f"{md.report_name} — Audit & Health Report",
-        subtitle=f"{md.target_audience or ''} · generated {_fmt_ts(md.generated_at)}",
+        subtitle=subtitle_str,
         toc=toc, kpis=kpis, body_html="\n".join(o), doc_links=doc_links, search_index=search_index,
         owner=md.owner, version=md.version, status=md.status,
+        completeness=comp,
     )
 
 
@@ -302,7 +318,14 @@ def render_docx(doc: AuditDocument, out_path) -> Path:
     c = doc.complexity
 
     d.heading(0, f"{md.report_name} — Audit & Health Report")
-    d.para([d._run(f"{md.target_audience or ''} · generated {_fmt_ts(md.generated_at)}", italic=True)])
+    subtitle_str = f"{md.target_audience or ''} · generated {_fmt_ts(md.generated_at)}"
+    if getattr(md, "score_trend", None):
+        subtitle_str += f" · Score Trend: {md.score_trend}"
+    d.para([d._run(subtitle_str, italic=True)])
+    
+    from ._shared import compute_completeness
+    pct, missing_count, _ = compute_completeness(md)
+    d.para([d._run(f"Completeness: {pct}% ({missing_count} fields awaiting input)", italic=True)])
     if doc.narrative_overview:
         d.para(doc.narrative_overview)
 

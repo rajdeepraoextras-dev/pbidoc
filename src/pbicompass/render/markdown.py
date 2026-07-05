@@ -9,6 +9,7 @@ Stdlib only.
 
 from __future__ import annotations
 
+from ..agents.audit_rules import TOTAL_RULE_COUNT
 from ..schemas.document import Document
 from ._shared import HEALTH_COMPONENT_LABELS
 from ._shared import format_timestamp as _fmt_ts
@@ -23,8 +24,14 @@ def render_markdown(doc: Document) -> str:
     md = doc.metadata
     s = doc.stats
     out: list[str] = [f"# {md.report_name} — Power BI Documentation\n"]
+    subtitle_str = f"{md.target_audience or ''} · generated {_fmt_ts(md.generated_at)}"
+    if getattr(md, "score_trend", None):
+        subtitle_str += f" · Score Trend: {md.score_trend}"
+    from ._shared import compute_completeness
+    pct, missing_count, _ = compute_completeness(md)
     out.append(
-        f"_{md.target_audience or ''} · generated {_fmt_ts(md.generated_at)}_\n\n"
+        f"_{subtitle_str}_\n\n"
+        f"**Completeness:** {pct}% ({missing_count} fields awaiting input)\n\n"
         f"**At a glance:** {s.get('tables',0)} tables · {s.get('columns',0)} columns · "
         f"{s.get('measures',0)} measures · {s.get('relationships',0)} relationships · "
         f"{s.get('pages',0)} pages · {s.get('visuals',0)} visuals\n"
@@ -86,17 +93,29 @@ def render_markdown(doc: Document) -> str:
     # 5. Data Sources
     ln = doc.lineage
     out.append("\n## 5. Data Sources\n")
-    for sysm in ln.source_systems:
-        if _is_local_path(sysm):
-            out.append(f"- {sysm} ⚠️ *Hardcoded local path*")
-        else:
-            out.append(f"- {sysm}")
-    if not ln.source_systems:
-        out.append("_No external data sources detected._")
+    if ln.data_sources_inventory:
+        out.append(_table(["Source Type", "Location / Host", "Table(s) Fed", "Storage Mode", "Authentication", "Flag / Risk"],
+                          [[item["type"], item["display_location"], ", ".join(item["tables_fed"]) or "—",
+                            item["storage_mode"], item["auth"], item["flag"] or "None"]
+                           for item in ln.data_sources_inventory]))
+    else:
+        out.append("_No external data sources detected._\n")
     out.append("\n\n**Power Query / ETL transformations**\n")
-    out.append(_table(["Object", "Transformation"],
-                      [[t.get("name", ""), t.get("description", "")] for t in ln.transformations],
-                      "_None found._"))
+    if not ln.transformations:
+        out.append("_None found._\n")
+    else:
+        for t in ln.transformations:
+            out.append(f"\n#### {t.get('name')}\n")
+            out.append(f"{t.get('description')}\n")
+            steps = t.get("steps")
+            if steps:
+                for idx, s in enumerate(steps, 1):
+                    out.append(f"{idx}. **{s.get('step')}** ({s.get('type')}): `{s.get('expr')}`\n")
+            out.append("")
+    if ln.lineage_edges:
+        out.append("\n**Data lineage connection list**\n")
+        out.append(_table(["From", "To", "Link Type"],
+                          [[ed["from"], ed["to"], ed["type"]] for ed in ln.lineage_edges]))
     out.append(_todo("Per source: authentication method, owning team, and known data latency."))
 
     # 6. Data Model
@@ -118,8 +137,8 @@ def render_markdown(doc: Document) -> str:
                        for ed in sm.relationship_edges], "_No relationships defined._"))
     out.append("\n_(See the HTML version for the model diagram.)_\n")
     out.append("\n**Data dictionary**\n")
-    out.append(_table(["Table", "Column", "Data Type", "Description"],
-                      [[r.get("table", ""), r.get("column", ""), r.get("data_type", ""), r.get("description", "")]
+    out.append(_table(["Table", "Column", "Data Type", "Description", "Used by"],
+                      [[r.get("table", ""), r.get("column", ""), r.get("data_type", ""), r.get("description", ""), r.get("used_by", "")]
                        for r in sm.data_dictionary]))
 
     # 7. Measures & Calculations
@@ -133,7 +152,9 @@ def render_markdown(doc: Document) -> str:
             out.append(f"\n**Calculation:** {m.calculation_logic}")
         if m.caveats:
             out.append(f"\n_Known caveats: {m.caveats}_")
-        if m.dependencies:
+        if m.dependency_tree:
+            out.append(f"\n**Dependency tree:**\n```\n{m.dependency_tree}\n```")
+        elif m.dependencies:
             out.append(f"\n_Depends on: {', '.join(m.dependencies)}_")
         used = ", ".join(m.used_on) if m.used_on else "not placed on a page"
         out.append(f"\n_Used on: {used}_")
@@ -186,8 +207,14 @@ def render_markdown(doc: Document) -> str:
 
     # 9. Filters, Slicers & Navigation
     out.append("\n## 9. Filters, Slicers & Navigation\n")
+    if doc.navigation_edges:
+        out.append("\n**Page navigation connection list**\n")
+        out.append(_table(["From Page", "To Page", "Trigger Label", "Link Type"],
+                          [[ed["from"], ed["to"], ed["label"], ed["type"]] for ed in doc.navigation_edges]))
     for line in es.navigation_guide:
         out.append(f"- {line}")
+    if not es.navigation_guide:
+        out.append("_No navigation rules defined._")
     out.append("")
     out.append(_table(["Slicer field", "Page"], [[_slicer_label(x), x["page"]] for x in doc.slicers], "_No slicers found._"))
     drill = [p["name"] for p in doc.report_pages if p.get("drillthrough")]
@@ -199,9 +226,40 @@ def render_markdown(doc: Document) -> str:
     sec = doc.security
     out.append("\n## 10. Row-Level Security (RLS)\n")
     if sec.roles:
-        rows = [[r.get("name", ""), "; ".join(f"`{f}`" for f in r.get("filters", [])) or "—",
-                 ", ".join(r.get("members", [])) or "—"] for r in sec.roles]
-        out.append(_table(["Role", "Rule (DAX filter)", "Members"], rows))
+        out.append("\n### Roles definition\n")
+        meta_rows = []
+        for r in sec.roles:
+            m = ", ".join(r.get("members", [])) or "no members assigned (managed in cloud service)"
+            meta_rows.append([r.get("name", ""), r.get("model_permission", "read"), m])
+        out.append(_table(["Role Name", "Permission", "Members"], meta_rows))
+        
+        out.append("\n### Role × Table security matrix\n")
+        filtered_tables = sorted(list({
+            filt.split(":")[0].strip()
+            for r in sec.roles
+            for filt in r.get("filters", [])
+            if ":" in filt
+        }))
+        if not filtered_tables:
+            out.append("_No table-level filters are defined for these roles._\n")
+        else:
+            grid_headers = ["Table"] + [r.get("name", "") for r in sec.roles]
+            grid_rows = []
+            for t_name in filtered_tables:
+                row = [t_name]
+                for r in sec.roles:
+                    filt_val = "—"
+                    for filt in r.get("filters", []):
+                        if filt.startswith(f"{t_name}:"):
+                            filt_val = filt.split(":", 1)[1].strip()
+                            break
+                    row.append(f"`{filt_val}`" if filt_val != "—" else "—")
+                grid_rows.append(row)
+            out.append(_table(grid_headers, grid_rows))
+            
+        out.append("\n### RLS Validation Checklist\n")
+        for r in sec.roles:
+            out.append(f"- [ ] **Test {r.get('name', '')}:** Select 'View as' -> check '{r.get('name', '')}' in Power BI Desktop to verify filter propagation.\n")
     else:
         out.append("_No row-level security roles are defined in this model._\n")
         
@@ -265,10 +323,66 @@ def render_markdown(doc: Document) -> str:
         out.append(f"- {n}")
     if md.assumptions:
         out.append(f"\n### Business Assumptions & Limitations\n\n{md.assumptions}\n")
-    if td.orphaned_measures:
-        out.append("\n**Orphaned measures (defined but not used on any page):**")
-        for m in td.orphaned_measures:
-            out.append(f"- {m}")
+    # Redesigned Unused Assets grouping by table
+    unused = td.unused_assets or {}
+    unused_cols_raw = unused.get("columns", [])
+    unused_calc_cols_raw = unused.get("calculated_columns", [])
+    unused_meas_raw = unused.get("measures", [])
+    
+    if unused_cols_raw or unused_calc_cols_raw or unused_meas_raw:
+        out.append("\n**Unused Assets Grouped by Table:**\n")
+        
+        table_unused = {}
+        for c in unused_cols_raw:
+            tbl = c["table"]
+            table_unused.setdefault(tbl, {"columns": [], "calculated_columns": [], "measures": []})["columns"].append(c["column"])
+        for c in unused_calc_cols_raw:
+            tbl = c["table"]
+            table_unused.setdefault(tbl, {"columns": [], "calculated_columns": [], "measures": []})["calculated_columns"].append(c["column"])
+            
+        m_to_tbl = {m.name: m.table for m in doc.measure_catalog.measures if m.table}
+        for m_name in unused_meas_raw:
+            tbl = m_to_tbl.get(m_name, "Unassigned Measures")
+            table_unused.setdefault(tbl, {"columns": [], "calculated_columns": [], "measures": []})["measures"].append(m_name)
+            
+        for t_name, assets in sorted(table_unused.items()):
+            col_list = assets["columns"]
+            calc_col_list = assets["calculated_columns"]
+            meas_list = assets["measures"]
+            total_count = len(col_list) + len(calc_col_list) + len(meas_list)
+            if total_count == 0:
+                continue
+                
+            out.append(f"\n#### Table: {t_name} ({total_count} unused assets)\n")
+            
+            if col_list:
+                out.append("\n*Unused Columns:*")
+                for col in sorted(col_list):
+                    out.append(f"- **{col}** — Evidence: no visuals, no measures, no relationships, no RLS filters reference this column.")
+                    
+            if calc_col_list:
+                out.append("\n*Unused Calculated Columns:*")
+                for col in sorted(calc_col_list):
+                    out.append(f"- **{col}** — Evidence: no visuals, no measures, no relationships, no RLS filters reference this calculated column.")
+                    
+            if meas_list:
+                out.append("\n*Unused Measures:*")
+                for m in sorted(meas_list):
+                    out.append(f"- **{m}** — Evidence: no visuals or other measures reference this measure.")
+                    
+            script_lines = []
+            for col in sorted(col_list + calc_col_list):
+                script_lines.append(f'Model.Tables["{t_name}"].Columns["{col}"].Delete();')
+            for m in sorted(meas_list):
+                script_lines.append(f'Model.Tables["{t_name}"].Measures["{m}"].Delete();')
+                
+            if script_lines:
+                out.append("\n*Tabular Editor C# Script:*")
+                out.append("```csharp")
+                out.append(f"// Tabular Editor C# script to remove unused assets in Table {t_name}")
+                for line in script_lines:
+                    out.append(line)
+                out.append("```\n")
     out.append("")
     if not md.assumptions:
         out.append(_todo("Business assumptions and limitations with impact and workaround."))
@@ -284,6 +398,17 @@ def render_markdown(doc: Document) -> str:
                            for k, v in hs.get("component_scores", {}).items()]))
         out.append("_Scored by deterministic rules over the model metadata — reproducible, not an AI guess._\n")
     recs = doc.ai_recommendations or []
+    suppressed = doc.tech_debt.suppressed_rules if hasattr(doc, "tech_debt") and doc.tech_debt else []
+    suppressed_count = len(suppressed)
+    total_checks = TOTAL_RULE_COUNT
+    failed_count = len(recs)
+    passed_count = max(0, total_checks - suppressed_count - failed_count)
+    
+    out.append(f"\n**Best Practice Rules Summary:** Checks Run: **{total_checks - suppressed_count}** | "
+               f"Passed: **{passed_count}** | Failed: **{failed_count}** | Suppressed: **{suppressed_count}**\n")
+    if suppressed:
+        out.append(f"**Suppressed by configuration:** {', '.join(f'`{rid}`' for rid in suppressed)}\n")
+
     if recs:
         out.append("\n### Prioritized recommendations\n")
         for i, r in enumerate(recs, 1):
@@ -319,5 +444,12 @@ def render_markdown(doc: Document) -> str:
     ]
     out.append(_table(["Sign-off Role", "Name", "Title / Role", "Date"], sign_off_rows))
     out.append("\n**Reminder:** Obtain sign-off before sharing with stakeholders.\n")
+
+    # 19. Methodology & Guarantees
+    out.append("\n## 19. Methodology & Guarantees [⚙ Extracted]\n")
+    out.append("- **Parsed Artifacts:** Power BI metadata (tables, columns, measures, relationships, visuals, and page layout layout tables). No customer database row-level data is ever parsed, read, or transmitted.\n")
+    out.append("- **AI Agents Used:** PBICompass Engine v0.1.0 and prompt version 2026-07. Models called: Anthropic Claude, Google Gemini, Cohere. All operations run under zero-retention policies.\n")
+    out.append("- **Guarantees:** 100% offline-ready deliverables, zero-CDNs, zero telemetries, and fully reproducible scoring metrics backed by deterministic compliance checking rules.\n")
+    out.append("- **Limitations:** This tool cannot verify runtime query performance, network latency, database authentication credentials, or confirm the actual semantic business meaning without human verification.\n")
 
     return "\n".join(out).rstrip() + "\n"

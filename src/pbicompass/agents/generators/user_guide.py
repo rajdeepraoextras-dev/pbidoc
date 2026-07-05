@@ -272,6 +272,7 @@ class BusinessGuideGenerator:
                 bookmarks=[],
                 tooltips=[],
                 common_scenarios=[],
+                wireframe_svg=pf.get("wireframe_svg"),
             ))
 
         introduction = _introduction(model, analyst.core_purpose)
