@@ -23,6 +23,7 @@ from typing import Optional
 
 from ...schemas.user_guide_document import GlossaryTerm, PageGuide, UserGuideDocument
 from .. import io
+from ..critic import apply_critic_pass, apply_results
 from ..deterministic import business_analyst_deterministic
 from ..llm import LLMClient
 from ..report_facts import (
@@ -213,6 +214,33 @@ def _getting_started(pages: list[PageGuide]) -> list[str]:
     return tips
 
 
+def _run_critic(doc: UserGuideDocument, model, client, warn: Warn) -> None:
+    """5.3: one critic pass over the user guide's narrative fields."""
+    known_names = {t.name for t in model.tables}
+    known_names |= {m.name for m in model.all_measures()}
+    known_names |= {p.display_name for p in model.pages}
+
+    triples: list[tuple[str, str, "callable"]] = []
+
+    def _set_introduction(v: str) -> None:
+        doc.introduction = v
+    triples.append(("introduction", doc.introduction, _set_introduction))
+
+    for i, page in enumerate(doc.pages):
+        def _set_purpose(v: str, _p=page) -> None:
+            _p.purpose = v
+        triples.append((f"pages[{i}].purpose", page.purpose, _set_purpose))
+
+    for i, term in enumerate(doc.glossary):
+        def _set_definition(v: str, _t=term) -> None:
+            _t.plain_definition = v
+        triples.append((f"glossary[{i}].plain_definition", term.plain_definition, _set_definition))
+
+    fields = [(loc, text) for loc, text, _ in triples]
+    results = apply_critic_pass(fields, client, known_names=known_names, warn=warn)
+    apply_results(triples, results)
+
+
 class BusinessGuideGenerator:
     """Teaches a business user how to use the report without needing the
     developer — no table/DAX/semantic-model talk, written like onboarding a
@@ -323,7 +351,7 @@ class BusinessGuideGenerator:
                          f"— deterministic summary used")
                 offset += len(batch_titles)
 
-        return UserGuideDocument(
+        doc = UserGuideDocument(
             metadata=build_core_metadata(
                 model, "user-guide", default_audience="Business users",
                 owner=owner, audience=audience, refresh=refresh, version=version, status=status,
@@ -333,3 +361,8 @@ class BusinessGuideGenerator:
             glossary=glossary,
             getting_started=getting_started,
         )
+
+        if client is not None:
+            _run_critic(doc, model, client, warn)
+
+        return doc

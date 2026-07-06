@@ -57,11 +57,8 @@ data), stdlib-only parsers, graceful degradation, free-tier infra, and the
 > unverified VertiPaq opt-in gate, and a DOCX renderer that silently lacked
 > every one of the new Phase 3/4 sections while HTML/Markdown had them.
 >
-> Phase 5 and Part G are still open. Note: `agents/critic.py` (5.3) and
-> `enrichment.py` (5.1/5.2 — enrichment round-trip, model diff, change log)
-> exist as complete modules but are not yet wired into `cli.py`,
-> `service/worker.py`, or any generator; they are dead code until that
-> wiring is done as part of Phase 5.
+> Phase 5 implemented and test-verified (2026-07-06) — see Part K for the
+> full work order. Part G is still open.
 >
 > **Part J (2026-07-06) implemented and test-verified.** J.A: every finding/
 > check/recommendation now carries a stable rule ID pill; audit §1 gained
@@ -1051,3 +1048,82 @@ wireframe to the real report page at a glance.
 Estimated effort: J.A ≈ 2–3 days, J.B ≈ 1 day, J.C ≈ 1 day.
 Score projection once J is done: ~88–89 (Phase-4-complete territory),
 leaving Phase 5 + G.2 to reach 93–96.
+
+---
+
+# Part K — Phase 5 implemented and test-verified (2026-07-06)
+
+Investigation before starting found the plan's own status note understated
+what was actually true: 5.4 (LLM cache) and 5.5 (completeness meter) were
+already fully wired; 5.6 (provenance badges) was wired only in HTML and only
+on 5 of 19 sections; 5.7 (export bundle) already zipped per-doc outputs in
+the hosted service (pulled forward during the Part H/I punch list) but
+lacked `model.json`/the enrichment skeleton and any CLI equivalent. Only
+5.1/5.2/5.3 were genuinely unwired, as the note said.
+
+**5.1 Enrichment round-trip.** `--enrich PATH` on `generate` (CLI):
+bootstraps a skeleton on first use, applies an existing file's measure/
+column descriptions, data-source/role details, and rule overrides on
+subsequent runs, and rewrites the file afterward so filled fields persist.
+Service gets a matching `enrichment_file` upload field. Fixed two real bugs
+surfaced along the way: `generate_enrichment_template` read `model.meta.
+owner`/`.refresh_schedule`/etc., fields `ModelMeta` never declared (would
+have raised `AttributeError` on first real use — the module was untested,
+not just unwired); and `DataSource`/`Role` lacked the `authentication_status`/
+`members_description`/`filter_logic_explanation` fields `apply_enrichment`
+already tried to set on them. Both fixed at the schema level so the round
+trip (emit → load → emit stable, including fields with no model-side home,
+like `rules_config`/`history`, carried forward via a new `previous` param)
+is genuinely stable, not just plausible-looking.
+
+**5.2 Diff / change log.** New `pbicompass diff old.json new.json` CLI
+subcommand. Enrichment-driven auto-section: compares the current model
+fingerprint against the enrichment file's stored one and surfaces the
+carried-forward summary when they differ. `doc.changelog` rendering — which
+existed in `html.py` only — is now in `markdown.py`/`docx.py` too, and the
+audit document (which had no changelog rendering in *any* format) gained it
+in all three.
+
+**5.3 Critic pass.** `agents/critic.py` rewritten to operate on labelled
+`(location, text)` fields rather than one flat string with a blind
+`.replace()` — the old shape couldn't have propagated a fix to more than one
+renderer, since each renderer builds its own string from the `Document`
+dataclass, not from a shared text blob. Deterministic pre-pass (banned
+marketing words, duplicate-adjacent-sentences, unknown-bracketed-name
+warnings) always runs, pure Python, no LLM; a code-fence guard keeps it from
+touching fix-snippet DAX/TMDL. The LLM style pass runs only when a client is
+given (offline runs unaffected) and is routed through `call_llm` so it's
+cache-covered like every other call. Wired into all four generators — net
+cost is exactly 1 extra call per doc, confirmed by updated `FakeLLMClient`
+call-count assertions in `tests/test_generators.py`.
+
+**5.6 provenance badges finished + de-iconized.** Extended the field-
+override-driven badge logic to all 19 sections (was 5) and ported it to
+`markdown.py`/`docx.py` (was HTML-only). Mid-session the user asked to drop
+the ⚙/✨/👤 glyphs entirely — folded into this same pass since it touched the
+identical code path: canonical labels are now the bare strings `"Extracted"`/
+`"AI-inferred"`/`"Human-provided"` everywhere (schema defaults, `enrichment.
+py`, `technical.py`, all three renderers) instead of two competing
+conventions (iconized strings in some places, bare `"human"/"ai"/"extracted"`
+in others).
+
+**5.7 export bundle finished.** `model.json` + (when `--enrich`/
+`enrichment_file` was used) the regenerated enrichment skeleton now ride
+inside the existing multi-doc zip in both the CLI and the service — gated on
+`multi` in both, preserving the single-doc-type API back-compat contract
+(flat, dot-free output keys) that a first attempt at this briefly broke.
+New CLI `--bundle` flag: renders every format for the requested document
+type(s) into one zip, single-doc-type bundles included (useful for handoff
+even without a sibling doc).
+
+New/changed test coverage: `tests/test_enrichment.py` (round-trip property
+tests, diff/changelog unit tests, changelog renderer-parity across all three
+formats for both technical and audit docs), `tests/test_critic.py`
+(deterministic pre-pass, LLM pass, end-to-end generator wiring verified
+across HTML/Markdown/DOCX), `tests/test_cli.py`/`tests/test_service.py`
+(`--enrich`/`enrichment_file`, `diff`, `--bundle`), `tests/test_render.py`
+(no-icon regression + full 19-section badge coverage, for HTML/Markdown/DOCX
+alike).
+
+Full suite: 337 passed, 2 skipped (service extras not installed in every
+environment).

@@ -18,11 +18,13 @@ from ..agents.audit_rules import RULE_METADATA
 from ..schemas.audit_document import AuditDocument
 from ._docx_writer import _Docx
 from ._html_shell import page_shell
+from .docx import _add_para_with_md
 from ._shared import anchor_slug
 from ._shared import format_timestamp as _fmt_ts
 from ._shared import html_e as _e
 from ._shared import html_table as _html_table
 from ._shared import md_table as _table
+from .html import _render_md
 from .html import format_prose_with_code
 
 _SECTION_TITLES = [
@@ -123,6 +125,9 @@ def render_markdown(doc: AuditDocument) -> str:
     out.append(f"**Completeness:** {pct}% ({missing_count} fields awaiting input)\n")
     if doc.narrative_overview:
         out.append(f"\n{doc.narrative_overview}\n")
+    if getattr(doc, "changelog", None):
+        out.append("\n### Changes since last documentation\n")
+        out.append(doc.changelog + "\n")
 
     out.append(f"\n## {_SECTION_TITLES[0]}\n")
     out.append(f"**{h.overall} / 100 — {h.band}**\n")
@@ -238,6 +243,9 @@ def render_html(
     o: list[str] = []
     if doc.narrative_overview:
         o.append(f'<div class="card-section"><p>{_e(doc.narrative_overview)}</p></div>')
+    if getattr(doc, "changelog", None):
+        o.append("<h3>Changes since last documentation</h3>")
+        o.append(f'<div class="card-section">{_render_md(doc.changelog)}</div>')
 
     o.append(f'<h2 id="sec1">{_e(_SECTION_TITLES[0])}</h2>')
     o.append('<div class="score-hero">')
@@ -395,6 +403,9 @@ def render_docx(doc: AuditDocument, out_path) -> Path:
     d.para([d._run(f"Completeness: {pct}% ({missing_count} fields awaiting input)", italic=True)])
     if doc.narrative_overview:
         d.para(doc.narrative_overview)
+    if getattr(doc, "changelog", None):
+        d.heading(2, "Changes since last documentation")
+        _add_para_with_md(d, doc.changelog)
 
     def _t(rows):
         return [[str(cell) for cell in row] for row in rows]

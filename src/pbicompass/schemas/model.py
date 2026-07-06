@@ -100,6 +100,10 @@ class Role:
     model_permission: Optional[str] = None  # e.g. "read"
     table_permissions: list[TablePermission] = field(default_factory=list)
     members: list[str] = field(default_factory=list)
+    # Human-supplied, from the enrichment file (5.1) — who this role's
+    # members actually are and what the filter logic means in business terms.
+    members_description: str = ""
+    filter_logic_explanation: str = ""
 
 
 @dataclass
@@ -117,6 +121,8 @@ class DataSource:
     server: Optional[str] = None
     database: Optional[str] = None
     detail: Optional[str] = None   # url / path / other first argument
+    # Human-supplied, from the enrichment file (5.1) — never inferred.
+    authentication_status: Optional[str] = None
 
 
 @dataclass

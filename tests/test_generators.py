@@ -50,6 +50,8 @@ class FakeAuditNarratorClient:
         self.calls += 1
         if "Audit & Health Report" in system:
             return {"narrative_overview": "FAKE_NARRATIVE_OVERVIEW"}
+        if "expert technical editor" in system:  # the critic pass (5.3)
+            return {"violations": []}
         raise AssertionError("unexpected system prompt")
 
 
@@ -80,6 +82,8 @@ class FakeExecutiveWriterClient:
                     for m in payload["measures"]
                 ]
             }
+        if "expert technical editor" in system:  # the critic pass (5.3)
+            return {"violations": []}
         raise AssertionError("unexpected system prompt")
 
 
@@ -152,7 +156,8 @@ class AuditGeneratorLlmTest(unittest.TestCase):
         client = FakeAuditNarratorClient()
         doc = AuditReportGenerator.generate(_model(), client)
         self.assertEqual(doc.narrative_overview, "FAKE_NARRATIVE_OVERVIEW")
-        self.assertEqual(client.calls, 1)
+        # 1 Audit Narrator call + 1 critic pass (5.3).
+        self.assertEqual(client.calls, 2)
         # everything else stays deterministic even with an LLM client supplied
         deterministic_doc = AuditReportGenerator.generate(_model())
         self.assertEqual(doc.health, deterministic_doc.health)
@@ -266,8 +271,9 @@ class ExecutiveGeneratorLlmTest(unittest.TestCase):
         self.assertEqual(doc.business_value, "FAKE_BUSINESS_VALUE")
         self.assertEqual(doc.maintenance_note, "FAKE_MAINTENANCE_OVERVIEW")
         # 1 Executive Writer call + 1 DAX Translator batch call (P3: Key KPI
-        # meanings reuse the same DAX Translator agent as the technical doc).
-        self.assertEqual(client.calls, 2)
+        # meanings reuse the same DAX Translator agent as the technical doc)
+        # + 1 critic pass (5.3).
+        self.assertEqual(client.calls, 3)
         self.assertTrue(any("FAKE_KPI_MEANING" in kpi for kpi in doc.key_kpis))
         # deterministic facts stay identical regardless of the LLM client
         deterministic_doc = ExecutiveSummaryGenerator.generate(_model())
@@ -316,6 +322,8 @@ class FakeUserGuideWriterClient:
                     for m in payload["measures"]
                 ]
             }
+        if "expert technical editor" in system:  # the critic pass (5.3)
+            return {"violations": []}
         raise AssertionError("unexpected system prompt")
 
 
@@ -439,8 +447,9 @@ class BusinessGuideGeneratorLlmTest(unittest.TestCase):
         self.assertTrue(all(p.common_scenarios == ["FAKE_SCENARIO"] for p in doc.pages))
         # 1 User Guide Writer call + 1 DAX Translator batch call (P3: the
         # glossary reuses the same DAX Translator agent as the technical doc
-        # instead of only ever falling back to the deterministic gloss).
-        self.assertEqual(client.calls, 2)
+        # instead of only ever falling back to the deterministic gloss)
+        # + 1 critic pass (5.3).
+        self.assertEqual(client.calls, 3)
         measure_terms = [g for g in doc.glossary if g.term in {m.name for m in _model().all_measures()}]
         self.assertTrue(measure_terms)
         self.assertTrue(all("FAKE_GLOSSARY_MEANING" in g.plain_definition for g in measure_terms))

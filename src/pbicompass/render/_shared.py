@@ -157,3 +157,44 @@ def compute_completeness(metadata: Any) -> tuple[int, int, list[str]]:
     total = len(fields)
     pct = round(100 * filled / total) if total > 0 else 100
     return pct, total - filled, missing
+
+
+# Which human-fillable metadata fields, when overridden, flip a section's
+# provenance badge to "Human-provided" (5.6). Sections absent here have no
+# override-able field and always render their section default.
+SECTION_PROVENANCE_FIELDS: dict[int, list[str]] = {
+    1: ["version", "status", "author", "reviewer", "classification", "target_audience", "refresh_schedule", "owner"],
+    2: ["business_decision"],
+    3: ["requirements"],
+    4: ["owner", "target_audience", "author"],
+    10: ["security_notes"],
+    11: ["refresh_notes"],
+    12: ["deployment_notes"],
+    13: ["access_notes"],
+    14: ["glossary"],
+    15: ["assumptions"],
+    17: ["support_notes"],
+    18: ["owner"],
+}
+
+# Default provenance label per section (1-18; 19 "Methodology & Guarantees"
+# is a static, hand-written section every renderer labels "Extracted" directly).
+SECTION_DEFAULT_PROVENANCE: dict[int, str] = {
+    1: "Extracted", 2: "AI-inferred", 3: "Human-provided", 4: "Human-provided",
+    5: "Extracted", 6: "Extracted", 7: "Extracted", 8: "Extracted", 9: "Extracted",
+    10: "Extracted", 11: "Extracted", 12: "Extracted", 13: "Extracted",
+    14: "Extracted", 15: "Extracted", 16: "AI-inferred", 17: "Extracted",
+    18: "Extracted",
+}
+
+
+def section_provenance(section_num: int, metadata: Any) -> str:
+    """Bare-text provenance label (``"Extracted"``/``"AI-inferred"``/
+    ``"Human-provided"``, no icon) for a technical-doc H2 section: the
+    section's default, upgraded to "Human-provided" when any of its
+    override-able metadata fields appear in ``metadata.overridden_fields``.
+    Shared by html.py/markdown.py/docx.py so all three renderers agree."""
+    for f in SECTION_PROVENANCE_FIELDS.get(section_num, []):
+        if f in getattr(metadata, "overridden_fields", []):
+            return "Human-provided"
+    return SECTION_DEFAULT_PROVENANCE.get(section_num, "Extracted")

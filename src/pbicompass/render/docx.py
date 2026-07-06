@@ -18,6 +18,7 @@ from ._shared import HEALTH_COMPONENT_LABELS
 from ._shared import format_timestamp as _fmt_ts
 from ._shared import is_local_path as _is_local_path
 from ._shared import non_data_note as _non_data_note
+from ._shared import section_provenance
 from ._shared import slicer_field_label as _slicer_label
 
 
@@ -59,8 +60,11 @@ def render_docx(doc: Document, out_path) -> Path:
     def _t(rows):
         return [[str(c) for c in r] for r in rows]
 
+    def _badge(section_num: int) -> str:
+        return f" [{section_provenance(section_num, md)}]"
+
     # 1. Document Control
-    d.heading(1, "1. Document Control")
+    d.heading(1, f"1. Document Control{_badge(1)}")
     d.label("Dashboard / Report Name", md.report_name)
     d.label("Source format", md.source_format or "unknown")
     d.label("Owner", md.owner or "—")
@@ -72,15 +76,19 @@ def render_docx(doc: Document, out_path) -> Path:
     d.label("Target audience", md.target_audience or "—")
     d.label("Refresh schedule", md.refresh_schedule or "—")
     d.label("Generated", _fmt_ts(md.generated_at))
-    
-    missing_doc_control = [f for f, v in [("Version", md.version), ("Status", md.status), ("Author", md.author), 
+
+    if getattr(doc, "changelog", None):
+        d.heading(2, "Changes since last documentation")
+        _add_para_with_md(d, doc.changelog)
+
+    missing_doc_control = [f for f, v in [("Version", md.version), ("Status", md.status), ("Author", md.author),
                                           ("Reviewer", md.reviewer), ("Classification", md.classification)] if not v]
     if missing_doc_control:
         todo(f"Complete missing document control fields: {', '.join(missing_doc_control)}")
 
     # 2. Executive Summary
     es = doc.executive_summary
-    d.heading(1, "2. Executive Summary")
+    d.heading(1, f"2. Executive Summary{_badge(2)}")
     _add_para_with_md(d, es.core_purpose)
     if md.business_decision:
         d.heading(2, "Primary Business Decision / Impact")
@@ -92,7 +100,7 @@ def render_docx(doc: Document, out_path) -> Path:
         todo("The primary business decision this dashboard drives (e.g. weekly sales planning).")
 
     # 3. Business Requirements
-    d.heading(1, "3. Business Requirements")
+    d.heading(1, f"3. Business Requirements{_badge(3)}")
     if md.requirements:
         for req in md.requirements.split('\n'):
             if req.strip():
@@ -101,7 +109,7 @@ def render_docx(doc: Document, out_path) -> Path:
         todo("Business requirements have not yet been captured; confirm scope with the business owner.")
 
     # 4. Audience & Stakeholders
-    d.heading(1, "4. Audience & Stakeholders")
+    d.heading(1, f"4. Audience & Stakeholders{_badge(4)}")
     d.table(["Role", "Name / Group", "Access"],
             [["Business Owner", md.owner or "—", "Edit / sign-off"],
              ["Primary Users", md.target_audience or "—", "View"],
@@ -110,7 +118,7 @@ def render_docx(doc: Document, out_path) -> Path:
 
     # 5. Data Sources
     ln = doc.lineage
-    d.heading(1, "5. Data Sources")
+    d.heading(1, f"5. Data Sources{_badge(5)}")
     if ln.data_sources_inventory:
         d.table(["Source Type", "Location / Host", "Table(s) Fed", "Storage Mode", "Authentication", "Flag / Risk"],
                 _t([[item["type"], item["display_location"], ", ".join(item["tables_fed"]) or "—",
@@ -142,7 +150,7 @@ def render_docx(doc: Document, out_path) -> Path:
 
     # 6. Data Model
     sm = doc.semantic_model
-    d.heading(1, "6. Data Model")
+    d.heading(1, f"6. Data Model{_badge(6)}")
     for para in sm.summary.split("\n\n"):
         for line in para.split("\n"):
             d.para(line)
@@ -163,7 +171,7 @@ def render_docx(doc: Document, out_path) -> Path:
                 for r in sm.data_dictionary]))
 
     # 7. Measures
-    d.heading(1, "7. Measures & Calculations (DAX Dictionary)")
+    d.heading(1, f"7. Measures & Calculations (DAX Dictionary){_badge(7)}")
     for m in doc.measure_catalog.measures:
         suffix = (f" · {m.table}" if m.table else "") + (f" · {m.category}" if m.category else "")
         d.heading(3, m.name + suffix)
@@ -190,7 +198,7 @@ def render_docx(doc: Document, out_path) -> Path:
                     for c in doc.calculated_columns]))
 
     # 8. Report Pages & Visuals
-    d.heading(1, "8. Report Pages & Visuals")
+    d.heading(1, f"8. Report Pages & Visuals{_badge(8)}")
     page_docs = {p.page_title: p for p in es.pages}
     for p in doc.report_pages:
         flags = [f for f, on in (("hidden", p.get("hidden")), ("drill-through", p.get("drillthrough"))) if on]
@@ -216,7 +224,7 @@ def render_docx(doc: Document, out_path) -> Path:
             d.para([d._run(_non_data_note(p["decorative_count"]), italic=True)])
 
     # 9. Filters, Slicers & Navigation
-    d.heading(1, "9. Filters, Slicers & Navigation")
+    d.heading(1, f"9. Filters, Slicers & Navigation{_badge(9)}")
     if doc.navigation_edges:
         d.heading(2, "Page navigation connection list")
         d.table(["From Page", "To Page", "Trigger Label", "Link Type"],
@@ -229,7 +237,7 @@ def render_docx(doc: Document, out_path) -> Path:
 
     # 10. RLS
     sec = doc.security
-    d.heading(1, "10. Row-Level Security (RLS)")
+    d.heading(1, f"10. Row-Level Security (RLS){_badge(10)}")
     if sec.roles:
         d.heading(2, "Roles definition")
         d.table(["Role Name", "Permission", "Members"],
@@ -273,7 +281,7 @@ def render_docx(doc: Document, out_path) -> Path:
         todo("Confirm each role was tested with 'View as role', and note OLS rules.")
 
     # 11. Refresh, Gateway & Performance
-    d.heading(1, "11. Refresh, Gateway & Performance")
+    d.heading(1, f"11. Refresh, Gateway & Performance{_badge(11)}")
     if md.refresh_schedule:
         d.label("Refresh schedule", md.refresh_schedule)
     if md.refresh_notes:
@@ -292,7 +300,7 @@ def render_docx(doc: Document, out_path) -> Path:
         todo("Detail performance considerations and gateway configurations.")
         
     # 12. Deployment
-    d.heading(1, "12. Deployment & Environment")
+    d.heading(1, f"12. Deployment & Environment{_badge(12)}")
     if md.deployment_notes:
         for line in md.deployment_notes.split('\n'):
             if line.strip():
@@ -301,7 +309,7 @@ def render_docx(doc: Document, out_path) -> Path:
         todo("Dev / Test / Production workspaces, app URLs, deployment method, parameters.")
         
     # 13. Access & Permissions
-    d.heading(1, "13. Access & Permissions")
+    d.heading(1, f"13. Access & Permissions{_badge(13)}")
     if md.access_notes:
         for line in md.access_notes.split('\n'):
             if line.strip():
@@ -310,7 +318,7 @@ def render_docx(doc: Document, out_path) -> Path:
         todo("Workspace roles and app access per group, with justification.")
         
     # 14. Glossary
-    d.heading(1, "14. Data Dictionary / Glossary")
+    d.heading(1, f"14. Data Dictionary / Glossary{_badge(14)}")
     d.para("Column-level data dictionary is in section 6.")
     if md.glossary:
         for line in md.glossary.split('\n'):
@@ -330,7 +338,7 @@ def render_docx(doc: Document, out_path) -> Path:
 
     # 15. Known Issues
     td = doc.tech_debt
-    d.heading(1, "15. Known Issues, Assumptions & Limitations")
+    d.heading(1, f"15. Known Issues, Assumptions & Limitations{_badge(15)}")
     for n in td.notes:
         d.bullet(n)
     if md.assumptions:
@@ -380,7 +388,7 @@ def render_docx(doc: Document, out_path) -> Path:
         todo("Business assumptions and limitations with impact and workaround.")
         
     # 16. Model Health & AI Recommendations
-    d.heading(1, "16. Model Health & AI Recommendations")
+    d.heading(1, f"16. Model Health & AI Recommendations{_badge(16)}")
     hs = doc.health_score or {}
     if hs:
         d.heading(2, f"Health Score: {hs.get('overall', 0)} / 100 ({hs.get('band', '')})")
@@ -423,7 +431,7 @@ def render_docx(doc: Document, out_path) -> Path:
         d.para("Not computed for this document.")
 
     # 17. Support & Maintenance
-    d.heading(1, "17. Support & Maintenance")
+    d.heading(1, f"17. Support & Maintenance{_badge(17)}")
     if md.owner:
         d.label("First-line contact", md.owner)
     if md.support_notes:
@@ -434,7 +442,7 @@ def render_docx(doc: Document, out_path) -> Path:
         todo("Escalation contact, SLA, backup location, decommission criteria.")
         
     # 18. Appendix & Sign-off
-    d.heading(1, "18. Appendix & Sign-off")
+    d.heading(1, f"18. Appendix & Sign-off{_badge(18)}")
     d.para("The model diagram is in the HTML / section 6.")
     developer_name = md.owner if md.owner else "TBC"
     generated_date = (md.generated_at or "")[:10]

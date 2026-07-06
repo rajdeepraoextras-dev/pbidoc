@@ -32,6 +32,7 @@ import zipfile
 from pathlib import Path
 from typing import Callable
 
+from .. import enrichment as enrichment_mod
 from ..agents import audit_rules, generate_document, get_client
 from ..agents.generators import DOCUMENT_TYPES
 from ..render import pandoc, registry
@@ -91,37 +92,55 @@ def _resolve_document_types(raw: str | None) -> list[str]:
     return seen or ["technical"]
 
 
-def _generate_one(document_type: str, model, client, options: dict, warn: Callable[[str], None]):
+def _effective_metadata(options: dict, enrichment_meta: dict) -> dict:
+    """Merge the request's explicit metadata fields (Form values) over the
+    enrichment file's report metadata (5.1) — an explicit field wins, the
+    enrichment file supplies the default for anything the caller omitted."""
+    keys = ("owner", "audience", "refresh", "version", "status", "author", "reviewer",
+            "classification", "business_decision", "requirements", "security_notes",
+            "refresh_notes", "deployment_notes", "access_notes", "glossary",
+            "assumptions", "support_notes")
+    # The enrichment file's own field names differ slightly from the CLI/
+    # request kwarg names for three of them.
+    enrichment_key = {"audience": "target_audience", "refresh": "refresh_schedule"}
+    return {
+        k: options.get(k) if options.get(k) is not None
+        else (enrichment_meta.get(enrichment_key.get(k, k)) or None)
+        for k in keys
+    }
+
+
+def _generate_one(document_type: str, model, client, meta: dict, warn: Callable[[str], None]):
     if document_type == "technical":
         return generate_document(
             model, client,
-            owner=options.get("owner"),
-            audience=options.get("audience"),
-            refresh=options.get("refresh"),
-            version=options.get("version"),
-            status=options.get("status"),
-            author=options.get("author"),
-            reviewer=options.get("reviewer"),
-            classification=options.get("classification"),
-            business_decision=options.get("business_decision"),
-            requirements=options.get("requirements"),
-            security_notes=options.get("security_notes"),
-            refresh_notes=options.get("refresh_notes"),
-            deployment_notes=options.get("deployment_notes"),
-            access_notes=options.get("access_notes"),
-            glossary=options.get("glossary"),
-            assumptions=options.get("assumptions"),
-            support_notes=options.get("support_notes"),
+            owner=meta.get("owner"),
+            audience=meta.get("audience"),
+            refresh=meta.get("refresh"),
+            version=meta.get("version"),
+            status=meta.get("status"),
+            author=meta.get("author"),
+            reviewer=meta.get("reviewer"),
+            classification=meta.get("classification"),
+            business_decision=meta.get("business_decision"),
+            requirements=meta.get("requirements"),
+            security_notes=meta.get("security_notes"),
+            refresh_notes=meta.get("refresh_notes"),
+            deployment_notes=meta.get("deployment_notes"),
+            access_notes=meta.get("access_notes"),
+            glossary=meta.get("glossary"),
+            assumptions=meta.get("assumptions"),
+            support_notes=meta.get("support_notes"),
             on_warning=warn,
         )
     return DOCUMENT_TYPES[document_type].generate(
         model, client,
-        owner=options.get("owner"),
-        audience=options.get("audience"),
-        refresh=options.get("refresh"),
-        version=options.get("version"),
-        status=options.get("status"),
-        classification=options.get("classification"),
+        owner=meta.get("owner"),
+        audience=meta.get("audience"),
+        refresh=meta.get("refresh"),
+        version=meta.get("version"),
+        status=meta.get("status"),
+        classification=meta.get("classification"),
         on_warning=warn,
     )
 
@@ -151,6 +170,7 @@ def process_job(store: JobStore, job_id: str, upload_path: Path,
         # Invalid TOML is a warning, not a failure — the job still runs,
         # just without any overrides applied. Always reset afterward (see
         # the outer finally) since this is process-wide module state.
+        audit_rules.set_rules_override_config({})
         rules_file_path = options.get("rules_file_path")
         if rules_file_path:
             error = audit_rules.validate_rules_file(rules_file_path)
@@ -158,6 +178,38 @@ def process_job(store: JobStore, job_id: str, upload_path: Path,
                 warn(f"{error} — continuing without rule overrides.")
             else:
                 audit_rules.set_rules_config_path(rules_file_path)
+
+        # Enrichment file (5.1): applies measure/column descriptions,
+        # data-source/role details, and rule overrides to the model; its
+        # report metadata becomes the default for owner/author/etc. (an
+        # explicit Form field still wins). Unlike the CLI, the service never
+        # bootstraps a skeleton for a missing path — a job either brings its
+        # own file or doesn't. The regenerated skeleton is always added to
+        # this job's outputs so the caller can download, fill in, and
+        # re-upload it on the next run (the round trip; 5.2's changelog is
+        # driven by the same file's fingerprint/summary history).
+        enrichment_meta: dict = {}
+        enrichment_data: dict = {}
+        changelog_text: str | None = None
+        enrichment_file_path = options.get("enrichment_file_path")
+        if enrichment_file_path:
+            try:
+                enrichment_data = enrichment_mod.load_enrichment(Path(enrichment_file_path))
+            except ValueError as exc:
+                warn(f"{exc} — continuing without enrichment.")
+                enrichment_data = {}
+            else:
+                overridden = enrichment_mod.apply_enrichment(model, enrichment_data)
+                enrichment_meta = overridden["metadata"]
+
+                history = enrichment_data.setdefault("history", {})
+                current_fp = enrichment_mod.get_model_fingerprint(model)
+                prev_fp = history.get("previous_fingerprint") or ""
+                if prev_fp and prev_fp != current_fp and history.get("previous_summary"):
+                    changelog_text = history["previous_summary"]
+                history["previous_fingerprint"] = current_fp
+
+        meta = _effective_metadata(options, enrichment_meta)
 
         document_types = _resolve_document_types(options.get("document_types"))
         multi = len(document_types) > 1
@@ -170,7 +222,9 @@ def process_job(store: JobStore, job_id: str, upload_path: Path,
         outputs: dict[str, bytes] = {}
         docs: dict[str, object] = {}
         for dtype in document_types:
-            doc = _generate_one(dtype, model, client, options, warn)
+            doc = _generate_one(dtype, model, client, meta, warn)
+            if changelog_text and dtype in ("technical", "audit"):
+                doc.changelog = changelog_text
             docs[dtype] = doc
             renderers = registry.RENDERERS[dtype]
 
@@ -202,6 +256,19 @@ def process_job(store: JobStore, job_id: str, upload_path: Path,
                     log.info("job %s pdf skipped for %s: %s", job_id, dtype, type(exc).__name__)
 
         if multi:
+            # 5.7: the parsed model and (when enrichment was used) its
+            # round-tripped enrichment skeleton join the bundle — multi-doc
+            # only, like the hub/zip themselves, since a single-doc job's
+            # output keys must stay flat and dot-free for API back-compat.
+            outputs["model.json"] = model.to_json().encode("utf-8")
+            if enrichment_file_path:
+                try:
+                    outputs["enrichment.yaml"] = enrichment_mod.generate_enrichment_template(
+                        model, previous=enrichment_data
+                    ).encode("utf-8")
+                except Exception as exc:
+                    warn(f"Could not regenerate the enrichment file: {exc}")
+
             entries = [
                 {"type": dtype, "href": html_filenames[dtype], "stats": hub_stats(dtype, doc)}
                 for dtype, doc in docs.items()
@@ -233,5 +300,8 @@ def process_job(store: JobStore, job_id: str, upload_path: Path,
         log.exception("job %s failed unexpectedly", job_id)
         store.mark_failed(job_id, _FRIENDLY["generate"])
     finally:
-        audit_rules.set_rules_config_path(None)  # never leak one job's rules config into the next
+        # Never leak one job's rules/enrichment overrides into the next —
+        # both are process-wide module state (audit_rules), not per-job.
+        audit_rules.set_rules_config_path(None)
+        audit_rules.set_rules_override_config({})
         sandbox.cleanup()  # zero-retention: shred everything, success or failure

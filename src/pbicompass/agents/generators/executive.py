@@ -25,6 +25,7 @@ from ...schemas.executive_document import ExecutiveDocument, ExecutiveRisk
 from .. import audit_rules
 from .. import io
 from .. import usage
+from ..critic import apply_critic_pass, apply_results
 from ..deterministic import business_analyst_deterministic, schema_shape, translate_dax
 from ..llm import LLMClient
 from ..report_facts import business_plain_english, data_source_type_counts, first_sentence
@@ -187,6 +188,35 @@ def _next_steps(recommendations, shown_rule_ids: set[str], metadata) -> list[str
     return steps
 
 
+def _run_critic(doc: ExecutiveDocument, model, client, warn: Warn) -> None:
+    """5.3: one critic pass over the executive doc's narrative fields."""
+    known_names = {t.name for t in model.tables}
+    known_names |= {m.name for m in model.all_measures()}
+
+    triples: list[tuple[str, str, "callable"]] = []
+
+    def _set_purpose(v: str) -> None:
+        doc.purpose = v
+    triples.append(("purpose", doc.purpose, _set_purpose))
+
+    def _set_business_value(v: str) -> None:
+        doc.business_value = v
+    triples.append(("business_value", doc.business_value, _set_business_value))
+
+    def _set_maintenance_note(v: str) -> None:
+        doc.maintenance_note = v
+    triples.append(("maintenance_note", doc.maintenance_note, _set_maintenance_note))
+
+    for i, risk in enumerate(doc.top_risks):
+        def _set_consequence(v: str, _r=risk) -> None:
+            _r.consequence = v
+        triples.append((f"top_risks[{i}].consequence", risk.consequence, _set_consequence))
+
+    fields = [(loc, text) for loc, text, _ in triples]
+    results = apply_critic_pass(fields, client, known_names=known_names, warn=warn)
+    apply_results(triples, results)
+
+
 class ExecutiveSummaryGenerator:
     """Assembles a concise, non-technical summary for managers, executives,
     and project owners — readable in under ten minutes, no implementation
@@ -256,7 +286,7 @@ class ExecutiveSummaryGenerator:
             owner=owner, audience=audience, refresh=refresh, version=version, status=status,
         )
 
-        return ExecutiveDocument(
+        doc = ExecutiveDocument(
             metadata=metadata,
             purpose=purpose,
             business_value=business_value,
@@ -269,3 +299,8 @@ class ExecutiveSummaryGenerator:
             classification=classification,
             next_steps=_next_steps(recommendations, shown_rule_ids, metadata),
         )
+
+        if client is not None:
+            _run_critic(doc, model, client, warn)
+
+        return doc

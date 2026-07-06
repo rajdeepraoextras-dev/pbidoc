@@ -267,7 +267,7 @@ def build_data_sources_inventory(model: SemanticModel) -> list[dict]:
             "display_location": display_location,
             "tables_fed": fed,
             "storage_mode": mode,
-            "auth": "not specified",
+            "auth": ds.authentication_status or "not specified",
             "flag": flag
         })
     return inventory

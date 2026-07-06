@@ -987,21 +987,21 @@ a:hover > .wf-node {
 <div class="kpi"><div class="n">5</div><div class="l">Visuals</div></div>
 <div class="kpi"><div class="n">1</div><div class="l">Sources</div></div>
 </div>
-<h2 id="sec1">1. Document Control <span class="pill extracted">⚙ Extracted</span></h2>
+<h2 id="sec1">1. Document Control <span class="pill extracted">Extracted</span></h2>
 <table><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody><tr><td>Dashboard / Report Name</td><td>SampleSales</td></tr><tr><td>Source format</td><td>pbip-tmdl</td></tr><tr><td>Owner</td><td><span class="muted">not specified</span></td></tr><tr><td>Author</td><td><span class="muted">not specified</span></td></tr><tr><td>Reviewer / Approver</td><td><span class="muted">not specified</span></td></tr><tr><td>Version</td><td><span class="muted">not specified</span></td></tr><tr><td>Status</td><td><span class="muted">not specified</span></td></tr><tr><td>Classification</td><td><span class="muted">not specified</span></td></tr><tr><td>Target audience</td><td>BI developers and business stakeholders</td></tr><tr><td>Refresh schedule</td><td><span class="muted">not specified</span></td></tr><tr><td>Generated</td><td>TIMESTAMP</td></tr></tbody></table>
 <div class="todo"><b>✎ To complete:</b> Complete missing document control fields: Version, Status, Author, Reviewer, Classification</div>
-<h2 id="sec2">2. Executive Summary <span class="pill ai-inferred">✨ AI-inferred</span></h2>
+<h2 id="sec2">2. Executive Summary <span class="pill ai-inferred">AI-inferred</span></h2>
 <div class="card-section">
 <p>&#x27;SampleSales&#x27; reports on Sales, tracking Avg Order Value, Total Revenue, Revenue YTD across Customer, Date. It spans 2 report page(s), documented individually below. This purpose statement is derived from the model contents alone — the business context requires confirmation from the report owner.</p>
 <p><strong>Headline metrics:</strong> Avg Order Value, Total Revenue, Revenue YTD, Orphan Margin.</p>
 </div>
 <div class="todo"><b>✎ To complete:</b> Specify the primary business decision this dashboard drives (e.g. weekly sales planning).</div>
-<h2 id="sec3">3. Business Requirements <span class="pill human-provided">👤 Human-provided</span></h2>
+<h2 id="sec3">3. Business Requirements <span class="pill human-provided">Human-provided</span></h2>
 <div class="todo"><b>✎ To complete:</b> Business requirements have not yet been captured; confirm scope with the business owner.</div>
-<h2 id="sec4">4. Audience &amp; Stakeholders <span class="pill human-provided">👤 Human-provided</span></h2>
+<h2 id="sec4">4. Audience &amp; Stakeholders <span class="pill human-provided">Human-provided</span></h2>
 <table><thead><tr><th>Role</th><th>Name / Group</th><th>Access</th></tr></thead><tbody><tr><td>Business Owner</td><td><span class="muted">—</span></td><td>Edit / sign-off</td></tr><tr><td>Primary Users</td><td>BI developers and business stakeholders</td><td>View</td></tr><tr><td>Author / Creator</td><td><span class="muted">—</span></td><td>Modify / Publish</td></tr></tbody></table>
 <div class="todo"><b>✎ To complete:</b> Confirm other stakeholders (Data Owner, Developer/Maintainer, and per-group access levels).</div>
-<h2 id="sec5">5. Data Sources <span class="pill extracted">⚙ Extracted</span></h2>
+<h2 id="sec5">5. Data Sources <span class="pill extracted">Extracted</span></h2>
 <table><thead><tr><th>Source Type</th><th>Location / Host</th><th>Table(s) Fed</th><th>Storage Mode</th><th>Authentication</th><th>Flag / Risk</th></tr></thead><tbody><tr><td><code>Sql.Database</code></td><td><span title="prod-sql.contoso.com">prod-sql.contoso.com</span></td><td>Customer, Date, Sales</td><td><code>import</code></td><td><code>not specified</code></td><td><span class="muted">None</span></td></tr></tbody></table>
 <h3>Power Query / ETL transformations</h3>
 <div class="transformation-block" style="margin-bottom:1.5rem;">
@@ -1063,7 +1063,7 @@ a:hover > .wf-node {
 <h3>Lineage connection list</h3>
 <table><thead><tr><th>From</th><th>To</th><th>Link Type</th></tr></thead><tbody><tr><td>Sql.Database: prod-sql.contoso.com/SalesDW</td><td>Customer</td><td>Source to Table</td></tr><tr><td>Sql.Database: prod-sql.contoso.com/SalesDW</td><td>Date</td><td>Source to Table</td></tr><tr><td>Sql.Database: prod-sql.contoso.com/SalesDW</td><td>Sales</td><td>Source to Table</td></tr><tr><td>Key Measures</td><td>Avg Order Value</td><td>Table to Measure</td></tr><tr><td>Sales</td><td>Avg Order Value</td><td>Table to Measure</td></tr><tr><td>Sales</td><td>Total Revenue</td><td>Table to Measure</td></tr><tr><td>Sales</td><td>Revenue YTD</td><td>Table to Measure</td></tr><tr><td>Date</td><td>Revenue YTD</td><td>Table to Measure</td></tr><tr><td>Sales</td><td>Orphan Margin</td><td>Table to Measure</td></tr><tr><td>Total Revenue</td><td>Sales Overview</td><td>Measure to Page</td></tr><tr><td>Total Revenue</td><td>Region Detail</td><td>Measure to Page</td></tr><tr><td>Avg Order Value</td><td>Data Quality</td><td>Measure to Page</td></tr></tbody></table>
 <div class="todo"><b>✎ To complete:</b> Specify per-source authentication method, owning team, and known data latency.</div>
-<h2 id="sec6">6. Data Model</h2>
+<h2 id="sec6">6. Data Model <span class="pill extracted">Extracted</span></h2>
 <p>The model is a star schema centred on the &#x27;Sales&#x27; fact table. It has 1 fact table(s) (Sales) and 2 dimension table(s) (Customer, Date), connected by 3 relationship(s).</p>
 <h3>Relationships of note &amp; risks</h3>
 <div class="risk">Sales ↔ Date uses bi-directional cross-filtering, which can create ambiguous filter paths and slow performance.</div>
@@ -1076,7 +1076,7 @@ a:hover > .wf-node {
 <table><thead><tr><th>From</th><th>To</th><th>Cardinality</th><th>Cross-filter</th><th>Active</th></tr></thead><tbody><tr><td>Sales</td><td>Customer</td><td>many-to-one</td><td>single</td><td>Yes</td></tr><tr><td>Sales</td><td>Date</td><td>many-to-one</td><td>both</td><td>Yes</td></tr><tr><td>Sales</td><td>Date</td><td>many-to-one</td><td>single</td><td>No</td></tr></tbody></table>
 <h3>Data dictionary</h3>
 <table><thead><tr><th>Table</th><th>Column</th><th>Data Type</th><th>Description</th><th>Used by</th></tr></thead><tbody><tr id="column-customer-customer-name"><td>Customer</td><td>Customer Name</td><td>string</td><td>Unknown — requires business confirmation.</td><td>not referenced — see unused assets</td></tr><tr id="column-customer-region"><td>Customer</td><td>Region</td><td>string</td><td>Unknown — requires business confirmation.</td><td>2 page(s) (Sales Overview, Region Detail); RLS role(s): Regional Manager</td></tr><tr id="column-customer-segment"><td>Customer</td><td>Segment</td><td>string</td><td>Unknown — requires business confirmation.</td><td>1 page(s) (Sales Overview)</td></tr><tr id="column-date-date"><td>Date</td><td>Date</td><td>dateTime</td><td>Unknown — requires business confirmation.</td><td>1 measure(s) (Revenue YTD); 1 page(s) (Sales Overview)</td></tr><tr id="column-date-year"><td>Date</td><td>Year</td><td>int64</td><td>Unknown — requires business confirmation.</td><td>1 page(s) (Sales Overview)</td></tr><tr id="column-date-month-name"><td>Date</td><td>Month Name</td><td>string</td><td>Unknown — requires business confirmation.</td><td>not referenced — see unused assets</td></tr><tr id="column-sales-customerkey"><td>Sales</td><td>CustomerKey</td><td>int64</td><td>Key identifier; used to join Sales to related tables.</td><td>1 relationship(s)</td></tr><tr id="column-sales-orderdatekey"><td>Sales</td><td>OrderDateKey</td><td>int64</td><td>Key identifier; used to join Sales to related tables.</td><td>1 relationship(s)</td></tr><tr id="column-sales-shipdatekey"><td>Sales</td><td>ShipDateKey</td><td>int64</td><td>Key identifier; used to join Sales to related tables.</td><td>1 relationship(s)</td></tr><tr id="column-sales-quantity"><td>Sales</td><td>Quantity</td><td>int64</td><td>Unknown — requires business confirmation.</td><td>1 measure(s) (Total Revenue)</td></tr><tr id="column-sales-unitprice"><td>Sales</td><td>UnitPrice</td><td>double</td><td>Unknown — requires business confirmation.</td><td>1 measure(s) (Total Revenue)</td></tr><tr id="column-sales-status"><td>Sales</td><td>Status</td><td>string</td><td>Unknown — requires business confirmation.</td><td>1 measure(s) (Total Revenue); RLS role(s): Sales Rep</td></tr><tr id="column-sales-linetotal"><td>Sales</td><td>LineTotal</td><td>double</td><td>Calculated column.</td><td>not referenced — see unused assets</td></tr></tbody></table>
-<h2 id="sec7">7. Measures &amp; Calculations (DAX Dictionary)</h2>
+<h2 id="sec7">7. Measures &amp; Calculations (DAX Dictionary) <span class="pill extracted">Extracted</span></h2>
 <h3>Measure dependency graph</h3>
 <div class="diagram"><svg viewBox="0 0 960 300" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="inherit" role="img" aria-labelledby="dep-diagram-title"><title id="dep-diagram-title">Measure dependency graph</title>  <g class="measure-dep-node">    <rect x="200.0" y="135.0" width="180" height="30" rx="6" fill="#f5f3ff" stroke="#a78bfa" stroke-width="1.2"/>    <text x="290.0" y="153.0" font-size="9" text-anchor="middle" fill="#5b21b6">Total Revenue</text>  </g>  <g class="measure-dep-node">    <rect x="580.0" y="90.0" width="180" height="30" rx="6" fill="#f5f3ff" stroke="#a78bfa" stroke-width="1.2"/>    <text x="670.0" y="108.0" font-size="9" text-anchor="middle" fill="#5b21b6">Avg Order Value</text>  </g>  <g class="measure-dep-node">    <rect x="580.0" y="135.0" width="180" height="30" rx="6" fill="#f5f3ff" stroke="#a78bfa" stroke-width="1.2"/>    <text x="670.0" y="153.0" font-size="9" text-anchor="middle" fill="#5b21b6">Orphan Margin</text>  </g>  <g class="measure-dep-node">    <rect x="580.0" y="180.0" width="180" height="30" rx="6" fill="#f5f3ff" stroke="#a78bfa" stroke-width="1.2"/>    <text x="670.0" y="198.0" font-size="9" text-anchor="middle" fill="#5b21b6">Revenue YTD</text>  </g>  <path d="M 380.0 150.0 C 480.0 150.0, 480.0 105.0, 580.0 105.0" fill="none" stroke="#a78bfa" stroke-width="1.2" stroke-linecap="round"/>  <path d="M 380.0 150.0 C 480.0 150.0, 480.0 195.0, 580.0 195.0" fill="none" stroke="#a78bfa" stroke-width="1.2" stroke-linecap="round"/>  <path d="M 380.0 150.0 C 480.0 150.0, 480.0 150.0, 580.0 150.0" fill="none" stroke="#a78bfa" stroke-width="1.2" stroke-linecap="round"/></svg></div>
 <div class="measure" id="measure-avg-order-value">
@@ -1119,7 +1119,7 @@ a:hover > .wf-node {
 </div>
 <h3>Calculated columns</h3>
 <table><thead><tr><th>Table</th><th>Column</th><th>Expression</th></tr></thead><tbody><tr><td>Sales</td><td>LineTotal</td><td><code><span class="tok-ref">Sales[Quantity]</span> * <span class="tok-ref">Sales[UnitPrice]</span></code></td></tr></tbody></table>
-<h2 id="sec8">8. Report Pages &amp; Visuals</h2>
+<h2 id="sec8">8. Report Pages &amp; Visuals <span class="pill extracted">Extracted</span></h2>
 <h3>How to read the key visuals</h3><ul>
 <li><strong>Revenue Breakdown</strong> (Sales Overview): A decomposition tree breaks a measure down one field at a time. Click the + on a node and pick a field to expand by; the tree shows which categories contribute most to the total.</li>
 <li><strong>Revenue by Region</strong> (Region Detail): A map plots values geographically. Bubble size or colour encodes the measure — compare regions visually and zoom for detail.</li>
@@ -1173,14 +1173,14 @@ a:hover > .wf-node {
 </defs><rect x="4" y="4" width="472" height="262" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/><a href="#visual-data-quality-avg-order-value"><title>Card — Card (Avg Order Value)</title><rect x="6.0" y="6.0" width="112.5" height="56.2" rx="3" class="wf-node" fill="#ffffff" stroke="#4f46e5" stroke-width="1.5"/><use href="#wf-i-card123-page3" x="9.0" y="9.0" width="10" height="10" fill="#4f46e5" stroke="#4f46e5"/><text x="20.0" y="16.0" font-size="6.5" fill="#312e81" opacity="0.75">Card</text></a></svg><div class="legend"><span><i class="swatch" style="background:#ffffff;border:1.5px solid #4f46e5"></i>Data visual</span><span><i class="swatch" style="background:#fef3c7;border:1px solid #f59e0b"></i>Slicer</span><span><i class="swatch" style="background:#ecfdf5;border:1px solid #10b981"></i>Navigation</span><span><i class="swatch" style="background:#e2e8f0"></i>Decorative</span></div></div>
 <table><thead><tr><th>Visual</th><th>Type</th><th>Metric(s)</th><th>Dimension(s)</th></tr></thead><tbody><tr id="visual-data-quality-avg-order-value"><td>Avg Order Value</td><td>Card</td><td>Avg Order Value</td><td>—</td></tr></tbody></table>
 </div>
-<h2 id="sec9">9. Filters, Slicers &amp; Navigation</h2>
+<h2 id="sec9">9. Filters, Slicers &amp; Navigation <span class="pill extracted">Extracted</span></h2>
 <h3>Page Navigation Map</h3>
 <div class="diagram"><svg viewBox="0 0 640 400" width="100%" xmlns="http://www.w3.org/2000/svg" font-family="inherit" role="img" aria-labelledby="nav-diagram-title"><title id="nav-diagram-title">Report page navigation flow map</title>  <defs>    <marker id="arrow" viewBox="0 0 10 10" refX="22" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">      <path d="M 0 2 L 10 5 L 0 8 z" fill="#64748b"/>    </marker>  </defs>  <line x1="320.0" y1="60.0" x2="320.0" y2="340.0" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrow)" stroke-dasharray="4,4"/>  <text x="308.0" y="203.0" font-size="8" fill="#475569" text-anchor="middle" font-family="sans-serif">Next Page</text>  <a href="#page-sales-overview">    <rect x="260.0" y="43.0" width="120" height="34" rx="6" fill="#ecfdf5" stroke="#10b981" stroke-width="1.2" style="cursor:pointer; transition:opacity 0.2s;" onmouseover="this.style.opacity=0.8" onmouseout="this.style.opacity=1.0"/>    <text x="320.0" y="63.0" font-size="8.5" font-weight="600" fill="#047857" text-anchor="middle" font-family="sans-serif">Sales Overview</text>  </a>  <a href="#page-region-detail">    <rect x="260.0" y="323.0" width="120" height="34" rx="6" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.2" style="cursor:pointer; transition:opacity 0.2s;" onmouseover="this.style.opacity=0.8" onmouseout="this.style.opacity=1.0"/>    <text x="320.0" y="343.0" font-size="8.5" font-weight="600" fill="#1e3a8a" text-anchor="middle" font-family="sans-serif">Region Detail</text>  </a></svg></div>
 <ul><li>On &#x27;Sales Overview&#x27;, use the &#x27;Date.Date&#x27; slicer to filter the visuals on that page.</li><li>Right-click a data point on a summary page and choose Drill through to open the &#x27;Region Detail&#x27; page for row-level detail.</li></ul>
 <table><thead><tr><th>Slicer field</th><th>Page</th></tr></thead><tbody><tr><td>Date.Date</td><td>Sales Overview</td></tr></tbody></table>
 <p><strong>Drill-through pages:</strong> Region Detail.</p>
 <div class="todo"><b>✎ To complete:</b> Detail bookmarks, button navigation logic, and the fields passed on each drill-through.</div>
-<h2 id="sec10">10. Row-Level Security (RLS)</h2>
+<h2 id="sec10">10. Row-Level Security (RLS) <span class="pill extracted">Extracted</span></h2>
 <h3>Roles definition</h3>
 <table><thead><tr><th>Role Name</th><th>Permission</th><th>Members</th></tr></thead><tbody><tr><td>Regional Manager</td><td>read</td><td><span class="muted">no members assigned (managed in cloud service)</span></td></tr><tr><td>Sales Rep</td><td>read</td><td>rep1@contoso.com</td></tr></tbody></table>
 <h3>Role × Table security matrix</h3>
@@ -1191,17 +1191,17 @@ a:hover > .wf-node {
 <li>[ ] <strong>Test Sales Rep:</strong> Select 'View as' &rarr; check 'Sales Rep' in Power BI Desktop to verify filter propagation.</li>
 </ul>
 <div class="todo"><b>✎ To complete:</b> Confirm each role was tested with &#x27;View as role&#x27;, and note any object-level security (OLS) rules.</div>
-<h2 id="sec11">11. Refresh, Gateway &amp; Performance</h2>
+<h2 id="sec11">11. Refresh, Gateway &amp; Performance <span class="pill extracted">Extracted</span></h2>
 <table><thead><tr><th>Field</th><th>Value / Status</th></tr></thead><tbody><tr><td>Refresh Type</td><td><span class="todo">✎ To complete</span></td></tr><tr><td>Gateway Name</td><td><span class="todo">✎ To complete</span></td></tr><tr><td>Typical Duration</td><td><span class="todo">✎ To complete</span></td></tr><tr><td>Dataset Size</td><td><span class="todo">✎ To complete</span></td></tr><tr><td>Failure Alert Contact</td><td><span class="todo">✎ To complete</span></td></tr></tbody></table>
 <div class="todo"><b>✎ To complete:</b> Detail performance considerations and gateway configurations.</div>
-<h2 id="sec12">12. Deployment &amp; Environment</h2>
+<h2 id="sec12">12. Deployment &amp; Environment <span class="pill extracted">Extracted</span></h2>
 <div class="todo"><b>✎ To complete:</b> Dev / Test / Production workspaces, app URLs, deployment method (pipeline/Git), and per-environment parameters.</div>
-<h2 id="sec13">13. Access &amp; Permissions</h2>
+<h2 id="sec13">13. Access &amp; Permissions <span class="pill extracted">Extracted</span></h2>
 <div class="todo"><b>✎ To complete:</b> Workspace roles and app access per group, with justification.</div>
-<h2 id="sec14">14. Data Dictionary / Glossary</h2>
+<h2 id="sec14">14. Data Dictionary / Glossary <span class="pill extracted">Extracted</span></h2>
 <p class="muted">Column-level data dictionary is in section 6. Business-term definitions belong below.</p>
 <table><thead><tr><th>Term</th><th>Type</th><th>Plain-English Definition</th><th>Typo / Rename Flag</th></tr></thead><tbody><tr><td><code>Avg Order Value</code></td><td>Measure</td><td>A ratio: Total Revenue divided by DISTINCTCOUNT ( Sales[SalesKey] ).</td><td><span class="muted">—</span></td></tr><tr><td><code>Total Revenue</code></td><td>Measure</td><td>Computes the total of Sales[Quantity] * Sales[UnitPrice], evaluated row by row over FILTER ( Sales, Sales[Status] &lt;&gt; &quot;Canceled&quot; ).</td><td><span class="muted">—</span></td></tr><tr><td><code>Revenue YTD</code></td><td>Measure</td><td>A time-intelligence calculation: the year-to-date value of Total Revenue.</td><td><span class="muted">—</span></td></tr><tr><td><code>Orphan Margin</code></td><td>Measure</td><td>A derived metric: Total Revenue * 0.3.</td><td><span class="muted">—</span></td></tr><tr><td><code>Date</code></td><td>Dimension</td><td>Time-dimension field used to filter, segment, and perform time-intelligence trends.</td><td><span class="muted">—</span></td></tr><tr><td><code>Region</code></td><td>Dimension</td><td>Geographical dimension used to analyze regional breakdown and location-based performance.</td><td><span class="muted">—</span></td></tr><tr><td><code>Segment</code></td><td>Dimension</td><td>Unknown — requires business confirmation.</td><td><span class="muted">—</span></td></tr><tr><td><code>Year</code></td><td>Dimension</td><td>Unknown — requires business confirmation.</td><td><span class="muted">—</span></td></tr></tbody></table>
-<h2 id="sec15">15. Known Issues, Assumptions &amp; Limitations</h2>
+<h2 id="sec15">15. Known Issues, Assumptions &amp; Limitations <span class="pill extracted">Extracted</span></h2>
 <p>2 of 4 measures (50%) are defined but not used on any report page (directly or via another measure).</p>
 <h3>Unused Assets Grouped by Table</h3>
 <details class="collapsible" style="margin-bottom:1rem; border:1px solid #e2e8f0; padding:10px; border-radius:6px;">
@@ -1259,7 +1259,7 @@ Model.Tables[&quot;Sales&quot;].Measures[&quot;Orphan Margin&quot;].Delete();</c
 <h3>Modeling risks</h3>
 <ul><li>Sales ↔ Date uses bi-directional cross-filtering, which can create ambiguous filter paths and slow performance.</li><li>Sales[ShipDateKey] → Date[DateKey] is inactive and only applies via USERELATIONSHIP() in DAX.</li></ul>
 <div class="todo"><b>✎ To complete:</b> Business assumptions and limitations (e.g. &quot;returns lag source by 1 day&quot;) with impact and workaround.</div>
-<h2 id="sec16">16. Model Health &amp; AI Recommendations</h2>
+<h2 id="sec16">16. Model Health &amp; AI Recommendations <span class="pill ai-inferred">AI-inferred</span></h2>
 <h3>Health Score: 85 / 100 (Good)</h3>
 <table><thead><tr><th>Component</th><th>Score</th><th>Why</th></tr></thead><tbody><tr><td>Model Design</td><td><span class="num">70</span></td><td>6 of 19 best-practice check(s) failed.</td></tr><tr><td>DAX Quality</td><td><span class="num">96</span></td><td>4 DAX finding(s) (worst severity: Low).</td></tr><tr><td>Governance &amp; Security</td><td><span class="num">87</span></td><td>7 governance finding(s) (worst severity: Medium).</td></tr><tr><td>Performance</td><td><span class="num">97</span></td><td>3 performance risk signal(s) (worst severity: Low).</td></tr><tr><td>Maintainability</td><td><span class="num">76</span></td><td>12 unused asset(s) add size and maintenance load without analytical value.</td></tr></tbody></table>
 <p class="muted">Scored by deterministic rules over the model metadata — reproducible, not an AI guess.</p>
@@ -1371,13 +1371,13 @@ Model.Tables[&quot;Sales&quot;].Measures[&quot;Orphan Margin&quot;].Delete();
 <p><strong>Expected benefit:</strong> A leaner, easier-to-maintain model.</p>
 <p><strong>Estimated effort:</strong> Low</p>
 </div>
-<h2 id="sec17">17. Support &amp; Maintenance</h2>
+<h2 id="sec17">17. Support &amp; Maintenance <span class="pill extracted">Extracted</span></h2>
 <div class="todo"><b>✎ To complete:</b> Escalation contact, SLA for fixes, .pbix/.pbip backup location, and decommission criteria.</div>
-<h2 id="sec18">18. Appendix &amp; Sign-off</h2>
+<h2 id="sec18">18. Appendix &amp; Sign-off <span class="pill extracted">Extracted</span></h2>
 <p>The model diagram is in section 6. Attach wireframes/mockups and any source-to-target mapping here.</p>
 <table><thead><tr><th>Sign-off Role</th><th>Name</th><th>Title / Role</th><th>Date</th></tr></thead><tbody><tr><td>Business Owner</td><td></td><td></td><td></td></tr><tr><td>Data Owner</td><td></td><td></td><td></td></tr><tr><td>Developer</td><td>TBC</td><td>BI Developer</td><td>2026-07-06</td></tr></tbody></table>
 <p class="caveat"><strong>Reminder:</strong> Obtain sign-off before sharing with stakeholders.</p>
-<h2 id="sec19">19. Methodology &amp; Guarantees <span class="pill extracted">⚙ Extracted</span></h2>
+<h2 id="sec19">19. Methodology &amp; Guarantees <span class="pill extracted">Extracted</span></h2>
 <div class="card-section">
 <p><strong>Parsed Artifacts:</strong> Power BI metadata (tables, columns, measures, relationships, visuals, and page layout layout tables). No customer database row-level data is ever parsed, read, or transmitted.</p>
 <p><strong>AI Agents Used:</strong> PBICompass Engine v0.1.0 and prompt version 2026-07. Models called: Anthropic Claude, Google Gemini, Cohere. All operations run under zero-retention policies.</p>

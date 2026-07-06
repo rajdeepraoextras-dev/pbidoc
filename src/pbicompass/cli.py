@@ -10,8 +10,12 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
+import tempfile
+import zipfile
 from pathlib import Path
+from typing import Optional
 
 from .agents import generate_document, get_client
 from .agents.generators import DOCUMENT_TYPES
@@ -91,6 +95,84 @@ def _write_hub(model: SemanticModel, docs: dict, out_path: Path, ext: str, *, qu
         print(f"Wrote {hub_path} (hub)", file=sys.stderr)
 
 
+def _write_bundle(model: SemanticModel, docs: dict, document_types: list[str],
+                  out_path: Optional[Path], enrichment_data: dict, *,
+                  enrichment_file_used: bool, quiet: bool) -> int:
+    """5.7: render every format for every requested document type, plus
+    ``model.json`` and (with ``--enrich``) the enrichment skeleton, into one
+    zip — the CLI's own bundle, alongside the hosted service's equivalent
+    (``service/worker.py``, gated on a multi-document job there)."""
+    from . import enrichment as enrichment_mod
+    from .render._shared import format_timestamp
+    from .render.hub import doc_switcher_links, hub_stats, render_hub
+
+    multi = len(document_types) > 1
+    html_filenames = {d: f"{d}.html" for d in document_types}
+    outputs: dict[str, bytes] = {}
+
+    with tempfile.TemporaryDirectory() as td:
+        tmp = Path(td)
+        for dtype, doc in docs.items():
+            renderers = registry.RENDERERS[dtype]
+            doc_links = doc_switcher_links(document_types, dtype, html_filenames, "index.html") if multi else None
+            outputs[f"{dtype}.md"] = renderers["md"](doc).encode("utf-8")
+            outputs[f"{dtype}.json"] = doc.to_json().encode("utf-8")
+            outputs[f"{dtype}.html"] = renderers["html"](
+                doc, doc_links=doc_links, sibling_hrefs=html_filenames if multi else None,
+            ).encode("utf-8")
+
+            docx_path = tmp / f"out.{dtype}.docx"
+            renderers["docx"](doc, docx_path)
+            outputs[f"{dtype}.docx"] = docx_path.read_bytes()
+
+            if pandoc.pandoc_available() and pandoc.find_pdf_engine():
+                try:
+                    pdf_path = tmp / f"out.{dtype}.pdf"
+                    pandoc.to_pdf(
+                        renderers["md"](doc), pdf_path,
+                        title=doc.metadata.report_name, author=doc.metadata.owner,
+                        date=format_timestamp(doc.metadata.generated_at),
+                    )
+                    outputs[f"{dtype}.pdf"] = pdf_path.read_bytes()
+                except pandoc.PandocError:
+                    pass
+
+    if multi:
+        entries = [
+            {"type": dtype, "href": html_filenames[dtype], "stats": hub_stats(dtype, doc)}
+            for dtype, doc in docs.items()
+        ]
+        health_score = None
+        audit_doc = docs.get("audit")
+        if audit_doc is not None:
+            health_score = {"overall": audit_doc.health.overall, "band": audit_doc.health.band}
+        hub_html = render_hub(
+            entries, report_name=model.report_name,
+            generated_at=format_timestamp(model.meta.generated_at), health_score=health_score,
+        )
+        outputs["index.html"] = hub_html.encode("utf-8")
+
+    outputs["model.json"] = model.to_json().encode("utf-8")
+    if enrichment_file_used:
+        outputs["enrichment.yaml"] = enrichment_mod.generate_enrichment_template(
+            model, previous=enrichment_data,
+        ).encode("utf-8")
+
+    zip_path = out_path or Path(f"{_safe_stem(model.report_name)}-documentation.zip")
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name, data in outputs.items():
+            zf.writestr(name, data)
+
+    if not quiet:
+        print(f"Wrote {zip_path} (bundle: {', '.join(sorted(outputs))})", file=sys.stderr)
+    return 0
+
+
+def _safe_stem(name: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9_-]+", "_", name or "").strip("_")
+    return cleaned or "documentation"
+
+
 def main(argv: list[str] | None = None) -> int:
     # Force UTF-8 on the console so non-Latin-1 content (e.g. "↔" in model
     # risks, or Unicode table/column names) doesn't crash on Windows cp1252.
@@ -119,6 +201,22 @@ def main(argv: list[str] | None = None) -> int:
     p_gen.add_argument("--rules", type=Path,
                        help="Path to a pbicompass.rules.toml config: disable rule IDs, override "
                             "severities, and set thresholds (audit document only).")
+    p_gen.add_argument("--enrich", type=Path,
+                       help="Path to an enrichment YAML file (5.1). If it doesn't exist yet, a "
+                            "skeleton is written there for you to fill in. If it exists, its "
+                            "measure/column descriptions, data-source/role details, and rule "
+                            "overrides are applied, its report metadata becomes the default for "
+                            "--owner/--author/etc. (explicit flags still win), and the file is "
+                            "rewritten afterward so filled-in fields persist across runs.")
+    p_gen.add_argument("--diff-against", type=Path,
+                       help="A previous model.json to diff against (used with --enrich): computes "
+                            "the change log and stores it in the enrichment file's history for "
+                            "the 'Changes since last documentation' section.")
+    p_gen.add_argument("--bundle", action="store_true",
+                       help="Ignore --format/-o's single-file output; instead render every format "
+                            "(md/json/html/docx/pdf-if-available) for the requested --document "
+                            "type(s), plus model.json and (with --enrich) the enrichment skeleton, "
+                            "into one zip (-o names the zip, default '{report}-documentation.zip').")
     p_gen.add_argument("--provider", default="none",
                        help="LLM provider: 'none' (deterministic, default), 'anthropic', 'gemini', or 'cohere'")
     p_gen.add_argument("--model", default="claude-opus-4-8", help="Model id for the LLM provider")
@@ -147,6 +245,11 @@ def main(argv: list[str] | None = None) -> int:
     p_gen.add_argument("--assumptions", help="Business assumptions and limitations (Known Issues & Assumptions)")
     p_gen.add_argument("--support-notes", help="Support Escalation, SLA, & Maintenance details (Support & Maintenance)")
     p_gen.add_argument("--quiet", action="store_true", help="Suppress warnings/status")
+
+    p_diff = sub.add_parser("diff", help="Compare two model.json files and print a change log (5.2)")
+    p_diff.add_argument("old", type=Path, help="Previous model.json")
+    p_diff.add_argument("new", type=Path, help="Current model.json")
+    p_diff.add_argument("-o", "--out", type=Path, help="Write the change log here instead of stdout")
 
     p_serve = sub.add_parser("serve", help="Run the web service (upload UI + API)")
     p_serve.add_argument("--host", default="127.0.0.1")
@@ -185,6 +288,24 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"\nWrote {args.out}")
         return 0
 
+    if args.command == "diff":
+        import json
+
+        from .enrichment import compute_model_diff, generate_change_log_markdown
+
+        try:
+            old = json.loads(args.old.read_text(encoding="utf-8"))
+            new = json.loads(args.new.read_text(encoding="utf-8"))
+        except Exception as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        changelog = generate_change_log_markdown(compute_model_diff(old, new))
+        if args.out:
+            args.out.write_text(changelog + "\n", encoding="utf-8")
+        else:
+            print(changelog)
+        return 0
+
     if args.command == "generate":
         # LLM response cache (5.4): on by default for the CLI, off by
         # default for the hosted service (service/worker.py never sets this
@@ -209,12 +330,91 @@ def main(argv: list[str] | None = None) -> int:
         # without any overrides applied.
         from .agents import audit_rules
         audit_rules.set_rules_config_path(None)
+        audit_rules.set_rules_override_config({})
         if args.rules:
             error = audit_rules.validate_rules_file(args.rules)
             if error:
                 _warn(f"{error} — continuing without rule overrides.")
             else:
                 audit_rules.set_rules_config_path(args.rules)
+
+        # Enrichment round-trip (5.1). First run with a given --enrich path
+        # that doesn't exist yet: bootstrap a skeleton there and stop —
+        # nothing to apply. Existing file: apply its measure/column
+        # descriptions, data-source/role details, and rule overrides to the
+        # model, and use its report metadata as the *default* for
+        # --owner/--author/etc. (an explicit flag still wins). The file
+        # itself is rewritten at the end of this command so filled-in
+        # fields persist and 4.5/5.2's diff history stays current.
+        from . import enrichment as enrichment_mod
+
+        enrichment_data: dict = {}
+        enrichment_meta: dict = {}
+        enrichment_applied = False
+        changelog_text: Optional[str] = None
+        if args.enrich and not args.enrich.exists():
+            try:
+                args.enrich.write_text(enrichment_mod.generate_enrichment_template(model), encoding="utf-8")
+                _warn(f"No enrichment file at {args.enrich} — wrote a fresh skeleton. "
+                      "Fill it in and rerun to apply it.")
+            except Exception as exc:
+                _warn(f"Could not write enrichment skeleton to {args.enrich}: {exc}")
+        elif args.enrich:
+            try:
+                enrichment_data = enrichment_mod.load_enrichment(args.enrich)
+            except ValueError as exc:
+                _warn(f"{exc} — continuing without enrichment.")
+                enrichment_data = {}
+            else:
+                enrichment_applied = True
+                overridden = enrichment_mod.apply_enrichment(model, enrichment_data)
+                enrichment_meta = overridden["metadata"]
+
+                # 5.2: change log / diff history, driven by this same file.
+                history = enrichment_data.setdefault("history", {})
+                current_fp = enrichment_mod.get_model_fingerprint(model)
+                prev_fp = history.get("previous_fingerprint") or ""
+                if args.diff_against:
+                    try:
+                        import json as _json
+                        old_dict = _json.loads(args.diff_against.read_text(encoding="utf-8"))
+                        diff = enrichment_mod.compute_model_diff(old_dict, model.to_dict())
+                        changelog_text = enrichment_mod.generate_change_log_markdown(diff)
+                        history["previous_summary"] = changelog_text
+                    except Exception as exc:
+                        _warn(f"Could not diff against {args.diff_against}: {exc}")
+                elif prev_fp and prev_fp != current_fp and history.get("previous_summary"):
+                    changelog_text = history["previous_summary"]
+                history["previous_fingerprint"] = current_fp
+
+                try:
+                    args.enrich.write_text(
+                        enrichment_mod.generate_enrichment_template(model, previous=enrichment_data),
+                        encoding="utf-8",
+                    )
+                except Exception as exc:
+                    _warn(f"Could not update enrichment file {args.enrich}: {exc}")
+
+        def _meta(flag_value, key):
+            return flag_value if flag_value is not None else (enrichment_meta.get(key) or None)
+
+        owner = _meta(args.owner, "owner")
+        audience = _meta(args.audience, "target_audience")
+        refresh = _meta(args.refresh, "refresh_schedule")
+        doc_version = _meta(args.doc_version, "version")
+        status = _meta(args.status, "status")
+        author = _meta(args.author, "author")
+        reviewer = _meta(args.reviewer, "reviewer")
+        classification = _meta(args.classification, "classification")
+        business_decision = _meta(args.business_decision, "business_decision")
+        requirements = _meta(args.requirements, "requirements")
+        security_notes = _meta(args.security_notes, "security_notes")
+        refresh_notes = _meta(args.refresh_notes, "refresh_notes")
+        deployment_notes = _meta(args.deployment_notes, "deployment_notes")
+        access_notes = _meta(args.access_notes, "access_notes")
+        glossary = _meta(args.glossary, "glossary")
+        assumptions = _meta(args.assumptions, "assumptions")
+        support_notes = _meta(args.support_notes, "support_notes")
 
         client = None
         if args.provider not in ("none", "offline", "deterministic"):
@@ -232,24 +432,31 @@ def main(argv: list[str] | None = None) -> int:
             if document_type == "technical":
                 return generate_document(
                     model, client,
-                    owner=args.owner, audience=args.audience, refresh=args.refresh,
-                    version=args.doc_version, status=args.status, author=args.author,
-                    reviewer=args.reviewer, classification=args.classification,
-                    business_decision=args.business_decision, requirements=args.requirements,
-                    security_notes=args.security_notes, refresh_notes=args.refresh_notes,
-                    deployment_notes=args.deployment_notes, access_notes=args.access_notes,
-                    glossary=args.glossary, assumptions=args.assumptions,
-                    support_notes=args.support_notes,
+                    owner=owner, audience=audience, refresh=refresh,
+                    version=doc_version, status=status, author=author,
+                    reviewer=reviewer, classification=classification,
+                    business_decision=business_decision, requirements=requirements,
+                    security_notes=security_notes, refresh_notes=refresh_notes,
+                    deployment_notes=deployment_notes, access_notes=access_notes,
+                    glossary=glossary, assumptions=assumptions,
+                    support_notes=support_notes,
                     on_warning=_warn,
                 )
             return DOCUMENT_TYPES[document_type].generate(
                 model, client,
-                owner=args.owner, audience=args.audience, refresh=args.refresh,
-                version=args.doc_version, status=args.status, classification=args.classification,
+                owner=owner, audience=audience, refresh=refresh,
+                version=doc_version, status=status, classification=classification,
                 on_warning=_warn,
             )
 
         docs = {dtype: _generate_one(dtype) for dtype in document_types}
+        for dtype in ("technical", "audit"):
+            if changelog_text and dtype in docs:
+                docs[dtype].changelog = changelog_text
+
+        if args.bundle:
+            return _write_bundle(model, docs, document_types, args.out, enrichment_data,
+                                enrichment_file_used=enrichment_applied, quiet=args.quiet)
 
         suffix_map = {".json": "json", ".md": "md", ".markdown": "md",
                       ".html": "html", ".htm": "html", ".docx": "docx", ".pdf": "pdf"}

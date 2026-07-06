@@ -14,6 +14,7 @@ from typing import Optional
 from ...schemas.audit_document import AuditDocument
 from .. import audit_rules
 from .. import io
+from ..critic import apply_critic_pass, apply_results
 from ..llm import LLMClient
 from .base import Warn, build_core_metadata, call_llm
 
@@ -44,6 +45,36 @@ def _deterministic_overview(
     if top:
         parts.append(f"The top priority is: {top.issue} ({top.priority}) — {top.suggested_fix}")
     return " ".join(parts)
+
+
+def _run_critic(doc: AuditDocument, model, client, warn: Warn) -> None:
+    """5.3: one critic pass over the audit doc's narrative fields. Findings'
+    ``detail`` text is deterministic-template fact, not free LLM prose —
+    only ``narrative_overview`` and the recommendation write-ups go through
+    the critic."""
+    known_names = {t.name for t in model.tables}
+    known_names |= {m.name for m in model.all_measures()}
+
+    triples: list[tuple[str, str, "callable"]] = []
+
+    def _set_narrative(v: str) -> None:
+        doc.narrative_overview = v
+    triples.append(("narrative_overview", doc.narrative_overview, _set_narrative))
+
+    for i, rec in enumerate(doc.recommendations):
+        def _set_why(v: str, _r=rec) -> None:
+            _r.why_it_matters = v
+        def _set_fix(v: str, _r=rec) -> None:
+            _r.suggested_fix = v
+        def _set_benefit(v: str, _r=rec) -> None:
+            _r.expected_benefit = v
+        triples.append((f"recommendations[{i}].why_it_matters", rec.why_it_matters, _set_why))
+        triples.append((f"recommendations[{i}].suggested_fix", rec.suggested_fix, _set_fix))
+        triples.append((f"recommendations[{i}].expected_benefit", rec.expected_benefit, _set_benefit))
+
+    fields = [(loc, text) for loc, text, _ in triples]
+    results = apply_critic_pass(fields, client, known_names=known_names, warn=warn)
+    apply_results(triples, results)
 
 
 class AuditReportGenerator:
@@ -122,7 +153,7 @@ class AuditReportGenerator:
         ledger = audit_rules.compute_checks_ledger(
             dax_findings, best_practices, performance_risks, governance, suppressed,
         )
-        return AuditDocument(
+        doc = AuditDocument(
             metadata=meta,
             health=health,
             complexity=complexity,
@@ -140,3 +171,8 @@ class AuditReportGenerator:
             checks_suppressed=ledger["suppressed"],
             checks_by_category=ledger["by_category"],
         )
+
+        if client is not None:
+            _run_critic(doc, model, client, warn)
+
+        return doc

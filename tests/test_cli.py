@@ -12,6 +12,7 @@ import json
 import re
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 from pbicompass import cli
@@ -192,6 +193,164 @@ class RulesFileFlagTest(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertIn("not found", stderr.getvalue())
             self.assertTrue(out.exists())
+
+
+class EnrichFlagTest(unittest.TestCase):
+    """5.1: ``--enrich`` bootstraps a skeleton on first use, then applies
+    and round-trips it on subsequent runs."""
+
+    def tearDown(self):
+        from pbicompass.agents import audit_rules
+        audit_rules.set_rules_override_config({})
+
+    def test_bootstrap_then_fill_then_rerun_round_trips(self):
+        import yaml
+        with tempfile.TemporaryDirectory() as td:
+            enrich_path = Path(td) / "report.enrichment.yaml"
+            out = Path(td) / "technical.json"
+
+            # First run: no file yet -> bootstrap a skeleton, nothing applied.
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                code = cli.main(["generate", str(FIXTURE), "--document", "technical",
+                                "--enrich", str(enrich_path), "-o", str(out)])
+            self.assertEqual(code, 0)
+            self.assertTrue(enrich_path.exists())
+            self.assertIn("wrote a fresh skeleton", stderr.getvalue().lower())
+
+            skeleton = yaml.safe_load(enrich_path.read_text(encoding="utf-8"))
+            skeleton["metadata"]["owner"] = "Jane Doe"
+            first_measure = next(iter(skeleton["measure_descriptions"]))
+            skeleton["measure_descriptions"][first_measure] = "A human-written definition."
+            enrich_path.write_text(yaml.safe_dump(skeleton), encoding="utf-8")
+
+            # Second run: file exists -> apply it, then round-trip it.
+            code = cli.main(["generate", str(FIXTURE), "--document", "technical",
+                            "--enrich", str(enrich_path), "-o", str(out), "--quiet"])
+            self.assertEqual(code, 0)
+
+            doc = json.loads(out.read_text(encoding="utf-8"))
+            self.assertEqual(doc["metadata"]["owner"], "Jane Doe")
+            measure = next(m for m in doc["measure_catalog"]["measures"] if m["name"] == first_measure)
+            self.assertEqual(measure["plain_english"], "A human-written definition.")
+            self.assertEqual(measure["provenance"], "Human-provided")
+
+            regenerated = yaml.safe_load(enrich_path.read_text(encoding="utf-8"))
+            self.assertEqual(regenerated["metadata"]["owner"], "Jane Doe")
+            self.assertEqual(regenerated["measure_descriptions"][first_measure],
+                            "A human-written definition.")
+            self.assertTrue(regenerated["history"]["previous_fingerprint"])
+
+    def test_invalid_yaml_warns_and_still_generates(self):
+        with tempfile.TemporaryDirectory() as td:
+            enrich_path = Path(td) / "bad.enrichment.yaml"
+            enrich_path.write_text("key: [unterminated", encoding="utf-8")
+            out = Path(td) / "technical.json"
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                code = cli.main(["generate", str(FIXTURE), "--document", "technical",
+                                "--enrich", str(enrich_path), "-o", str(out)])
+            self.assertEqual(code, 0)
+            self.assertIn("failed to parse", stderr.getvalue().lower())
+            self.assertTrue(out.exists())
+
+
+class DiffCommandTest(unittest.TestCase):
+    def test_diff_reports_changed_measure(self):
+        with tempfile.TemporaryDirectory() as td:
+            old_path = Path(td) / "old.json"
+            new_path = Path(td) / "new.json"
+            cli.main(["parse", str(FIXTURE), "-o", str(old_path), "--quiet"])
+            model = json.loads(old_path.read_text(encoding="utf-8"))
+            for t in model["tables"]:
+                if t.get("measures"):
+                    t["measures"][0]["expression"] += " * 1.0"
+                    break
+            new_path.write_text(json.dumps(model), encoding="utf-8")
+
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                code = cli.main(["diff", str(old_path), str(new_path)])
+            self.assertEqual(code, 0)
+            self.assertIn("Modified Measures", stdout.getvalue())
+
+    def test_diff_with_no_changes(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "model.json"
+            cli.main(["parse", str(FIXTURE), "-o", str(path), "--quiet"])
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                code = cli.main(["diff", str(path), str(path)])
+            self.assertEqual(code, 0)
+            self.assertIn("No structural or logic changes", stdout.getvalue())
+
+
+class BundleFlagTest(unittest.TestCase):
+    """5.7: ``--bundle`` renders every format for every requested document
+    type, plus ``model.json``, into one zip."""
+
+    def test_multi_document_bundle_contains_every_format_and_hub(self):
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td) / "bundle.zip"
+            code = cli.main(["generate", str(FIXTURE), "--document", "all",
+                            "--bundle", "-o", str(out), "--quiet"])
+            self.assertEqual(code, 0)
+            with zipfile.ZipFile(out) as zf:
+                names = set(zf.namelist())
+            for dtype in DOCUMENT_TYPES:
+                for fmt in ("md", "json", "html", "docx"):
+                    self.assertIn(f"{dtype}.{fmt}", names)
+            self.assertIn("index.html", names)
+            self.assertIn("model.json", names)
+            self.assertNotIn("enrichment.yaml", names)  # no --enrich given
+
+    def test_single_document_bundle_has_no_type_prefix_collision_and_no_hub(self):
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td) / "bundle.zip"
+            code = cli.main(["generate", str(FIXTURE), "--document", "technical",
+                            "--bundle", "-o", str(out), "--quiet"])
+            self.assertEqual(code, 0)
+            with zipfile.ZipFile(out) as zf:
+                names = set(zf.namelist())
+            self.assertEqual(names, {"technical.md", "technical.json", "technical.html",
+                                     "technical.docx", "model.json"})
+
+    def test_bundle_with_enrich_includes_regenerated_skeleton(self):
+        import yaml
+        with tempfile.TemporaryDirectory() as td:
+            enrich_path = Path(td) / "report.enrichment.yaml"
+            # Bootstrap first (no file yet), then fill one field.
+            cli.main(["generate", str(FIXTURE), "--document", "technical",
+                     "--enrich", str(enrich_path), "--quiet"])
+            skeleton = yaml.safe_load(enrich_path.read_text(encoding="utf-8"))
+            skeleton["metadata"]["owner"] = "Jane Doe"
+            enrich_path.write_text(yaml.safe_dump(skeleton), encoding="utf-8")
+
+            out = Path(td) / "bundle.zip"
+            code = cli.main(["generate", str(FIXTURE), "--document", "technical",
+                            "--enrich", str(enrich_path), "--bundle", "-o", str(out),
+                            "--quiet"])
+            self.assertEqual(code, 0)
+            with zipfile.ZipFile(out) as zf:
+                names = set(zf.namelist())
+                self.assertIn("enrichment.yaml", names)
+                regenerated = yaml.safe_load(zf.read("enrichment.yaml").decode("utf-8"))
+                self.assertEqual(regenerated["metadata"]["owner"], "Jane Doe")
+                doc = json.loads(zf.read("technical.json").decode("utf-8"))
+                self.assertEqual(doc["metadata"]["owner"], "Jane Doe")
+
+    def test_default_bundle_filename_when_no_out_given(self):
+        with tempfile.TemporaryDirectory() as td:
+            import os
+            old_cwd = os.getcwd()
+            os.chdir(td)
+            try:
+                code = cli.main(["generate", str(FIXTURE), "--document", "technical",
+                                "--bundle", "--quiet"])
+                self.assertEqual(code, 0)
+                self.assertTrue(any(p.name.endswith("-documentation.zip") for p in Path(td).iterdir()))
+            finally:
+                os.chdir(old_cwd)
 
 
 class DocumentAllTest(unittest.TestCase):

@@ -7,9 +7,20 @@ from typing import Any, Optional
 from .schemas.model import SemanticModel
 
 
-def generate_enrichment_template(model: SemanticModel) -> str:
+def generate_enrichment_template(model: SemanticModel, previous: Optional[dict] = None) -> str:
     """Generate a template YAML string for the user to enrich report metadata.
-    
+
+    ``previous`` is the last-loaded enrichment dict (``load_enrichment``'s
+    return value), if any. Passing it back in is what makes this a *round
+    trip* rather than always emitting a blank skeleton: the report-level
+    metadata (owner, classification, ...), per-source latency, rules
+    suppression/severity overrides, and diff history have no home on
+    :class:`SemanticModel` at all — they only ever exist inside the
+    enrichment file — so without ``previous`` they'd reset to blank on every
+    regeneration. Measure/column descriptions and data-source auth/role
+    descriptions *do* have a model-side home (set by :func:`apply_enrichment`
+    before this is called), so those are always read live from ``model``.
+
     Lazily imports PyYAML to preserve the core's zero-dependency property.
     """
     try:
@@ -20,40 +31,58 @@ def generate_enrichment_template(model: SemanticModel) -> str:
             "Install with 'pip install PyYAML' or 'pip install pbicompass[enrich]'."
         )
 
+    prev = previous or {}
+    prev_meta = prev.get("metadata") if isinstance(prev.get("metadata"), dict) else {}
+    prev_ds_by_loc = {
+        d.get("location"): d for d in (prev.get("data_sources") or []) if isinstance(d, dict)
+    }
+    prev_roles_by_name = {
+        r.get("name"): r for r in (prev.get("roles") or []) if isinstance(r, dict)
+    }
+    prev_rules = prev.get("rules_config") if isinstance(prev.get("rules_config"), dict) else {}
+    prev_history = prev.get("history") if isinstance(prev.get("history"), dict) else {}
+
     data = {
         "metadata": {
-            "owner": model.meta.owner or "",
-            "refresh_schedule": model.meta.refresh_schedule or "",
-            "target_audience": model.meta.target_audience or "",
-            "version": model.meta.version or "1.0.0",
-            "status": model.meta.status or "Draft",
-            "author": "",
-            "reviewer": "",
-            "classification": "Internal",
-            "business_decision": "",
-            "requirements": "",
-            "security_notes": "",
-            "refresh_notes": "",
-            "deployment_notes": "",
-            "access_notes": "",
-            "glossary": "",
-            "assumptions": "",
-            "support_notes": "",
+            "owner": prev_meta.get("owner", ""),
+            "refresh_schedule": prev_meta.get("refresh_schedule", ""),
+            "target_audience": prev_meta.get("target_audience", ""),
+            "version": prev_meta.get("version", "1.0.0"),
+            "status": prev_meta.get("status", "Draft"),
+            "author": prev_meta.get("author", ""),
+            "reviewer": prev_meta.get("reviewer", ""),
+            "classification": prev_meta.get("classification", "Internal"),
+            "business_decision": prev_meta.get("business_decision", ""),
+            "requirements": prev_meta.get("requirements", ""),
+            "security_notes": prev_meta.get("security_notes", ""),
+            "refresh_notes": prev_meta.get("refresh_notes", ""),
+            "deployment_notes": prev_meta.get("deployment_notes", ""),
+            "access_notes": prev_meta.get("access_notes", ""),
+            "glossary": prev_meta.get("glossary", ""),
+            "assumptions": prev_meta.get("assumptions", ""),
+            "support_notes": prev_meta.get("support_notes", ""),
         },
         "data_sources": [
             {
                 "type": ds.type,
-                "location": ds.detail or ds.server or "",
-                "authentication_status": "Not specified",
-                "latency_minutes": 0,
+                "location": (ds.detail or ds.server or ""),
+                "authentication_status": ds.authentication_status
+                or prev_ds_by_loc.get(ds.detail or ds.server or "", {}).get(
+                    "authentication_status", "Not specified"
+                ),
+                "latency_minutes": prev_ds_by_loc.get(ds.detail or ds.server or "", {}).get(
+                    "latency_minutes", 0
+                ),
             }
             for ds in model.data_sources
         ],
         "roles": [
             {
                 "name": r.name,
-                "members_description": "",
-                "filter_logic_explanation": "",
+                "members_description": r.members_description
+                or prev_roles_by_name.get(r.name, {}).get("members_description", ""),
+                "filter_logic_explanation": r.filter_logic_explanation
+                or prev_roles_by_name.get(r.name, {}).get("filter_logic_explanation", ""),
             }
             for r in model.roles
         ],
@@ -69,16 +98,16 @@ def generate_enrichment_template(model: SemanticModel) -> str:
             for t in model.tables if any(not c.is_hidden for c in t.columns)
         },
         "rules_config": {
-            "suppressed_rules": [],
-            "severity_overrides": {},
+            "suppressed_rules": prev_rules.get("suppressed_rules", []),
+            "severity_overrides": prev_rules.get("severity_overrides", {}),
         },
         "history": {
-            "previous_fingerprint": "",
-            "previous_summary": "",
-            "score_history": []
+            "previous_fingerprint": prev_history.get("previous_fingerprint", ""),
+            "previous_summary": prev_history.get("previous_summary", ""),
+            "score_history": prev_history.get("score_history", []),
         }
     }
-    
+
     return yaml.safe_dump(data, sort_keys=False, default_flow_style=False, allow_unicode=True)
 
 
@@ -118,18 +147,17 @@ def apply_enrichment(model: SemanticModel, enrichment: dict) -> dict[str, Any]:
         "roles": {}
     }
     
-    # 1. Document/Report Metadata
+    # 1. Document/Report Metadata. These fields (owner, classification, ...)
+    # have no home on SemanticModel/ModelMeta — they're generator inputs
+    # (the same ones --owner/--author/etc. supply on the CLI), not parsed
+    # facts. The caller (CLI/service) merges ``overridden["metadata"]`` into
+    # its generator kwargs; here we only record *which* fields were
+    # human-supplied, since that list drives the provenance badges
+    # (``model.meta.overridden_fields`` -> ``DocMetadataCore.overridden_fields``
+    # -> ``render._shared.section_provenance``).
     meta = enrichment.get("metadata", {})
-    for k, v in meta.items():
-        if v:
-            overridden["metadata"][k] = v
-            # Update model metadata fields directly
-            if hasattr(model.meta, k):
-                setattr(model.meta, k, v)
-            if k == "version":
-                model.meta.version = v
-            elif k == "status":
-                model.meta.status = v
+    if isinstance(meta, dict):
+        overridden["metadata"] = {k: v for k, v in meta.items() if v}
     model.meta.overridden_fields = list(overridden["metadata"].keys())
 
     # 2. Measure overrides
@@ -138,7 +166,7 @@ def apply_enrichment(model: SemanticModel, enrichment: dict) -> dict[str, Any]:
         for m in model.all_measures():
             if m.name in meas_descs and meas_descs[m.name]:
                 m.description = meas_descs[m.name]
-                m.provenance = "human"
+                m.provenance = "Human-provided"
                 overridden["measures"].add(m.name)
 
     # 3. Column overrides
@@ -150,7 +178,7 @@ def apply_enrichment(model: SemanticModel, enrichment: dict) -> dict[str, Any]:
                 for c in t.columns:
                     if c.name in t_cols and t_cols[c.name]:
                         c.description = t_cols[c.name]
-                        c.provenance = "human"
+                        c.provenance = "Human-provided"
                         overridden["columns"].add(f"{t.name}[{c.name}]")
 
     # 4. Data source credentials & authentication status

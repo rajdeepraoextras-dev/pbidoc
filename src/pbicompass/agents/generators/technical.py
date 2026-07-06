@@ -30,6 +30,7 @@ from ...schemas.document import (
 )
 from ...schemas.model import SemanticModel
 from .. import audit_rules, io
+from ..critic import apply_critic_pass, apply_results
 from ..deterministic import (
     business_analyst_deterministic,
     data_modeler_deterministic,
@@ -293,11 +294,11 @@ def _semantic_model(model: SemanticModel, client, warn, col_descs: dict) -> Sema
                 
             used_by_text = "; ".join(parts) if parts else "not referenced — see unused assets"
             
-            prov = "extracted"
-            if getattr(c, "provenance", None) == "human":
-                prov = "human"
+            prov = "Extracted"
+            if getattr(c, "provenance", None) == "Human-provided":
+                prov = "Human-provided"
             elif (t.name, c.name) in col_descs:
-                prov = "ai"
+                prov = "AI-inferred"
             data_dictionary.append({
                 "table": t.name,
                 "column": c.name,
@@ -374,12 +375,18 @@ def _measure_catalog(model: SemanticModel, client, warn) -> MeasureCatalog:
             # unverified, hence the explicit Low confidence.
             entry.calculation_logic = entry.plain_english
             entry.confidence = "Low"
-        if getattr(measure, "provenance", None) == "human":
-            entry.provenance = "human"
+        if getattr(measure, "provenance", None) == "Human-provided":
+            # A human-supplied description (enrichment file, 5.1) is the
+            # business definition — it overrides the LLM/DAX-derived guess,
+            # which stays available as calculation_logic ("how it computes",
+            # distinct from "what it means").
+            entry.plain_english = measure.description
+            entry.confidence = ""
+            entry.provenance = "Human-provided"
         elif t:
-            entry.provenance = "ai"
+            entry.provenance = "AI-inferred"
         else:
-            entry.provenance = "extracted"
+            entry.provenance = "Extracted"
         entry.dependencies = measure_dependencies(measure.expression, measure_names)
         entry.used_on = usage.get(entry.name, [])
         tree_lines = build_measure_dependency_tree(entry.name, measure_deps_map, {entry.name})
@@ -571,6 +578,59 @@ def _health_and_recommendations(
     return dataclasses.asdict(health), [dataclasses.asdict(r) for r in recommendations], suppressed
 
 
+def _run_critic(doc: Document, model: SemanticModel, client, warn) -> None:
+    """5.3: one critic pass over every narrative prose field, applied
+    in place onto ``doc``. Only called when a client is available (offline
+    runs are unaffected — see the caller)."""
+    known_names = {t.name for t in model.tables}
+    known_names |= {c.name for t in model.tables for c in t.columns}
+    known_names |= {m.name for m in model.all_measures()}
+    known_names |= {p.display_name for p in model.pages}
+
+    triples: list[tuple[str, str, "callable"]] = []
+    es = doc.executive_summary
+
+    def _set_core_purpose(v: str) -> None:
+        es.core_purpose = v
+    triples.append(("executive_summary.core_purpose", es.core_purpose, _set_core_purpose))
+
+    for i, p in enumerate(es.pages):
+        def _set_page_summary(v: str, _p=p) -> None:
+            _p.summary = v
+        triples.append((f"executive_summary.pages[{i}].summary", p.summary, _set_page_summary))
+
+    for i, ve in enumerate(es.complex_visual_explainers):
+        def _set_how_to_read(v: str, _ve=ve) -> None:
+            _ve.how_to_read = v
+        triples.append((f"executive_summary.complex_visual_explainers[{i}].how_to_read",
+                        ve.how_to_read, _set_how_to_read))
+
+    def _set_sm_summary(v: str) -> None:
+        doc.semantic_model.summary = v
+    triples.append(("semantic_model.summary", doc.semantic_model.summary, _set_sm_summary))
+
+    for i, entry in enumerate(doc.measure_catalog.measures):
+        def _set_plain_english(v: str, _e=entry) -> None:
+            _e.plain_english = v
+        def _set_caveats(v: str, _e=entry) -> None:
+            _e.caveats = v
+        def _set_calc_logic(v: str, _e=entry) -> None:
+            _e.calculation_logic = v
+        triples.append((f"measure_catalog.measures[{i}].plain_english", entry.plain_english, _set_plain_english))
+        triples.append((f"measure_catalog.measures[{i}].caveats", entry.caveats, _set_caveats))
+        triples.append((f"measure_catalog.measures[{i}].calculation_logic",
+                        entry.calculation_logic, _set_calc_logic))
+
+    for i, note in enumerate(doc.tech_debt.notes):
+        def _set_note(v: str, _i=i) -> None:
+            doc.tech_debt.notes[_i] = v
+        triples.append((f"tech_debt.notes[{i}]", note, _set_note))
+
+    fields = [(loc, text) for loc, text, _ in triples]
+    results = apply_critic_pass(fields, client, known_names=known_names, warn=warn)
+    apply_results(triples, results)
+
+
 class TechnicalDocumentationGenerator:
     """Assembles the 17-section :class:`Document` — the original pbicompass
     documentation output, unchanged, for BI developers/data engineers/
@@ -666,4 +726,8 @@ class TechnicalDocumentationGenerator:
             health_score.get("overall", 0)
         )
         doc.metadata.score_trend = trend
+
+        if client is not None:
+            _run_critic(doc, model, client, warn)
+
         return doc

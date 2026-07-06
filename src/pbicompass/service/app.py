@@ -35,6 +35,7 @@ _CONTENT_TYPES = {
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "pdf": "application/pdf",
     "zip": "application/zip",
+    "yaml": "application/x-yaml; charset=utf-8",
 }
 _STATIC = Path(__file__).parent / "static"
 
@@ -213,6 +214,7 @@ def create_app(
         background_tasks: BackgroundTasks,
         file: UploadFile = File(...),
         rules_file: UploadFile | None = File(None),
+        enrichment_file: UploadFile | None = File(None),
         provider: str = Form("none"),
         model: str = Form("claude-opus-4-8"),
         effort: str = Form("high"),
@@ -280,8 +282,21 @@ def create_app(
                 out.write(await rules_file.read())
             rules_file_path = str(rules_path)
 
+        # Optional enrichment file (5.1) — same sandbox-scoped, shredded-on-
+        # cleanup handling as rules_file above. Unlike the CLI, the service
+        # never bootstraps a skeleton here: a job either brings its own
+        # enrichment file or doesn't, since there's no persistent path to
+        # write one back to between jobs.
+        enrichment_file_path: str | None = None
+        if enrichment_file is not None and enrichment_file.filename:
+            enrichment_path = sandbox.path("enrichment.yaml")
+            with open(enrichment_path, "wb") as out:
+                out.write(await enrichment_file.read())
+            enrichment_file_path = str(enrichment_path)
+
         options = {
             "rules_file_path": rules_file_path,
+            "enrichment_file_path": enrichment_file_path,
             "provider": provider, "model": model, "effort": effort,
             # BYOK: the caller's own provider key for this job only — never
             # logged, never persisted (the sandbox and job record hold no

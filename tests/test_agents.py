@@ -55,6 +55,8 @@ class FakeLLMClient:
                     for c in payload["columns"]
                 ]
             }
+        if "expert technical editor" in system:  # the critic pass (5.3)
+            return {"violations": []}
         raise AssertionError("unexpected system prompt")
 
 

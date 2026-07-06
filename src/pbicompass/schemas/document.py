@@ -46,7 +46,7 @@ class ExecutiveSummary:
     pages: list[PageSummary] = field(default_factory=list)
     navigation_guide: list[str] = field(default_factory=list)
     complex_visual_explainers: list[VisualExplainer] = field(default_factory=list)
-    provenance: str = "✨ AI-inferred"
+    provenance: str = "AI-inferred"
 
 
 # -- I. Document Metadata -----------------------------------------------------
@@ -85,7 +85,7 @@ class LineageArchitecture:
     lineage_svg: Optional[str] = None
     lineage_edges: list[dict[str, str]] = field(default_factory=list)
     data_sources_inventory: list[dict[str, Any]] = field(default_factory=list)
-    provenance: str = "⚙ Extracted"
+    provenance: str = "Extracted"
 
 
 # -- IV. Semantic Model -------------------------------------------------------
@@ -101,7 +101,7 @@ class SemanticModelDoc:
     # structured table/edge data for the model diagram
     tables: list[dict[str, Any]] = field(default_factory=list)          # {name, kind, columns, measures}
     relationship_edges: list[dict[str, Any]] = field(default_factory=list)  # {from, to, from_card, to_card, cross_filter, is_active}
-    provenance: str = "⚙ Extracted"
+    provenance: str = "Extracted"
 
 
 # -- V. Measure Catalog -------------------------------------------------------
@@ -126,7 +126,7 @@ class MeasureEntry:
 class MeasureCatalog:
     measures: list[MeasureEntry] = field(default_factory=list)
     dependency_svg: Optional[str] = None
-    provenance: str = "⚙ Extracted"
+    provenance: str = "Extracted"
 
 
 # -- VI. Security & Governance ------------------------------------------------
@@ -134,7 +134,7 @@ class MeasureCatalog:
 class SecurityGovernance:
     roles: list[dict[str, Any]] = field(default_factory=list)
     workspace_constraints: list[str] = field(default_factory=list)
-    provenance: str = "⚙ Extracted"
+    provenance: str = "Extracted"
 
 
 # -- VII. Tech Debt / Audit ---------------------------------------------------
@@ -145,7 +145,7 @@ class TechDebtAudit:
     notes: list[str] = field(default_factory=list)
     unused_assets: dict[str, Any] = field(default_factory=dict)
     suppressed_rules: list[str] = field(default_factory=list)
-    provenance: str = "⚙ Extracted"
+    provenance: str = "Extracted"
 
 
 @dataclass

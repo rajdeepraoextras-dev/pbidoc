@@ -32,6 +32,7 @@ from ._shared import html_table as _table
 from ._shared import html_todo as _todo
 from ._shared import is_local_path as _is_local_path
 from ._shared import non_data_note as _non_data_note
+from ._shared import section_provenance
 from ._shared import slicer_field_label as _slicer_label
 
 _FACT_FILL, _FACT_LINE = "#eef2ff", "#6366f1"
@@ -221,36 +222,17 @@ def render_html(
 
     o: list[str] = []
 
-    def _header_badge(section_num: int, default_prov: str) -> str:
-        fields_map = {
-            1: ["version", "status", "author", "reviewer", "classification", "target_audience", "refresh_schedule", "owner"],
-            2: ["business_decision"],
-            3: ["requirements"],
-            4: ["owner", "target_audience", "author"],
-            10: ["security_notes"],
-            11: ["refresh_notes"],
-            12: ["deployment_notes"],
-            13: ["access_notes"],
-            14: ["glossary"],
-            15: ["assumptions"],
-            17: ["support_notes"],
-            18: ["owner"]
-        }
-        prov = default_prov
-        if section_num in fields_map:
-            for f in fields_map[section_num]:
-                if f in getattr(md, "overridden_fields", []):
-                    prov = "👤 Human-provided"
-                    break
+    def _header_badge(section_num: int) -> str:
+        prov = section_provenance(section_num, md)
         cls = "extracted"
-        if "Human-provided" in prov:
+        if prov == "Human-provided":
             cls = "human-provided"
-        elif "AI-inferred" in prov:
+        elif prov == "AI-inferred":
             cls = "ai-inferred"
         return f' <span class="pill {cls}">{prov}</span>'
 
     # 1. Document Control
-    o.append(f'<h2 id="sec1">1. Document Control{_header_badge(1, "⚙ Extracted")}</h2>')
+    o.append(f'<h2 id="sec1">1. Document Control{_header_badge(1)}</h2>')
     doc_control = [
         ["Dashboard / Report Name", _e(md.report_name)],
         ["Source format", _e(md.source_format or "unknown")],
@@ -277,7 +259,7 @@ def render_html(
 
     # 2. Executive Summary
     es = doc.executive_summary
-    o.append(f'<h2 id="sec2">2. Executive Summary{_header_badge(2, "✨ AI-inferred")}</h2>')
+    o.append(f'<h2 id="sec2">2. Executive Summary{_header_badge(2)}</h2>')
     o.append('<div class="card-section">')
     o.append(_render_md(es.core_purpose))
     
@@ -294,7 +276,7 @@ def render_html(
         o.append(_todo("Specify the primary business decision this dashboard drives (e.g. weekly sales planning)."))
 
     # 3. Business Requirements
-    o.append(f'<h2 id="sec3">3. Business Requirements{_header_badge(3, "👤 Human-provided")}</h2>')
+    o.append(f'<h2 id="sec3">3. Business Requirements{_header_badge(3)}</h2>')
     if md.requirements:
         o.append('<div class="card-section">')
         for req in md.requirements.split('\n'):
@@ -305,7 +287,7 @@ def render_html(
         o.append(_todo("Business requirements have not yet been captured; confirm scope with the business owner."))
 
     # 4. Audience & Stakeholders
-    o.append(f'<h2 id="sec4">4. Audience &amp; Stakeholders{_header_badge(4, "👤 Human-provided")}</h2>')
+    o.append(f'<h2 id="sec4">4. Audience &amp; Stakeholders{_header_badge(4)}</h2>')
     o.append(_table(["Role", "Name / Group", "Access"], [
         ["Business Owner", _e(md.owner) if md.owner else '<span class="muted">—</span>', "Edit / sign-off"],
         ["Primary Users", _e(md.target_audience) if md.target_audience else '<span class="muted">—</span>', "View"],
@@ -315,7 +297,7 @@ def render_html(
 
     # 5. Data Sources
     ln = doc.lineage
-    o.append(f'<h2 id="sec5">5. Data Sources{_header_badge(5, "⚙ Extracted")}</h2>')
+    o.append(f'<h2 id="sec5">5. Data Sources{_header_badge(5)}</h2>')
     if ln.data_sources_inventory:
         rows = []
         for item in ln.data_sources_inventory:
@@ -369,7 +351,7 @@ def render_html(
 
     # 6. Data Model
     sm = doc.semantic_model
-    o.append('<h2 id="sec6">6. Data Model</h2>')
+    o.append(f'<h2 id="sec6">6. Data Model{_header_badge(6)}</h2>')
     for para in sm.summary.split("\n\n"):
         o.append(f"<p>{_e(para)}</p>")
     if sm.risks:
@@ -406,7 +388,7 @@ def render_html(
     o.append(_table(["Table", "Column", "Data Type", "Description", "Used by"], rows, row_ids=row_ids))
 
     # 7. Measures & Calculations (DAX Dictionary)
-    o.append('<h2 id="sec7">7. Measures &amp; Calculations (DAX Dictionary)</h2>')
+    o.append(f'<h2 id="sec7">7. Measures &amp; Calculations (DAX Dictionary){_header_badge(7)}</h2>')
     if doc.measure_catalog.dependency_svg:
         o.append("<h3>Measure dependency graph</h3>")
         o.append(doc.measure_catalog.dependency_svg)
@@ -447,7 +429,7 @@ def render_html(
                           f'<code>{highlight_dax(c.get("expression", ""))}</code>'] for c in doc.calculated_columns]))
 
     # 8. Report Pages & Visuals
-    o.append('<h2 id="sec8">8. Report Pages &amp; Visuals</h2>')
+    o.append(f'<h2 id="sec8">8. Report Pages &amp; Visuals{_header_badge(8)}</h2>')
     if es.complex_visual_explainers:
         o.append("<h3>How to read the key visuals</h3><ul>")
         for ex in es.complex_visual_explainers:
@@ -494,7 +476,7 @@ def render_html(
         o.append("</div>")
 
     # 9. Filters, Slicers & Navigation
-    o.append('<h2 id="sec9">9. Filters, Slicers &amp; Navigation</h2>')
+    o.append(f'<h2 id="sec9">9. Filters, Slicers &amp; Navigation{_header_badge(9)}</h2>')
     if doc.navigation_map_svg:
         o.append("<h3>Page Navigation Map</h3>")
         o.append(doc.navigation_map_svg)
@@ -509,7 +491,7 @@ def render_html(
     o.append(_todo("Detail bookmarks, button navigation logic, and the fields passed on each drill-through."))
     # 10. Row-Level Security
     sec = doc.security
-    o.append('<h2 id="sec10">10. Row-Level Security (RLS)</h2>')
+    o.append(f'<h2 id="sec10">10. Row-Level Security (RLS){_header_badge(10)}</h2>')
     if sec.roles:
         o.append("<h3>Roles definition</h3>")
         meta_rows = []
@@ -557,7 +539,7 @@ def render_html(
         o.append(_todo("Confirm each role was tested with 'View as role', and note any object-level security (OLS) rules."))
 
     # 11. Refresh, Gateway & Performance
-    o.append('<h2 id="sec11">11. Refresh, Gateway &amp; Performance</h2>')
+    o.append(f'<h2 id="sec11">11. Refresh, Gateway &amp; Performance{_header_badge(11)}</h2>')
     if md.refresh_schedule:
         o.append(f"<p><strong>Refresh schedule:</strong> {_e(md.refresh_schedule)}.</p>")
     if md.refresh_notes:
@@ -579,7 +561,7 @@ def render_html(
         o.append(_todo("Detail performance considerations and gateway configurations."))
 
     # 12. Deployment & Environment
-    o.append('<h2 id="sec12">12. Deployment &amp; Environment</h2>')
+    o.append(f'<h2 id="sec12">12. Deployment &amp; Environment{_header_badge(12)}</h2>')
     if md.deployment_notes:
         o.append('<div class="card-section">')
         for line in md.deployment_notes.split('\n'):
@@ -590,7 +572,7 @@ def render_html(
         o.append(_todo("Dev / Test / Production workspaces, app URLs, deployment method (pipeline/Git), and per-environment parameters."))
 
     # 13. Access & Permissions
-    o.append('<h2 id="sec13">13. Access &amp; Permissions</h2>')
+    o.append(f'<h2 id="sec13">13. Access &amp; Permissions{_header_badge(13)}</h2>')
     if md.access_notes:
         o.append('<div class="card-section">')
         for line in md.access_notes.split('\n'):
@@ -601,7 +583,7 @@ def render_html(
         o.append(_todo("Workspace roles and app access per group, with justification."))
 
     # 14. Glossary
-    o.append('<h2 id="sec14">14. Data Dictionary / Glossary</h2>')
+    o.append(f'<h2 id="sec14">14. Data Dictionary / Glossary{_header_badge(14)}</h2>')
     o.append('<p class="muted">Column-level data dictionary is in section 6. Business-term definitions belong below.</p>')
     if md.glossary:
         o.append('<div class="card-section">')
@@ -624,7 +606,7 @@ def render_html(
 
     # 15. Known Issues, Assumptions & Limitations
     td = doc.tech_debt
-    o.append('<h2 id="sec15">15. Known Issues, Assumptions &amp; Limitations</h2>')
+    o.append(f'<h2 id="sec15">15. Known Issues, Assumptions &amp; Limitations{_header_badge(15)}</h2>')
     for n in td.notes:
         o.append(f"<p>{_e(n)}</p>")
     if md.assumptions:
@@ -702,7 +684,7 @@ def render_html(
         o.append(_todo("Business assumptions and limitations (e.g. \"returns lag source by 1 day\") with impact and workaround."))
 
     # 16. Model Health & AI Recommendations
-    o.append('<h2 id="sec16">16. Model Health &amp; AI Recommendations</h2>')
+    o.append(f'<h2 id="sec16">16. Model Health &amp; AI Recommendations{_header_badge(16)}</h2>')
     audit_href = (sibling_hrefs or {}).get("audit")
     if audit_href:
         o.append(f'<p class="muted">Same deterministic rule engine as the full '
@@ -749,7 +731,7 @@ def render_html(
         o.append('<p class="muted">Not computed for this document.</p>')
 
     # 17. Support & Maintenance
-    o.append('<h2 id="sec17">17. Support &amp; Maintenance</h2>')
+    o.append(f'<h2 id="sec17">17. Support &amp; Maintenance{_header_badge(17)}</h2>')
     if md.owner:
         o.append(f"<p><strong>First-line contact:</strong> {_e(md.owner)}.</p>")
     if md.support_notes:
@@ -762,7 +744,7 @@ def render_html(
         o.append(_todo("Escalation contact, SLA for fixes, .pbix/.pbip backup location, and decommission criteria."))
 
     # 18. Appendix & Sign-off
-    o.append('<h2 id="sec18">18. Appendix &amp; Sign-off</h2>')
+    o.append(f'<h2 id="sec18">18. Appendix &amp; Sign-off{_header_badge(18)}</h2>')
     o.append("<p>The model diagram is in section 6. Attach wireframes/mockups and any source-to-target mapping here.</p>")
     
     developer_name = _e(md.owner) if md.owner else "TBC"
@@ -776,7 +758,7 @@ def render_html(
     o.append('<p class="caveat"><strong>Reminder:</strong> Obtain sign-off before sharing with stakeholders.</p>')
 
     # 19. Methodology & Guarantees
-    o.append('<h2 id="sec19">19. Methodology &amp; Guarantees <span class="pill extracted">⚙ Extracted</span></h2>')
+    o.append('<h2 id="sec19">19. Methodology &amp; Guarantees <span class="pill extracted">Extracted</span></h2>')
     o.append('<div class="card-section">')
     o.append('<p><strong>Parsed Artifacts:</strong> Power BI metadata (tables, columns, measures, relationships, visuals, and page layout layout tables). No customer database row-level data is ever parsed, read, or transmitted.</p>')
     o.append('<p><strong>AI Agents Used:</strong> PBICompass Engine v0.1.0 and prompt version 2026-07. Models called: Anthropic Claude, Google Gemini, Cohere. All operations run under zero-retention policies.</p>')

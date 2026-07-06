@@ -146,6 +146,66 @@ class ServiceTest(unittest.TestCase):
         self.assertEqual(job["status"], "done", job)
         self.assertTrue(any("Invalid TOML" in w for w in job.get("warnings", [])), job)
 
+    def test_enrichment_file_upload_applies_descriptions_and_round_trips(self):
+        # 5.1: an optional enrichment YAML upload overrides measure/column
+        # descriptions and metadata, and the regenerated skeleton (with the
+        # filled fields carried forward) comes back in the job's outputs.
+        import yaml
+
+        parsed = self.client.post(
+            "/jobs", files={"file": ("SampleSales.zip", _zip_fixture(), "application/zip")},
+            data={"provider": "none", "document_types": "technical"},
+        )
+        first_job = self._wait(parsed.json()["job_id"])
+        technical_json = self.client.get(
+            f"/jobs/{first_job['job_id']}/download", params={"format": "json"}
+        ).json()
+        first_measure = technical_json["measure_catalog"]["measures"][0]["name"]
+
+        enrichment_yaml = yaml.safe_dump({
+            "metadata": {"owner": "Jane Doe"},
+            "measure_descriptions": {first_measure: "A human-written definition."},
+        })
+        res = self.client.post(
+            "/jobs",
+            files={
+                "file": ("SampleSales.zip", _zip_fixture(), "application/zip"),
+                "enrichment_file": ("report.enrichment.yaml", enrichment_yaml, "application/x-yaml"),
+            },
+            data={"provider": "none", "document_types": "technical,audit"},
+        )
+        job = self._wait(res.json()["job_id"], timeout=30.0)
+        self.assertEqual(job["status"], "done", job)
+        self.assertIn("enrichment.yaml", job["formats"])
+
+        doc = self.client.get(
+            f"/jobs/{job['job_id']}/download", params={"format": "technical.json"}
+        ).json()
+        self.assertEqual(doc["metadata"]["owner"], "Jane Doe")
+        measure = next(m for m in doc["measure_catalog"]["measures"] if m["name"] == first_measure)
+        self.assertEqual(measure["plain_english"], "A human-written definition.")
+        self.assertEqual(measure["provenance"], "Human-provided")
+
+        regenerated = yaml.safe_load(self.client.get(
+            f"/jobs/{job['job_id']}/download", params={"format": "enrichment.yaml"}
+        ).text)
+        self.assertEqual(regenerated["metadata"]["owner"], "Jane Doe")
+        self.assertEqual(regenerated["measure_descriptions"][first_measure],
+                        "A human-written definition.")
+
+    def test_invalid_enrichment_file_warns_but_job_still_succeeds(self):
+        res = self.client.post(
+            "/jobs",
+            files={
+                "file": ("SampleSales.zip", _zip_fixture(), "application/zip"),
+                "enrichment_file": ("bad.yaml", b"key: [unterminated", "application/x-yaml"),
+            },
+            data={"provider": "none", "document_types": "technical"},
+        )
+        job = self._wait(res.json()["job_id"])
+        self.assertEqual(job["status"], "done", job)
+        self.assertTrue(any("continuing without enrichment" in w for w in job.get("warnings", [])), job)
+
     def test_omitted_document_types_yields_flat_keys(self):
         # Back-compat: no ``document_types`` field at all -> identical to today's
         # single-"technical"-document behavior, flat format keys.
@@ -206,13 +266,15 @@ class ServiceTest(unittest.TestCase):
         self.assertEqual(job["status"], "done", job)
         formats = set(job["formats"])
         # Per-doc-type outputs only for the two requested types, plus the
-        # job-wide hub + zip bundle (2.1/5.7) every multi-doc job also gets.
-        per_type = formats - {"index.html", "zip"}
+        # job-wide hub + zip bundle + model.json (2.1/5.7) every multi-doc
+        # job also gets.
+        per_type = formats - {"index.html", "zip", "model.json"}
         self.assertTrue(all(fmt.startswith(("audit.", "executive.")) for fmt in per_type), per_type)
         self.assertTrue(any(fmt.startswith("audit.") for fmt in formats))
         self.assertTrue(any(fmt.startswith("executive.") for fmt in formats))
         self.assertIn("index.html", formats)
         self.assertIn("zip", formats)
+        self.assertIn("model.json", formats)
 
     def test_multi_doc_hub_and_zip_have_working_relative_links(self):
         # P1: the hosted service, not just the CLI, must ship a working hub

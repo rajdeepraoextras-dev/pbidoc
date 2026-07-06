@@ -17,12 +17,16 @@ from ._shared import is_local_path as _is_local_path
 from ._shared import md_table as _table
 from ._shared import md_todo as _todo
 from ._shared import non_data_note as _non_data_note
+from ._shared import section_provenance
 from ._shared import slicer_field_label as _slicer_label
 
 
 def render_markdown(doc: Document) -> str:
     md = doc.metadata
     s = doc.stats
+
+    def _badge(section_num: int) -> str:
+        return f" [{section_provenance(section_num, md)}]"
     out: list[str] = [f"# {md.report_name} — Power BI Documentation\n"]
     subtitle_str = f"{md.target_audience or ''} · generated {_fmt_ts(md.generated_at)}"
     if getattr(md, "score_trend", None):
@@ -38,7 +42,7 @@ def render_markdown(doc: Document) -> str:
     )
 
     # 1. Document Control
-    out.append("## 1. Document Control\n")
+    out.append(f"## 1. Document Control{_badge(1)}\n")
     doc_control = [
         ["Dashboard / Report Name", md.report_name],
         ["Source format", md.source_format or "unknown"],
@@ -53,15 +57,19 @@ def render_markdown(doc: Document) -> str:
         ["Generated", _fmt_ts(md.generated_at)],
     ]
     out.append(_table(["Field", "Value"], doc_control))
-    
-    missing_doc_control = [f for f, v in [("Version", md.version), ("Status", md.status), ("Author", md.author), 
+
+    if getattr(doc, "changelog", None):
+        out.append("\n### Changes since last documentation\n")
+        out.append(doc.changelog + "\n")
+
+    missing_doc_control = [f for f, v in [("Version", md.version), ("Status", md.status), ("Author", md.author),
                                           ("Reviewer", md.reviewer), ("Classification", md.classification)] if not v]
     if missing_doc_control:
         out.append(_todo(f"Complete missing document control fields: {', '.join(missing_doc_control)}"))
 
     # 2. Executive Summary
     es = doc.executive_summary
-    out.append("\n## 2. Executive Summary\n")
+    out.append(f"\n## 2. Executive Summary{_badge(2)}\n")
     out.append(es.core_purpose + "\n")
     
     if md.business_decision:
@@ -75,14 +83,14 @@ def render_markdown(doc: Document) -> str:
         out.append(_todo("The primary business decision this dashboard drives (e.g. weekly sales planning)."))
 
     # 3. Business Requirements
-    out.append("\n## 3. Business Requirements\n")
+    out.append(f"\n## 3. Business Requirements{_badge(3)}\n")
     if md.requirements:
         out.append(md.requirements + "\n")
     else:
         out.append(_todo("Business requirements have not yet been captured; confirm scope with the business owner."))
 
     # 4. Audience & Stakeholders
-    out.append("\n## 4. Audience & Stakeholders\n")
+    out.append(f"\n## 4. Audience & Stakeholders{_badge(4)}\n")
     out.append(_table(["Role", "Name / Group", "Access"], [
         ["Business Owner", md.owner or "—", "Edit / sign-off"],
         ["Primary Users", md.target_audience or "—", "View"],
@@ -92,7 +100,7 @@ def render_markdown(doc: Document) -> str:
 
     # 5. Data Sources
     ln = doc.lineage
-    out.append("\n## 5. Data Sources\n")
+    out.append(f"\n## 5. Data Sources{_badge(5)}\n")
     if ln.data_sources_inventory:
         out.append(_table(["Source Type", "Location / Host", "Table(s) Fed", "Storage Mode", "Authentication", "Flag / Risk"],
                           [[item["type"], item["display_location"], ", ".join(item["tables_fed"]) or "—",
@@ -120,7 +128,7 @@ def render_markdown(doc: Document) -> str:
 
     # 6. Data Model
     sm = doc.semantic_model
-    out.append("\n## 6. Data Model\n")
+    out.append(f"\n## 6. Data Model{_badge(6)}\n")
     out.append(sm.summary + "\n")
     if sm.risks:
         out.append("\n**Relationships of note & risks:**\n")
@@ -142,7 +150,7 @@ def render_markdown(doc: Document) -> str:
                        for r in sm.data_dictionary]))
 
     # 7. Measures & Calculations
-    out.append("\n## 7. Measures & Calculations (DAX Dictionary)\n")
+    out.append(f"\n## 7. Measures & Calculations (DAX Dictionary){_badge(7)}\n")
     for m in doc.measure_catalog.measures:
         home = f" · {m.table}" if m.table else ""
         cat = f" · _{m.category}_" if m.category else ""
@@ -172,7 +180,7 @@ def render_markdown(doc: Document) -> str:
                            for c in doc.calculated_columns]))
 
     # 8. Report Pages & Visuals
-    out.append("\n## 8. Report Pages & Visuals\n")
+    out.append(f"\n## 8. Report Pages & Visuals{_badge(8)}\n")
     if es.complex_visual_explainers:
         out.append("**How to read the key visuals**\n")
         for ex in es.complex_visual_explainers:
@@ -206,7 +214,7 @@ def render_markdown(doc: Document) -> str:
             out.append(f"_{_non_data_note(p['decorative_count'])}_\n")
 
     # 9. Filters, Slicers & Navigation
-    out.append("\n## 9. Filters, Slicers & Navigation\n")
+    out.append(f"\n## 9. Filters, Slicers & Navigation{_badge(9)}\n")
     if doc.navigation_edges:
         out.append("\n**Page navigation connection list**\n")
         out.append(_table(["From Page", "To Page", "Trigger Label", "Link Type"],
@@ -224,7 +232,7 @@ def render_markdown(doc: Document) -> str:
 
     # 10. RLS
     sec = doc.security
-    out.append("\n## 10. Row-Level Security (RLS)\n")
+    out.append(f"\n## 10. Row-Level Security (RLS){_badge(10)}\n")
     if sec.roles:
         out.append("\n### Roles definition\n")
         meta_rows = []
@@ -269,7 +277,7 @@ def render_markdown(doc: Document) -> str:
         out.append(_todo('Confirm each role was tested with "View as role", and note any object-level security.'))
 
     # 11. Refresh, Gateway & Performance
-    out.append("\n## 11. Refresh, Gateway & Performance\n")
+    out.append(f"\n## 11. Refresh, Gateway & Performance{_badge(11)}\n")
     if md.refresh_schedule:
         out.append(f"**Refresh schedule:** {md.refresh_schedule}.\n")
     if md.refresh_notes:
@@ -286,21 +294,21 @@ def render_markdown(doc: Document) -> str:
         out.append(_todo("Detail performance considerations and gateway configurations."))
         
     # 12. Deployment
-    out.append("\n## 12. Deployment & Environment\n")
+    out.append(f"\n## 12. Deployment & Environment{_badge(12)}\n")
     if md.deployment_notes:
         out.append(md.deployment_notes + "\n")
     else:
         out.append(_todo("Dev / Test / Production workspaces, app URLs, deployment method, per-environment parameters."))
         
     # 13. Access & Permissions
-    out.append("\n## 13. Access & Permissions\n")
+    out.append(f"\n## 13. Access & Permissions{_badge(13)}\n")
     if md.access_notes:
         out.append(md.access_notes + "\n")
     else:
         out.append(_todo("Workspace roles and app access per group, with justification."))
         
     # 14. Glossary
-    out.append("\n## 14. Data Dictionary / Glossary\n")
+    out.append(f"\n## 14. Data Dictionary / Glossary{_badge(14)}\n")
     out.append("_Column-level data dictionary is in section 6._\n")
     if md.glossary:
         out.append(md.glossary + "\n")
@@ -318,7 +326,7 @@ def render_markdown(doc: Document) -> str:
 
     # 15. Known Issues
     td = doc.tech_debt
-    out.append("\n## 15. Known Issues, Assumptions & Limitations\n")
+    out.append(f"\n## 15. Known Issues, Assumptions & Limitations{_badge(15)}\n")
     for n in td.notes:
         out.append(f"- {n}")
     if md.assumptions:
@@ -388,7 +396,7 @@ def render_markdown(doc: Document) -> str:
         out.append(_todo("Business assumptions and limitations with impact and workaround."))
         
     # 16. Model Health & AI Recommendations
-    out.append("\n## 16. Model Health & AI Recommendations\n")
+    out.append(f"\n## 16. Model Health & AI Recommendations{_badge(16)}\n")
     hs = doc.health_score or {}
     if hs:
         out.append(f"**Health Score: {hs.get('overall', 0)} / 100 ({hs.get('band', '')})**\n")
@@ -424,7 +432,7 @@ def render_markdown(doc: Document) -> str:
         out.append("_Not computed for this document._\n")
 
     # 17. Support & Maintenance
-    out.append("\n## 17. Support & Maintenance\n")
+    out.append(f"\n## 17. Support & Maintenance{_badge(17)}\n")
     if md.owner:
         out.append(f"**First-line contact:** {md.owner}.\n")
     if md.support_notes:
@@ -433,7 +441,7 @@ def render_markdown(doc: Document) -> str:
         out.append(_todo("Escalation contact, SLA, backup location, decommission criteria."))
 
     # 18. Appendix & Sign-off
-    out.append("\n## 18. Appendix & Sign-off\n")
+    out.append(f"\n## 18. Appendix & Sign-off{_badge(18)}\n")
     out.append("The model diagram is in section 6.\n")
     developer_name = md.owner if md.owner else "TBC"
     generated_date = (md.generated_at or "")[:10]
@@ -446,7 +454,7 @@ def render_markdown(doc: Document) -> str:
     out.append("\n**Reminder:** Obtain sign-off before sharing with stakeholders.\n")
 
     # 19. Methodology & Guarantees
-    out.append("\n## 19. Methodology & Guarantees [⚙ Extracted]\n")
+    out.append("\n## 19. Methodology & Guarantees [Extracted]\n")
     out.append("- **Parsed Artifacts:** Power BI metadata (tables, columns, measures, relationships, visuals, and page layout layout tables). No customer database row-level data is ever parsed, read, or transmitted.\n")
     out.append("- **AI Agents Used:** PBICompass Engine v0.1.0 and prompt version 2026-07. Models called: Anthropic Claude, Google Gemini, Cohere. All operations run under zero-retention policies.\n")
     out.append("- **Guarantees:** 100% offline-ready deliverables, zero-CDNs, zero telemetries, and fully reproducible scoring metrics backed by deterministic compliance checking rules.\n")

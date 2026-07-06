@@ -98,6 +98,21 @@ class HtmlRenderTest(unittest.TestCase):
         for banned in ("fonts.googleapis.com", "fonts.gstatic.com"):
             self.assertNotIn(banned, self.html)
 
+    def test_no_provenance_icons(self):
+        # 5.6: provenance badges are plain text ("Extracted"/"AI-inferred"/
+        # "Human-provided") — no glyph prefix.
+        for icon in ("⚙", "✨", "\U0001F464"):  # gear, sparkles, bust
+            self.assertNotIn(icon, self.html)
+
+    def test_every_section_has_exactly_one_provenance_badge(self):
+        # 5.6: all 19 H2 sections carry a badge, not just the first five.
+        pills = re.findall(r'<h2 id="sec(\d+)">.*?<span class="pill ([\w-]+)">([\w-]+)</span></h2>', self.html)
+        found = {int(n) for n, _, _ in pills}
+        self.assertEqual(found, set(range(1, 20)))
+        for _, cls, label in pills:
+            self.assertIn(label, ("Extracted", "AI-inferred", "Human-provided"))
+            self.assertEqual(cls, label.lower())
+
     def test_dark_mode_toggle_and_mobile_toc_present(self):
         # 2.5/2.9: every HTML doc ships a theme toggle and a mobile
         # hamburger — via the shared shell, so this covers all four
@@ -261,6 +276,40 @@ class DocxRenderTest(unittest.TestCase):
             self.assertIn("Orphan Margin", document)
             self.assertIn("SUMX", document)  # raw DAX preserved
             self.assertIn('w:pStyle w:val="Heading1"', document)  # navigable headings
+
+    def test_no_provenance_icons(self):
+        # 5.6: DOCX carries the same plain-text badges as HTML/Markdown.
+        with tempfile.TemporaryDirectory() as td:
+            out = render_docx(_doc(), Path(td) / "report.docx")
+            with zipfile.ZipFile(out) as zf:
+                document = zf.read("word/document.xml").decode("utf-8")
+        for icon in ("⚙", "✨", "\U0001F464"):
+            self.assertNotIn(icon, document)
+        for label in ("[Extracted]", "[AI-inferred]", "[Human-provided]"):
+            self.assertIn(label, document)
+
+
+class MarkdownRenderTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.md = render_markdown(_doc())
+
+    def test_all_sections_present_in_order(self):
+        positions = [self.md.find(t) for t in _SECTION_TITLES]
+        self.assertNotIn(-1, positions)
+        self.assertEqual(positions, sorted(positions))
+
+    def test_no_provenance_icons(self):
+        # 5.6: Markdown carries the same plain-text badges as HTML/DOCX.
+        for icon in ("⚙", "✨", "\U0001F464"):
+            self.assertNotIn(icon, self.md)
+
+    def test_every_section_has_exactly_one_provenance_badge(self):
+        pills = re.findall(r"## (\d+)\. .*? \[([\w-]+)\]", self.md)
+        found = {int(n) for n, _ in pills}
+        self.assertEqual(found, set(range(1, 20)))
+        for _, label in pills:
+            self.assertIn(label, ("Extracted", "AI-inferred", "Human-provided"))
 
 
 class PandocAdapterTest(unittest.TestCase):
