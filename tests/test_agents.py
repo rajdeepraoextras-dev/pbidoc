@@ -376,6 +376,51 @@ class SandboxedLlmCacheTest(unittest.TestCase):
         self.assertFalse(sandbox.dir.exists(), "sandbox directory survived cleanup")
 
 
+class StructuredOutputSchemaTest(unittest.TestCase):
+    """Every schema handed to an LLM must set ``additionalProperties: False``
+    on every object node, recursively — OpenAI's strict structured-output
+    mode (used by :class:`MeshAPIClient`) 400s on any schema that doesn't
+    ("'additionalProperties' is required to be supplied and to be false"),
+    even though Anthropic/Gemini/Cohere are all lenient enough that a gap
+    goes unnoticed there. Regression: ``critic.py``'s ``CRITIC_SCHEMA`` was
+    missing it at both the root and the nested ``violations`` items object —
+    every schema in ``io.py`` already had it (per that module's own stated
+    invariant), but ``CRITIC_SCHEMA`` lives in a different module and was
+    overlooked."""
+
+    @staticmethod
+    def _missing_additional_properties(schema, path: str = "root") -> list[str]:
+        problems: list[str] = []
+        if isinstance(schema, dict):
+            if schema.get("type") == "object" and schema.get("additionalProperties") is not False:
+                problems.append(path)
+            for key, value in schema.items():
+                problems.extend(StructuredOutputSchemaTest._missing_additional_properties(value, f"{path}.{key}"))
+        elif isinstance(schema, list):
+            for i, value in enumerate(schema):
+                problems.extend(StructuredOutputSchemaTest._missing_additional_properties(value, f"{path}[{i}]"))
+        return problems
+
+    def test_every_agent_schema_sets_additional_properties_false(self):
+        from pbicompass.agents import io
+        from pbicompass.agents.critic import CRITIC_SCHEMA
+
+        schemas = {
+            "BUSINESS_ANALYST_SCHEMA": io.BUSINESS_ANALYST_SCHEMA,
+            "DAX_TRANSLATOR_SCHEMA": io.DAX_TRANSLATOR_SCHEMA,
+            "DATA_MODELER_SCHEMA": io.DATA_MODELER_SCHEMA,
+            "COLUMN_DESCRIBER_SCHEMA": io.COLUMN_DESCRIBER_SCHEMA,
+            "AUDIT_NARRATOR_SCHEMA": io.AUDIT_NARRATOR_SCHEMA,
+            "EXECUTIVE_WRITER_SCHEMA": io.EXECUTIVE_WRITER_SCHEMA,
+            "USER_GUIDE_WRITER_SCHEMA": io.USER_GUIDE_WRITER_SCHEMA,
+            "CRITIC_SCHEMA": CRITIC_SCHEMA,
+        }
+        for name, schema in schemas.items():
+            with self.subTest(schema=name):
+                problems = self._missing_additional_properties(schema)
+                self.assertEqual(problems, [], f"{name} is missing additionalProperties: False at {problems}")
+
+
 class ClientFactoryTest(unittest.TestCase):
     def test_offline_returns_none(self):
         from pbicompass.agents.llm import get_client

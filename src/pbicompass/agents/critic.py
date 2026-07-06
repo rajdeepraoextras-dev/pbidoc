@@ -53,11 +53,13 @@ problems; most fields will have none.
 
 CRITIC_SCHEMA = {
     "type": "object",
+    "additionalProperties": False,
     "properties": {
         "violations": {
             "type": "array",
             "items": {
                 "type": "object",
+                "additionalProperties": False,
                 "properties": {
                     "location": {"type": "string", "description": "The field's location label, copied from the input."},
                     "quote": {"type": "string"},
