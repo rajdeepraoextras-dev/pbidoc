@@ -7,6 +7,7 @@ network is required.
 from __future__ import annotations
 
 import json
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -24,7 +25,7 @@ class FakeLLMClient:
     def __init__(self):
         self.calls = 0
 
-    def complete_json(self, system: str, user: str, schema: dict) -> dict:
+    def complete_json(self, system: str, user: str, schema: dict, *, effort: str | None = None) -> dict:
         self.calls += 1
         if "Business Analyst" in system or "BI consultant" in system:
             return {
@@ -61,7 +62,7 @@ class FakeLLMClient:
 
 
 class FailingClient:
-    def complete_json(self, system: str, user: str, schema: dict) -> dict:
+    def complete_json(self, system: str, user: str, schema: dict, *, effort: str | None = None) -> dict:
         raise RuntimeError("boom")
 
 
@@ -189,7 +190,7 @@ class _BusinessAnalystOneBatchFailsClient:
         self.poison_title = poison_title
         self.calls = 0
 
-    def complete_json(self, system: str, user: str, schema: dict) -> dict:
+    def complete_json(self, system: str, user: str, schema: dict, *, effort: str | None = None) -> dict:
         self.calls += 1
         if "Business Analyst" not in system and "BI consultant" not in system:
             raise RuntimeError("this fake only supports the Business Analyst agent")
@@ -259,6 +260,122 @@ class DaxTranslatorUnitTest(unittest.TestCase):
         self.assertEqual(cat, "Time-Intelligence")
 
 
+class _FakeAllAgentsClient:
+    """Answers every agent prompt used across all four document types (Phase
+    0's shared ``JobAIContext`` needs one client that survives being handed
+    to ``build_job_context`` and then every ``DOCUMENT_TYPES`` generator in
+    turn) — tracks DAX Translator calls separately from the total so a test
+    can prove it only ever runs once per job, not once per document type."""
+
+    def __init__(self):
+        self.calls = 0
+        self.dax_calls = 0
+
+    def complete_json(self, system: str, user: str, schema: dict, *, effort: str | None = None) -> dict:
+        self.calls += 1
+        if "senior DAX developer" in system or "DAX measures" in system:
+            self.dax_calls += 1
+            payload = json.loads(user)
+            return {
+                "translations": [
+                    {"name": m["name"], "plain_english": "FAKE_TX",
+                     "calculation_logic": "FAKE_CALC", "caveats": "",
+                     "category": "Other", "confidence": "High"}
+                    for m in payload["measures"]
+                ]
+            }
+        if "Business Analyst" in system or "BI consultant" in system:
+            return {
+                "core_purpose": "FAKE_PURPOSE",
+                "pages": [{"page_title": "P1", "summary": "S1"}],
+                "navigation_guide": [],
+                "complex_visual_explainers": [],
+            }
+        if "data-modeling" in system:
+            return {"summary": "FAKE_MODEL", "risks": []}
+        if "description for every column" in system or "Column Describer" in system:
+            payload = json.loads(user)
+            return {
+                "columns": [
+                    {"table": c["table"], "column": c["column"], "description": "FAKE_COLUMN_DESC"}
+                    for c in payload["columns"]
+                ]
+            }
+        if "Audit & Health Report" in system:
+            return {"narrative_overview": "FAKE_NARRATIVE_OVERVIEW"}
+        if "executive summary" in system:
+            return {
+                "business_purpose": "FAKE_BUSINESS_PURPOSE",
+                "business_value": "FAKE_BUSINESS_VALUE",
+                "maintenance_overview": "FAKE_MAINTENANCE_OVERVIEW",
+            }
+        if "Business User Guide" in system:
+            payload = json.loads(user)
+            return {
+                "introduction": "FAKE_INTRODUCTION",
+                "pages": [
+                    {"page_title": p["page_title"], "purpose": "FAKE_PURPOSE",
+                     "common_scenarios": ["FAKE_SCENARIO"]}
+                    for p in payload["pages"]
+                ],
+            }
+        if "expert technical editor" in system:  # the critic pass (5.3)
+            return {"violations": []}
+        raise AssertionError(f"unexpected system prompt: {system[:80]!r}")
+
+
+class SharedJobContextTest(unittest.TestCase):
+    """Phase 0 (``AI_NATIVE_PLAN.md``): ``build_job_context`` runs the DAX
+    Translator once for the whole job; every ``DOCUMENT_TYPES`` generator
+    given that same ``ai_context`` must consume its ``.translations``
+    instead of re-calling the agent — previously up to 3x redundant spend
+    in a ``--document all`` job (technical's Measure Catalog, executive's
+    Key KPIs, the user guide's glossary each called it independently)."""
+
+    def test_dax_translator_runs_once_across_all_document_types(self):
+        from pbicompass.agents.context import build_job_context
+        from pbicompass.agents.generators import DOCUMENT_TYPES
+
+        model = detect_and_parse(FIXTURE)
+        client = _FakeAllAgentsClient()
+        warn = lambda _msg: None  # noqa: E731
+
+        ai_context = build_job_context(model, client, warn)
+        calls_after_context_build = client.dax_calls
+        self.assertGreaterEqual(calls_after_context_build, 1)
+
+        for generator in DOCUMENT_TYPES.values():
+            generator.generate(model, client, ai_context=ai_context, on_warning=warn)
+
+        # Every document type consumed the shared translations — no generator
+        # made its own additional DAX Translator call.
+        self.assertEqual(client.dax_calls, calls_after_context_build)
+
+
+class SandboxedLlmCacheTest(unittest.TestCase):
+    """Phase 0: the hosted service points the LLM response cache at a file
+    inside the job's own sandbox (``JobAIContext.cache_path``) rather than
+    the ``PBICOMPASS_LLM_CACHE`` env var — avoids a race between concurrent
+    jobs in the same worker process, and the cache file is shredded with
+    everything else in the sandbox when the job ends."""
+
+    def test_cache_file_lives_under_the_sandbox_and_is_shredded_after(self):
+        from pbicompass.agents.context import build_job_context
+        from pbicompass.service.sandbox import JobSandbox
+
+        sandbox = JobSandbox("test-job", root=tempfile.mkdtemp(prefix="pbicompass_test_sbroot_"))
+        cache_path = sandbox.path("llm_cache.db")
+        try:
+            model = detect_and_parse(FIXTURE)
+            client = FakeLLMClient()
+            build_job_context(model, client, lambda _msg: None, cache_path=str(cache_path))
+            self.assertTrue(cache_path.exists(), "cache file was not created inside the sandbox")
+        finally:
+            sandbox.cleanup()
+        self.assertFalse(cache_path.exists(), "cache file survived sandbox cleanup")
+        self.assertFalse(sandbox.dir.exists(), "sandbox directory survived cleanup")
+
+
 class ClientFactoryTest(unittest.TestCase):
     def test_offline_returns_none(self):
         from pbicompass.agents.llm import get_client
@@ -309,6 +426,64 @@ class ClientFactoryTest(unittest.TestCase):
 
         out = client.complete_json("sys", "user", {"type": "object"})
         self.assertEqual(out, {"ok": True})
+
+    def test_meshapi_routes_and_needs_package(self):
+        from pbicompass.agents.llm import get_client
+        try:
+            import openai  # noqa: F401
+            self.skipTest("openai installed; ImportError path not exercised")
+        except ImportError:
+            # Routes to MeshAPI (not ValueError) even when a Claude model id
+            # (no "provider/" prefix) is passed — falls back to the MeshAPI
+            # default instead.
+            with self.assertRaises(ImportError):
+                get_client("meshapi", model="claude-opus-4-8")
+            with self.assertRaises(ImportError):
+                get_client("mesh", model="anthropic/claude-opus-4-8")
+
+    def test_meshapi_maps_effort_and_parses_response(self):
+        # Stub out the 'openai' package (it may not be installed in this
+        # environment — MeshAPI is deliberately implemented on top of the
+        # official OpenAI SDK pointed at MeshAPI's base URL) so
+        # MeshAPIClient's lazy import resolves to a fake client we control,
+        # mirroring the Cohere content-parsing regression test above.
+        import sys
+        from types import ModuleType, SimpleNamespace
+        from unittest.mock import patch
+
+        fake_response = SimpleNamespace(
+            choices=[SimpleNamespace(finish_reason="stop",
+                                      message=SimpleNamespace(content='{"ok": true}'))],
+            usage=SimpleNamespace(prompt_tokens=10, completion_tokens=5),
+        )
+        captured: dict = {}
+
+        class _FakeCompletions:
+            def create(self, **kwargs):
+                captured.update(kwargs)
+                return fake_response
+
+        class _FakeChat:
+            completions = _FakeCompletions()
+
+        class _FakeOpenAI:
+            def __init__(self, **kwargs):
+                captured["client_kwargs"] = kwargs
+                self.chat = _FakeChat()
+
+        fake_module = ModuleType("openai")
+        fake_module.OpenAI = _FakeOpenAI
+
+        with patch.dict(sys.modules, {"openai": fake_module}):
+            from pbicompass.agents.llm import MeshAPIClient
+            client = MeshAPIClient(model="anthropic/claude-opus-4-8", api_key="rsk_test", effort="xhigh")
+            out = client.complete_json("sys", "user", {"type": "object"})
+
+        self.assertEqual(out, {"ok": True})
+        # xhigh has no MeshAPI equivalent — maps down to its ceiling, "high".
+        self.assertEqual(captured["reasoning_effort"], "high")
+        self.assertEqual(captured["model"], "anthropic/claude-opus-4-8")
+        self.assertEqual(client.last_usage, {"input_tokens": 10, "output_tokens": 5})
 
     def test_gemini_schema_strips_additional_properties(self):
         from pbicompass.agents.llm import _gemini_schema

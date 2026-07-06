@@ -107,6 +107,9 @@ PYTHONPATH=src python -m pbicompass generate path/to/Project.pbip -o report.docu
 PYTHONPATH=src python -m pbicompass generate path/to/Project.pbip --provider anthropic -o report.md   # ANTHROPIC_API_KEY
 PYTHONPATH=src python -m pbicompass generate path/to/Project.pbip --provider gemini    -o report.md   # GEMINI_API_KEY
 PYTHONPATH=src python -m pbicompass generate path/to/Project.pbip --provider cohere    -o report.md   # COHERE_API_KEY
+
+# Or one key for any of 1000+ models via https://developers.meshapi.ai (model ids are "provider/model-name"):
+PYTHONPATH=src python -m pbicompass generate path/to/Project.pbip --provider meshapi --model anthropic/claude-opus-4-8 -o report.md   # MESHAPI_API_KEY
 ```
 
 Output format is inferred from the `-o` extension (or forced with `--format`):

@@ -46,7 +46,7 @@ class FakeAuditNarratorClient:
     def __init__(self):
         self.calls = 0
 
-    def complete_json(self, system: str, user: str, schema: dict) -> dict:
+    def complete_json(self, system: str, user: str, schema: dict, *, effort: str | None = None) -> dict:
         self.calls += 1
         if "Audit & Health Report" in system:
             return {"narrative_overview": "FAKE_NARRATIVE_OVERVIEW"}
@@ -63,7 +63,7 @@ class FakeExecutiveWriterClient:
     def __init__(self):
         self.calls = 0
 
-    def complete_json(self, system: str, user: str, schema: dict) -> dict:
+    def complete_json(self, system: str, user: str, schema: dict, *, effort: str | None = None) -> dict:
         self.calls += 1
         if "executive summary" in system:
             return {
@@ -88,7 +88,7 @@ class FakeExecutiveWriterClient:
 
 
 class FailingClient:
-    def complete_json(self, system: str, user: str, schema: dict) -> dict:
+    def complete_json(self, system: str, user: str, schema: dict, *, effort: str | None = None) -> dict:
         raise RuntimeError("boom")
 
 
@@ -298,7 +298,7 @@ class FakeUserGuideWriterClient:
     def __init__(self):
         self.calls = 0
 
-    def complete_json(self, system: str, user: str, schema: dict) -> dict:
+    def complete_json(self, system: str, user: str, schema: dict, *, effort: str | None = None) -> dict:
         self.calls += 1
         if "Business User Guide" in system:
             import json as _json

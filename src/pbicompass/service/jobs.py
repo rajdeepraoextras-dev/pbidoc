@@ -38,6 +38,8 @@ class Job:
     error: Optional[str] = None  # content-free message only
     formats: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)  # e.g. LLM engine fell back to offline
+    # Content-free AI spend telemetry (Phase 0): {agent_name: {calls, input_tokens, output_tokens}}.
+    usage: dict = field(default_factory=dict)
 
 
 class JobStore:
@@ -65,7 +67,8 @@ class JobStore:
                 job.status = JobStatus.PROCESSING
                 job.started_at = time.time()
 
-    def mark_done(self, job_id: str, formats: list[str], warnings: list[str] | None = None) -> None:
+    def mark_done(self, job_id: str, formats: list[str], warnings: list[str] | None = None,
+                  usage: dict | None = None) -> None:
         with self._lock:
             if job := self._jobs.get(job_id):
                 job.status = JobStatus.DONE
@@ -73,6 +76,8 @@ class JobStore:
                 job.formats = formats
                 if warnings:
                     job.warnings = warnings
+                if usage:
+                    job.usage = usage
 
     def mark_failed(self, job_id: str, message: str) -> None:
         with self._lock:
@@ -134,6 +139,7 @@ class JobStore:
             "error": job.error,
             "formats": job.formats,
             "warnings": job.warnings,
+            "usage": job.usage,
         }
         if job.status is JobStatus.DONE:
             payload["downloads"] = {

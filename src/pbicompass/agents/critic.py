@@ -20,10 +20,13 @@ labelled text.
 from __future__ import annotations
 
 import re
-from typing import Callable, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 
 from .generators.base import call_llm
 from .llm import LLMClient
+
+if TYPE_CHECKING:
+    from .context import JobAIContext
 
 STYLE_RULES = """
 Editorial guidelines for clean enterprise documentation:
@@ -107,6 +110,7 @@ def apply_critic_pass(
     *,
     known_names: Optional[set[str]] = None,
     warn: Optional[Callable[[str], None]] = None,
+    ai_context: Optional["JobAIContext"] = None,
 ) -> dict[str, str]:
     """Run the critic over ``[(location, text), ...]``. Returns
     ``{location: corrected_text}`` for every location whose text changed —
@@ -137,6 +141,7 @@ def apply_critic_pass(
         try:
             response = call_llm(
                 client, CRITIC_SYSTEM, {"fields": working}, CRITIC_SCHEMA, warn, "Critic",
+                ai_context=ai_context,
             )
         except Exception as exc:  # pragma: no cover - defensive, mirrors call_llm's own contract
             warn(f"Critic: LLM call failed, skipping style pass ({exc})")

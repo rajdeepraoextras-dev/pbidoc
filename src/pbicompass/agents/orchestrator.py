@@ -15,6 +15,7 @@ from typing import Callable, Optional
 
 from ..schemas.document import Document
 from ..schemas.model import SemanticModel
+from .context import JobAIContext
 from .generators.technical import TechnicalDocumentationGenerator
 from .llm import LLMClient
 
@@ -44,11 +45,14 @@ def generate_document(
     glossary: Optional[str] = None,
     assumptions: Optional[str] = None,
     support_notes: Optional[str] = None,
+    ai_context: Optional[JobAIContext] = None,
 ) -> Document:
     """Assemble the seven-section :class:`Document` from a parsed model.
 
     Pass an ``LLMClient`` to use Claude for the prose agents; omit it (or pass
-    ``None``) to run the fully deterministic offline pipeline.
+    ``None``) to run the fully deterministic offline pipeline. ``ai_context``
+    (Phase 0) forwards a job-shared :class:`JobAIContext`; omit it (or pass
+    ``None``) and the generator builds its own on demand.
     """
     return TechnicalDocumentationGenerator.generate(
         model, client,
@@ -59,4 +63,5 @@ def generate_document(
         refresh_notes=refresh_notes, deployment_notes=deployment_notes,
         access_notes=access_notes, glossary=glossary,
         assumptions=assumptions, support_notes=support_notes,
+        ai_context=ai_context,
     )

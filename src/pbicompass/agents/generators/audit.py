@@ -14,6 +14,7 @@ from typing import Optional
 from ...schemas.audit_document import AuditDocument
 from .. import audit_rules
 from .. import io
+from ..context import JobAIContext
 from ..critic import apply_critic_pass, apply_results
 from ..llm import LLMClient
 from .base import Warn, build_core_metadata, call_llm
@@ -47,7 +48,7 @@ def _deterministic_overview(
     return " ".join(parts)
 
 
-def _run_critic(doc: AuditDocument, model, client, warn: Warn) -> None:
+def _run_critic(doc: AuditDocument, model, client, warn: Warn, ai_context: Optional[JobAIContext]) -> None:
     """5.3: one critic pass over the audit doc's narrative fields. Findings'
     ``detail`` text is deterministic-template fact, not free LLM prose —
     only ``narrative_overview`` and the recommendation write-ups go through
@@ -73,7 +74,7 @@ def _run_critic(doc: AuditDocument, model, client, warn: Warn) -> None:
         triples.append((f"recommendations[{i}].expected_benefit", rec.expected_benefit, _set_benefit))
 
     fields = [(loc, text) for loc, text, _ in triples]
-    results = apply_critic_pass(fields, client, known_names=known_names, warn=warn)
+    results = apply_critic_pass(fields, client, known_names=known_names, warn=warn, ai_context=ai_context)
     apply_results(triples, results)
 
 
@@ -94,6 +95,7 @@ class AuditReportGenerator:
         status: Optional[str] = None,
         classification: Optional[str] = None,
         on_warning: Optional[Warn] = None,
+        ai_context: Optional[JobAIContext] = None,
     ) -> AuditDocument:
         warn = on_warning or (lambda _msg: None)
         model.compute_counts()
@@ -136,7 +138,7 @@ class AuditReportGenerator:
                         for r in recommendations[:3]
                     ],
                 ),
-                io.AUDIT_NARRATOR_SCHEMA, warn, "Audit Narrator",
+                io.AUDIT_NARRATOR_SCHEMA, warn, "Audit Narrator", ai_context=ai_context,
             )
             if data and data.get("narrative_overview"):
                 narrative = data["narrative_overview"]
@@ -173,6 +175,6 @@ class AuditReportGenerator:
         )
 
         if client is not None:
-            _run_critic(doc, model, client, warn)
+            _run_critic(doc, model, client, warn, ai_context)
 
         return doc

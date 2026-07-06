@@ -34,7 +34,9 @@ from typing import Callable
 
 from .. import enrichment as enrichment_mod
 from ..agents import audit_rules, generate_document, get_client
+from ..agents.context import JobAIContext, build_job_context
 from ..agents.generators import DOCUMENT_TYPES
+from ..agents.llm import EFFORT_LEVELS
 from ..render import pandoc, registry
 from ..render._shared import format_timestamp
 from ..render.hub import doc_switcher_links, hub_stats, render_hub
@@ -52,6 +54,22 @@ _FRIENDLY = {
 }
 
 
+# Phase 0: per-plan ceiling on the Anthropic thinking-effort tier — never
+# raised above what the caller asked for, only ever lowered. Free-plan jobs
+# never spend more than a "medium" thinking budget regardless of the
+# ``effort`` Form field; pro/enterprise get the deeper tiers.
+_PLAN_EFFORT_CEILING = {"free": "medium", "pro": "xhigh", "enterprise": "max"}
+
+
+def _clamp_effort_for_plan(effort: str, plan: str) -> str:
+    ceiling = _PLAN_EFFORT_CEILING.get(plan, _PLAN_EFFORT_CEILING["free"])
+    if effort not in EFFORT_LEVELS or ceiling not in EFFORT_LEVELS:
+        return effort
+    if EFFORT_LEVELS.index(effort) > EFFORT_LEVELS.index(ceiling):
+        return ceiling
+    return effort
+
+
 def _make_client(options: dict) -> tuple[object | None, str | None]:
     """Resolve the requested provider to a client. Returns ``(client, warning)``
     — ``warning`` is a content-free, user-facing message set whenever the
@@ -61,8 +79,8 @@ def _make_client(options: dict) -> tuple[object | None, str | None]:
     if provider in (None, "", "none", "offline", "deterministic"):
         return None, None
     kwargs = {"model": options.get("model", "claude-opus-4-8")}
-    if provider in ("anthropic", "claude") and options.get("effort"):
-        kwargs["effort"] = options["effort"]
+    if provider in ("anthropic", "claude", "meshapi", "mesh"):
+        kwargs["effort"] = _clamp_effort_for_plan(options.get("effort") or "high", options.get("plan", "free"))
     api_key = options.get("provider_api_key")
     if api_key:
         kwargs["api_key"] = api_key
@@ -110,7 +128,8 @@ def _effective_metadata(options: dict, enrichment_meta: dict) -> dict:
     }
 
 
-def _generate_one(document_type: str, model, client, meta: dict, warn: Callable[[str], None]):
+def _generate_one(document_type: str, model, client, meta: dict, warn: Callable[[str], None],
+                   ai_context: JobAIContext | None) -> object:
     if document_type == "technical":
         return generate_document(
             model, client,
@@ -131,7 +150,7 @@ def _generate_one(document_type: str, model, client, meta: dict, warn: Callable[
             glossary=meta.get("glossary"),
             assumptions=meta.get("assumptions"),
             support_notes=meta.get("support_notes"),
-            on_warning=warn,
+            on_warning=warn, ai_context=ai_context,
         )
     return DOCUMENT_TYPES[document_type].generate(
         model, client,
@@ -141,7 +160,7 @@ def _generate_one(document_type: str, model, client, meta: dict, warn: Callable[
         version=meta.get("version"),
         status=meta.get("status"),
         classification=meta.get("classification"),
-        on_warning=warn,
+        on_warning=warn, ai_context=ai_context,
     )
 
 
@@ -165,6 +184,17 @@ def process_job(store: JobStore, job_id: str, upload_path: Path,
         client, client_warning = _make_client(options)
         if client_warning:
             warn(client_warning)
+
+        # Phase 0: one DAX Translator pass shared by every requested document
+        # type this job generates (previously up to 3x redundant per job),
+        # cached at a path inside this job's own sandbox — shredded with
+        # everything else in the outer ``finally``, and never the env-var
+        # default (which would race across jobs running concurrently in
+        # this same worker process; the CLI keeps that persistent default).
+        ai_context = (
+            build_job_context(model, client, warn, cache_path=str(sandbox.path("llm_cache.db")))
+            if client is not None else None
+        )
 
         # Per-job rule-suppression/severity/threshold config (4.3 / J.A.3).
         # Invalid TOML is a warning, not a failure — the job still runs,
@@ -222,7 +252,7 @@ def process_job(store: JobStore, job_id: str, upload_path: Path,
         outputs: dict[str, bytes] = {}
         docs: dict[str, object] = {}
         for dtype in document_types:
-            doc = _generate_one(dtype, model, client, meta, warn)
+            doc = _generate_one(dtype, model, client, meta, warn, ai_context)
             if changelog_text and dtype in ("technical", "audit"):
                 doc.changelog = changelog_text
             docs[dtype] = doc
@@ -294,7 +324,11 @@ def process_job(store: JobStore, job_id: str, upload_path: Path,
             outputs["zip"] = zip_buf.getvalue()
 
         store.store_outputs(job_id, outputs)
-        store.mark_done(job_id, list(outputs.keys()), warnings)
+        usage = ai_context.usage if ai_context is not None else {}
+        store.mark_done(job_id, list(outputs.keys()), warnings, usage=usage)
+        if usage:
+            # Content-free: agent names and integer call/token counts only.
+            log.info("job %s AI usage: %s", job_id, usage)
         log.info("job %s done (%s)", job_id, ",".join(outputs))
     except Exception as exc:  # pragma: no cover - defensive catch-all
         log.exception("job %s failed unexpectedly", job_id)

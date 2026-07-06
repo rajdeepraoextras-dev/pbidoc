@@ -70,7 +70,7 @@ class FakeCriticClient:
         self.quote, self.fix, self.location = quote, fix, location
         self.calls = 0
 
-    def complete_json(self, system: str, user: str, schema: dict) -> dict:
+    def complete_json(self, system: str, user: str, schema: dict, *, effort: str | None = None) -> dict:
         self.calls += 1
         return {"violations": [
             {"location": self.location, "quote": self.quote, "rule": "name-echo",
@@ -120,7 +120,7 @@ class CriticGeneratorWiringTest(unittest.TestCase):
         into the Business Analyst's core_purpose so the critic has
         something real to strip."""
 
-        def complete_json(self, system: str, user: str, schema: dict) -> dict:
+        def complete_json(self, system: str, user: str, schema: dict, *, effort: str | None = None) -> dict:
             if "Business Analyst" in system or "BI consultant" in system:
                 return {
                     "core_purpose": "This revolutionary report shows your sales.",

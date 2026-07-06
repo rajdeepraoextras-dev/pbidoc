@@ -15,6 +15,7 @@ import dataclasses
 import re
 from typing import Optional
 
+from ..context import JobAIContext, build_job_context
 from ...schemas.document import (
     Document,
     DocumentMetadata,
@@ -88,7 +89,7 @@ def _metadata(model: SemanticModel, owner, audience, refresh,
 
 
 # -- II. Executive Summary ----------------------------------------------------
-def _executive_summary(model: SemanticModel, client, warn) -> ExecutiveSummary:
+def _executive_summary(model: SemanticModel, client, warn, ai_context: Optional[JobAIContext]) -> ExecutiveSummary:
     """Batches the Business Analyst prompt by page (``io.business_analyst_
     batches``) so one failed/invalid batch degrades only the pages it
     covers, not the whole Executive Summary. Each batch gets one retry
@@ -111,7 +112,8 @@ def _executive_summary(model: SemanticModel, client, warn) -> ExecutiveSummary:
     for batch in io.business_analyst_batches(model):
         batch_size = len(batch["pages"])
         slice_titles = [p.page_title for p in pages[offset:offset + batch_size]]
-        data = call_llm_with_retry(client, io.BUSINESS_ANALYST_SYSTEM, batch, io.BUSINESS_ANALYST_SCHEMA)
+        data = call_llm_with_retry(client, io.BUSINESS_ANALYST_SYSTEM, batch, io.BUSINESS_ANALYST_SCHEMA,
+                                    ai_context=ai_context, name="Business Analyst")
         batch_pages = None
         if data:
             try:
@@ -209,7 +211,7 @@ def _lineage(model: SemanticModel) -> LineageArchitecture:
 
 
 # -- IV. Semantic Model -------------------------------------------------------
-def _column_descriptions(model: SemanticModel, client, warn) -> dict[tuple[str, str], str]:
+def _column_descriptions(model: SemanticModel, client, warn, ai_context: Optional[JobAIContext]) -> dict[tuple[str, str], str]:
     descriptions = {}
     for t in model.tables:
         for c in t.columns:
@@ -231,7 +233,7 @@ def _column_descriptions(model: SemanticModel, client, warn) -> dict[tuple[str, 
 
     if client is not None:
         data = _call(client, io.COLUMN_DESCRIBER_SYSTEM, io.column_describer_input(model),
-                     io.COLUMN_DESCRIBER_SCHEMA, warn, "Column Describer")
+                     io.COLUMN_DESCRIBER_SCHEMA, warn, "Column Describer", ai_context=ai_context)
         if data:
             for item in data.get("columns", []):
                 t_name = item.get("table")
@@ -242,7 +244,8 @@ def _column_descriptions(model: SemanticModel, client, warn) -> dict[tuple[str, 
     return descriptions
 
 
-def _semantic_model(model: SemanticModel, client, warn, col_descs: dict) -> SemanticModelDoc:
+def _semantic_model(model: SemanticModel, client, warn, col_descs: dict,
+                     ai_context: Optional[JobAIContext]) -> SemanticModelDoc:
     data_dictionary = []
     for t in model.tables:
         for c in t.columns:
@@ -311,7 +314,7 @@ def _semantic_model(model: SemanticModel, client, warn, col_descs: dict) -> Sema
     summary, risks = data_modeler_deterministic(model)
     if client is not None:
         data = _call(client, io.DATA_MODELER_SYSTEM, io.data_modeler_input(model),
-                     io.DATA_MODELER_SCHEMA, warn, "Data Modeler")
+                     io.DATA_MODELER_SCHEMA, warn, "Data Modeler", ai_context=ai_context)
         if data and "summary" in data:
             summary = data["summary"]
             risks = list(data.get("risks", risks))
@@ -333,7 +336,7 @@ def _semantic_model(model: SemanticModel, client, warn, col_descs: dict) -> Sema
 
 
 # -- V. Measure Catalog -------------------------------------------------------
-def _measure_catalog(model: SemanticModel, client, warn) -> MeasureCatalog:
+def _measure_catalog(model: SemanticModel, client, warn, ai_context: Optional[JobAIContext]) -> MeasureCatalog:
     measures = model.all_measures()
     entries = [
         MeasureEntry(name=m.name, table=m.table, dax=m.expression, format_string=m.format_string)
@@ -341,15 +344,10 @@ def _measure_catalog(model: SemanticModel, client, warn) -> MeasureCatalog:
     ]
     usage = measure_usage(model)
 
-    translations = None
-    if client is not None:
-        merged: dict[str, dict] = {}
-        for batch in io.dax_translator_batches(model):
-            data = _call(client, io.DAX_TRANSLATOR_SYSTEM, batch,
-                         io.DAX_TRANSLATOR_SCHEMA, warn, "DAX Translator")
-            if data:
-                merged.update({t["name"]: t for t in data.get("translations", [])})
-        translations = merged or None
+    # Phase 0: the DAX Translator runs once per job (``build_job_context``),
+    # not once per document type — consume the shared result instead of
+    # re-calling the same agent over the same measures.
+    translations = ai_context.translations if ai_context is not None else None
 
     from ...render._measure_deps import build_measure_dependency_tree, render_measure_dependency_graph_svg
     from ..deterministic import _measure_refs
@@ -578,7 +576,7 @@ def _health_and_recommendations(
     return dataclasses.asdict(health), [dataclasses.asdict(r) for r in recommendations], suppressed
 
 
-def _run_critic(doc: Document, model: SemanticModel, client, warn) -> None:
+def _run_critic(doc: Document, model: SemanticModel, client, warn, ai_context: Optional[JobAIContext]) -> None:
     """5.3: one critic pass over every narrative prose field, applied
     in place onto ``doc``. Only called when a client is available (offline
     runs are unaffected — see the caller)."""
@@ -627,7 +625,7 @@ def _run_critic(doc: Document, model: SemanticModel, client, warn) -> None:
         triples.append((f"tech_debt.notes[{i}]", note, _set_note))
 
     fields = [(loc, text) for loc, text, _ in triples]
-    results = apply_critic_pass(fields, client, known_names=known_names, warn=warn)
+    results = apply_critic_pass(fields, client, known_names=known_names, warn=warn, ai_context=ai_context)
     apply_results(triples, results)
 
 
@@ -660,15 +658,24 @@ class TechnicalDocumentationGenerator:
         glossary: Optional[str] = None,
         assumptions: Optional[str] = None,
         support_notes: Optional[str] = None,
+        ai_context: Optional[JobAIContext] = None,
     ) -> Document:
         """Assemble the seven-section :class:`Document` from a parsed model.
 
         Pass an ``LLMClient`` to use Claude for the prose agents; omit it (or
         pass ``None``) to run the fully deterministic offline pipeline.
+
+        ``ai_context`` (Phase 0) is the job-shared :class:`JobAIContext`
+        built once by the caller (``cli.py``/``service/worker.py``) across
+        every requested document type; omit it (or pass ``None``) and this
+        generator builds its own on demand — direct-import callers and tests
+        that call this generator alone keep working unchanged.
         """
         warn = on_warning or (lambda _msg: None)
         model.compute_counts()
-        col_descs = _column_descriptions(model, client, warn)
+        if ai_context is None and client is not None:
+            ai_context = build_job_context(model, client, warn)
+        col_descs = _column_descriptions(model, client, warn, ai_context)
         from ...render._nav_map import render_navigation_map
         nav_edges, nav_map_svg = render_navigation_map(model)
         doc = Document(
@@ -681,10 +688,10 @@ class TechnicalDocumentationGenerator:
                 access_notes=access_notes, glossary=glossary,
                 assumptions=assumptions, support_notes=support_notes,
             ),
-            executive_summary=_executive_summary(model, client, warn),
+            executive_summary=_executive_summary(model, client, warn, ai_context),
             lineage=_lineage(model),
-            semantic_model=_semantic_model(model, client, warn, col_descs),
-            measure_catalog=_measure_catalog(model, client, warn),
+            semantic_model=_semantic_model(model, client, warn, col_descs, ai_context),
+            measure_catalog=_measure_catalog(model, client, warn, ai_context),
             security=_security(model),
             tech_debt=_audit(model),
             stats=dict(model.meta.counts),
@@ -728,6 +735,6 @@ class TechnicalDocumentationGenerator:
         doc.metadata.score_trend = trend
 
         if client is not None:
-            _run_critic(doc, model, client, warn)
+            _run_critic(doc, model, client, warn, ai_context)
 
         return doc

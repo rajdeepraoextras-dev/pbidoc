@@ -1,12 +1,16 @@
 """LLM client layer.
 
 ``LLMClient`` is the minimal contract the orchestrator depends on:
-``complete_json(system, user, schema) -> dict``. The concrete implementation
-calls Claude through the official ``anthropic`` SDK with structured outputs
-(``output_config.format``), so responses are schema-valid JSON.
+``complete_json(system, user, schema) -> dict``. Four concrete
+implementations: :class:`AnthropicClient` (Claude, native structured
+outputs), :class:`GeminiClient`, :class:`CohereClient`, and
+:class:`MeshAPIClient` — the last routes through https://developers.meshapi.ai,
+a single API key giving access to 1000+ models across providers via an
+OpenAI-compatible endpoint, for BYOK users who'd rather not manage a
+separate key per provider.
 
-The ``anthropic`` import is lazy — the rest of ``pbicompass`` (and the deterministic
-pipeline) works without the dependency installed.
+Every provider SDK import is lazy — the rest of ``pbicompass`` (and the
+deterministic pipeline) works without any of them installed.
 """
 
 from __future__ import annotations
@@ -17,8 +21,14 @@ from typing import Any, Optional, Protocol
 
 
 class LLMClient(Protocol):
-    def complete_json(self, system: str, user: str, schema: dict) -> dict:
-        """Return a JSON object conforming to ``schema``."""
+    def complete_json(self, system: str, user: str, schema: dict, *, effort: Optional[str] = None) -> dict:
+        """Return a JSON object conforming to ``schema``.
+
+        ``effort`` (Phase 0) is a per-call override of the client's own
+        thinking-depth default (see ``EFFORT_LEVELS`` below) — ``None`` keeps
+        the client's own default. Providers with no such concept (Gemini,
+        Cohere) accept and ignore it.
+        """
         ...
 
 
@@ -72,14 +82,14 @@ class AnthropicClient:
         self.max_tokens = max_tokens
         self.timeout = timeout
 
-    def complete_json(self, system: str, user: str, schema: dict) -> dict:
+    def complete_json(self, system: str, user: str, schema: dict, *, effort: Optional[str] = None) -> dict:
         response = self._client.messages.create(
             model=self.model,
             max_tokens=self.max_tokens,
             system=system,
             thinking={"type": "adaptive"},
             output_config={
-                "effort": self.effort,
+                "effort": effort or self.effort,
                 "format": {"type": "json_schema", "schema": schema},
             },
             messages=[{"role": "user", "content": user}],
@@ -89,6 +99,14 @@ class AnthropicClient:
         text = next((b.text for b in response.content if b.type == "text"), None)
         if not text:
             raise RuntimeError("Claude returned no text content.")
+        # Content-free spend telemetry (Phase 0): token counts only, never the
+        # prompt/response text itself. Read opportunistically by callers
+        # (``agents/generators/base.py::call_llm``) via ``getattr``.
+        usage = getattr(response, "usage", None)
+        self.last_usage = {
+            "input_tokens": getattr(usage, "input_tokens", 0) or 0,
+            "output_tokens": getattr(usage, "output_tokens", 0) or 0,
+        }
         return json.loads(text)
 
 
@@ -132,7 +150,9 @@ class GeminiClient:
         self.model = model
         self.max_output_tokens = max_output_tokens
 
-    def complete_json(self, system: str, user: str, schema: dict) -> dict:
+    def complete_json(self, system: str, user: str, schema: dict, *, effort: Optional[str] = None) -> dict:
+        # Gemini has no thinking-effort knob equivalent to Claude's — accepted
+        # for protocol compatibility and silently ignored.
         from google.genai import types  # noqa: PLC0415
         config = types.GenerateContentConfig(
             system_instruction=system,
@@ -182,7 +202,9 @@ class CohereClient:
         self.max_tokens = max_tokens
         self.timeout = timeout
 
-    def complete_json(self, system: str, user: str, schema: dict) -> dict:
+    def complete_json(self, system: str, user: str, schema: dict, *, effort: Optional[str] = None) -> dict:
+        # Cohere has no thinking-effort knob — accepted for protocol
+        # compatibility and silently ignored.
         response = self._client.chat(
             model=self.model,
             max_tokens=self.max_tokens,
@@ -208,10 +230,89 @@ class CohereClient:
         return json.loads(text)
 
 
+class MeshAPIClient:
+    """MeshAPI-backed client (https://developers.meshapi.ai) — a single
+    ``rsk_...`` API key routes to 1000+ models across providers through one
+    OpenAI-compatible endpoint, so BYOK users no longer need a separate
+    ``ANTHROPIC_API_KEY``/``GEMINI_API_KEY``/``COHERE_API_KEY`` per provider.
+
+    Model ids are ``provider/model-name`` (e.g. ``"anthropic/claude-opus-4-8"``,
+    ``"openai/gpt-4o"``) — see MeshAPI's model catalog for the full list.
+    Implemented with the official ``openai`` SDK pointed at MeshAPI's base
+    URL, exactly as MeshAPI's own quickstart recommends ("replace the Base
+    URL of any OpenAI-compatible SDK with https://api.meshapi.ai"), rather
+    than a bespoke ``meshapi`` package integration. Lazy-imports ``openai``
+    so the rest of ``pbicompass`` works without the dependency. Reads the
+    API key from ``MESHAPI_API_KEY`` (BYOK) unless passed explicitly.
+    """
+
+    _BASE_URL = "https://api.meshapi.ai/v1"
+
+    # MeshAPI's `reasoning_effort` is a 4-level enum (low/medium/high/none) —
+    # coarser than this codebase's 5-level EFFORT_LEVELS; xhigh/max both map
+    # to its ceiling ("high") since MeshAPI has nothing deeper.
+    _EFFORT_MAP = {"low": "low", "medium": "medium", "high": "high", "xhigh": "high", "max": "high"}
+
+    def __init__(
+        self,
+        model: str = "anthropic/claude-opus-4-8",
+        *,
+        api_key: Optional[str] = None,
+        effort: Optional[str] = None,
+        max_tokens: int = 16000,
+        timeout: float = _DEFAULT_TIMEOUT_SECONDS,
+    ) -> None:
+        try:
+            import openai  # noqa: PLC0415 (intentional lazy import)
+        except ImportError as exc:  # pragma: no cover - depends on environment
+            raise ImportError(
+                "The 'openai' package is required for the MeshAPI provider (MeshAPI "
+                "exposes an OpenAI-compatible API). Install it with: pip install -e \".[agents]\""
+            ) from exc
+        key = api_key or os.environ.get("MESHAPI_API_KEY")
+        self._client = openai.OpenAI(base_url=self._BASE_URL, api_key=key, timeout=timeout)
+        self.model = model
+        self.effort = effort
+        self.max_tokens = max_tokens
+        self.timeout = timeout
+
+    def complete_json(self, system: str, user: str, schema: dict, *, effort: Optional[str] = None) -> dict:
+        resolved_effort = effort if effort is not None else self.effort
+        extra: dict[str, Any] = {}
+        if resolved_effort is not None:
+            extra["reasoning_effort"] = self._EFFORT_MAP.get(resolved_effort, resolved_effort)
+        response = self._client.chat.completions.create(
+            model=self.model,
+            max_tokens=self.max_tokens,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            response_format={
+                "type": "json_schema",
+                "json_schema": {"name": "response", "schema": schema, "strict": True},
+            },
+            **extra,
+        )
+        choice = response.choices[0]
+        if getattr(choice, "finish_reason", None) == "content_filter":
+            raise RuntimeError("MeshAPI declined the request (finish_reason=content_filter).")
+        text = choice.message.content
+        if not text:
+            raise RuntimeError("MeshAPI returned no text content.")
+        usage = getattr(response, "usage", None)
+        self.last_usage = {
+            "input_tokens": getattr(usage, "prompt_tokens", 0) or 0,
+            "output_tokens": getattr(usage, "completion_tokens", 0) or 0,
+        }
+        return json.loads(text)
+
+
 _DEFAULT_MODEL = {
     "anthropic": "claude-opus-4-8",
     "gemini": "gemini-3.5-flash",
     "cohere": "command-a-03-2025",
+    "meshapi": "anthropic/claude-opus-4-8",
 }
 
 
@@ -222,6 +323,7 @@ def get_client(provider: Optional[str], **kwargs: Any) -> Optional[LLMClient]:
     ``"anthropic"`` / ``"claude"``        -> :class:`AnthropicClient`.
     ``"gemini"`` / ``"google"``           -> :class:`GeminiClient`.
     ``"cohere"`` / ``"command"``          -> :class:`CohereClient`.
+    ``"meshapi"`` / ``"mesh"``            -> :class:`MeshAPIClient` (one key, 1000+ models).
     """
     if provider in (None, "none", "offline", "deterministic"):
         return None
@@ -238,4 +340,11 @@ def get_client(provider: Optional[str], **kwargs: Any) -> Optional[LLMClient]:
         if not model or "command" not in model:
             model = _DEFAULT_MODEL["cohere"]
         return CohereClient(model=model, **kwargs)
+    if provider in ("meshapi", "mesh"):
+        # MeshAPI model ids are always "provider/model-name" — a bare model
+        # id from another provider's default (e.g. the CLI's own
+        # "claude-opus-4-8") isn't valid here, so fall back the same way.
+        if not model or "/" not in model:
+            model = _DEFAULT_MODEL["meshapi"]
+        return MeshAPIClient(model=model, **kwargs)
     raise ValueError(f"Unknown LLM provider: {provider!r}")

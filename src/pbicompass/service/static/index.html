@@ -1215,17 +1215,18 @@
                   <option value="anthropic">Claude (Opus 4.8 / Thinking)</option>
                   <option value="gemini">Gemini (3.5 Flash)</option>
                   <option value="cohere">Cohere (Command A)</option>
+                  <option value="meshapi">MeshAPI (one key, 1000+ models)</option>
                 </select>
               </div>
               <div class="form-group" id="provider-key-row">
-                <label>Engine API Key <small>(your Claude/Gemini/Cohere key — used for this job only, never stored)</small></label>
-                <input type="text" id="provider-apikey" autocomplete="off" placeholder="Enter Claude/Gemini/Cohere API key...">
+                <label>Engine API Key <small>(your Claude/Gemini/Cohere/MeshAPI key — used for this job only, never stored)</small></label>
+                <input type="text" id="provider-apikey" autocomplete="off" placeholder="Enter Claude/Gemini/Cohere/MeshAPI (rsk_...) key...">
               </div>
             </div>
 
             <div class="grid-2" id="effort-row">
               <div class="form-group">
-                <label>AI Thinking Effort <small>(Claude only — higher takes longer, writes better prose)</small></label>
+                <label>AI Thinking Effort <small>(Claude/MeshAPI only — higher takes longer, writes better prose)</small></label>
                 <select id="effort">
                   <option value="low">Low — fastest, lighter reasoning</option>
                   <option value="medium">Medium — balanced</option>
@@ -1675,11 +1676,13 @@ const providerApikey = $("provider-apikey");
 providerApikey.value = localStorage.getItem("pbicompass_provider_key") || "";
 providerApikey.addEventListener("change", () => localStorage.setItem("pbicompass_provider_key", providerApikey.value.trim()));
 
-// Effort only applies to the Claude engine — hide it otherwise; the engine
-// key field only makes sense once an LLM engine is selected.
+// Effort only applies to engines with a thinking-effort knob (Claude,
+// MeshAPI) — hide it otherwise; the engine key field only makes sense once
+// an LLM engine is selected.
+const EFFORT_CAPABLE_PROVIDERS = ["anthropic", "meshapi"];
 function syncEffortVisibility() {
   const isOffline = $("provider").value === "none";
-  $("effort-row").style.display = $("provider").value === "anthropic" ? "" : "none";
+  $("effort-row").style.display = EFFORT_CAPABLE_PROVIDERS.includes($("provider").value) ? "" : "none";
   $("provider-key-row").style.display = isOffline ? "none" : "";
 }
 $("provider").addEventListener("change", syncEffortVisibility);
@@ -1703,12 +1706,13 @@ const ESTIMATED_SECONDS = {
   gemini: 25,
   cohere: 30,
   anthropic: { low: 18, medium: 35, high: 60, xhigh: 100, max: 150 },
+  meshapi: { low: 18, medium: 35, high: 60, xhigh: 100, max: 150 },
 };
 let progressTimer = null;
 
 function estimatedSeconds() {
   const provider = $("provider").value;
-  if (provider === "anthropic") return ESTIMATED_SECONDS.anthropic[$("effort").value] || 60;
+  if (EFFORT_CAPABLE_PROVIDERS.includes(provider)) return ESTIMATED_SECONDS[provider][$("effort").value] || 60;
   return ESTIMATED_SECONDS[provider] || 10;
 }
 
@@ -1722,7 +1726,7 @@ function startProgress() {
     const elapsed = (Date.now() - startedAt) / 1000;
     const pct = Math.min(96, (elapsed / estimate) * 100);
     fill.style.width = pct + "%";
-    text.textContent = `Elapsed ${elapsed.toFixed(0)}s · estimated ~${estimate}s total (${$("provider").value === "anthropic" ? $("effort").value + " effort" : $("provider").options[$("provider").selectedIndex].text})`;
+    text.textContent = `Elapsed ${elapsed.toFixed(0)}s · estimated ~${estimate}s total (${EFFORT_CAPABLE_PROVIDERS.includes($("provider").value) ? $("effort").value + " effort" : $("provider").options[$("provider").selectedIndex].text})`;
   }
   tick();
   progressTimer = setInterval(tick, 500);
@@ -1787,7 +1791,7 @@ $("form").addEventListener("submit", async (e) => {
   const fd = new FormData();
   fd.append("file", f);
   fd.append("provider", $("provider").value);
-  if ($("provider").value === "anthropic") fd.append("effort", $("effort").value);
+  if (EFFORT_CAPABLE_PROVIDERS.includes($("provider").value)) fd.append("effort", $("effort").value);
   if ($("provider").value !== "none") {
     const engineKey = providerApikey.value.trim();
     if (engineKey) fd.append("provider_api_key", engineKey);

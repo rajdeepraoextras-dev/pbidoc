@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Optional
 
 from .agents import generate_document, get_client
+from .agents.context import build_job_context
 from .agents.generators import DOCUMENT_TYPES
 from .parsers import detect_and_parse
 from .render import pandoc, registry
@@ -218,10 +219,13 @@ def main(argv: list[str] | None = None) -> int:
                             "type(s), plus model.json and (with --enrich) the enrichment skeleton, "
                             "into one zip (-o names the zip, default '{report}-documentation.zip').")
     p_gen.add_argument("--provider", default="none",
-                       help="LLM provider: 'none' (deterministic, default), 'anthropic', 'gemini', or 'cohere'")
+                       help="LLM provider: 'none' (deterministic, default), 'anthropic', 'gemini', 'cohere', "
+                            "or 'meshapi' (https://developers.meshapi.ai — one API key routes to 1000+ models "
+                            "across providers; use a 'provider/model-name' --model id, e.g. 'openai/gpt-4o')")
     p_gen.add_argument("--model", default="claude-opus-4-8", help="Model id for the LLM provider")
     p_gen.add_argument("--effort", default="high", choices=["low", "medium", "high", "xhigh", "max"],
-                       help="Anthropic thinking effort (quality vs. latency). Ignored for --provider gemini/cohere/none.")
+                       help="Thinking effort (quality vs. latency), honored by --provider anthropic/meshapi. "
+                            "Ignored for --provider gemini/cohere/none.")
     p_gen.add_argument("--document", default="technical", choices=[*DOCUMENT_TYPES, "all"],
                        help="Document type to generate (default: technical — the original documentation). "
                             "'all' generates every document type from a single parse.")
@@ -419,7 +423,7 @@ def main(argv: list[str] | None = None) -> int:
         client = None
         if args.provider not in ("none", "offline", "deterministic"):
             client_kwargs = {"model": args.model}
-            if args.provider in ("anthropic", "claude"):
+            if args.provider in ("anthropic", "claude", "meshapi", "mesh"):
                 client_kwargs["effort"] = args.effort
             try:
                 client = get_client(args.provider, **client_kwargs)
@@ -427,6 +431,12 @@ def main(argv: list[str] | None = None) -> int:
                 _warn(f"{args.provider} provider unavailable ({exc}); using offline engine")
 
         document_types = list(DOCUMENT_TYPES) if args.document == "all" else [args.document]
+
+        # Phase 0: one DAX Translator pass shared by every requested document
+        # type — CLI keeps its persistent cache default (no explicit
+        # cache_path override; ``LLMResponseCache`` falls back to the
+        # ``PBICOMPASS_LLM_CACHE`` env var, same as before this phase).
+        ai_context = build_job_context(model, client, _warn) if client is not None else None
 
         def _generate_one(document_type: str):
             if document_type == "technical":
@@ -440,13 +450,13 @@ def main(argv: list[str] | None = None) -> int:
                     deployment_notes=deployment_notes, access_notes=access_notes,
                     glossary=glossary, assumptions=assumptions,
                     support_notes=support_notes,
-                    on_warning=_warn,
+                    on_warning=_warn, ai_context=ai_context,
                 )
             return DOCUMENT_TYPES[document_type].generate(
                 model, client,
                 owner=owner, audience=audience, refresh=refresh,
                 version=doc_version, status=status, classification=classification,
-                on_warning=_warn,
+                on_warning=_warn, ai_context=ai_context,
             )
 
         docs = {dtype: _generate_one(dtype) for dtype in document_types}

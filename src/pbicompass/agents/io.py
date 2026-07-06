@@ -27,6 +27,26 @@ Editorial standard (applies to every field you write):
 """
 
 # --------------------------------------------------------------------------
+# Per-agent effort tiers (Phase 0): resolved by ``agents/generators/base.py``
+# from the ``name`` each call site already passes to ``call_llm``/
+# ``call_llm_with_retry``, keyed to how much reasoning the task actually
+# needs — extraction/style-check agents stay cheap, synthesis/prose agents
+# get the deeper (and costlier) tiers. An explicit ``effort=`` kwarg at the
+# call site always wins over this map; an agent absent from the map falls
+# back to the client's own default (``None``).
+# --------------------------------------------------------------------------
+AGENT_EFFORT: dict[str, str] = {
+    "Column Describer": "low",
+    "Critic": "low",
+    "DAX Translator": "medium",
+    "User Guide Writer": "medium",
+    "Audit Narrator": "medium",
+    "Business Analyst": "high",
+    "Data Modeler": "high",
+    "Executive Writer": "high",
+}
+
+# --------------------------------------------------------------------------
 # Business Analyst Agent  (-> Executive Summary & Business Guide, §II)
 # --------------------------------------------------------------------------
 BUSINESS_ANALYST_SYSTEM = """\

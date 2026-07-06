@@ -25,6 +25,7 @@ from ...schemas.executive_document import ExecutiveDocument, ExecutiveRisk
 from .. import audit_rules
 from .. import io
 from .. import usage
+from ..context import JobAIContext, build_job_context
 from ..critic import apply_critic_pass, apply_results
 from ..deterministic import business_analyst_deterministic, schema_shape, translate_dax
 from ..llm import LLMClient
@@ -55,29 +56,28 @@ def _measure_visual_counts(model) -> dict[str, int]:
     return counts
 
 
-def _key_kpis(model, client: Optional[LLMClient], warn: Warn, limit: int = 5) -> list[str]:
+def _key_kpis(model, client: Optional[LLMClient], warn: Warn,
+              ai_context: Optional[JobAIContext], limit: int = 5) -> list[str]:
     """Top measures by real usage — (#visuals using it) x (#pages it appears
     on) — rather than the first N in model order, which can surface a
     title/text-label measure as a "KPI". Excludes hidden measures, orphaned
     measures (never bound to a visual), and Text-category measures. Each
     entry carries a one-line meaning: the measure's own description if set,
-    else the DAX Translator's actual business definition when a client is
-    available (the same call the technical doc's Measure Catalog and the
-    user guide's glossary make, so all three describe a measure the same
-    way — see user_guide.py's ``_build_glossary``), else the deterministic
+    else the DAX Translator's actual business definition when available
+    (Phase 0: the shared ``ai_context.translations`` — the same job-wide
+    result the technical doc's Measure Catalog and the user guide's glossary
+    consume, so all three describe a measure the same way — see
+    user_guide.py's ``_build_glossary``), else the deterministic
     business-safe fallback."""
     usage_pages = usage.measure_usage(model)
     used = usage.used_measure_names(model)
     visual_counts = _measure_visual_counts(model)
 
     llm_translations: dict[str, str] = {}
-    if client is not None:
-        for batch in io.dax_translator_batches(model):
-            data = call_llm(client, io.DAX_TRANSLATOR_SYSTEM, batch, io.DAX_TRANSLATOR_SCHEMA, warn, "DAX Translator")
-            if data:
-                for t in data.get("translations", []):
-                    if t.get("plain_english"):
-                        llm_translations[t["name"]] = first_sentence(t["plain_english"])
+    if ai_context is not None and ai_context.translations:
+        for name, t in ai_context.translations.items():
+            if t.get("plain_english"):
+                llm_translations[name] = first_sentence(t["plain_english"])
 
     scored = []
     for i, m in enumerate(model.all_measures()):
@@ -188,7 +188,7 @@ def _next_steps(recommendations, shown_rule_ids: set[str], metadata) -> list[str
     return steps
 
 
-def _run_critic(doc: ExecutiveDocument, model, client, warn: Warn) -> None:
+def _run_critic(doc: ExecutiveDocument, model, client, warn: Warn, ai_context: Optional[JobAIContext]) -> None:
     """5.3: one critic pass over the executive doc's narrative fields."""
     known_names = {t.name for t in model.tables}
     known_names |= {m.name for m in model.all_measures()}
@@ -213,7 +213,7 @@ def _run_critic(doc: ExecutiveDocument, model, client, warn: Warn) -> None:
         triples.append((f"top_risks[{i}].consequence", risk.consequence, _set_consequence))
 
     fields = [(loc, text) for loc, text, _ in triples]
-    results = apply_critic_pass(fields, client, known_names=known_names, warn=warn)
+    results = apply_critic_pass(fields, client, known_names=known_names, warn=warn, ai_context=ai_context)
     apply_results(triples, results)
 
 
@@ -234,9 +234,12 @@ class ExecutiveSummaryGenerator:
         status: Optional[str] = None,
         classification: Optional[str] = None,
         on_warning: Optional[Warn] = None,
+        ai_context: Optional[JobAIContext] = None,
     ) -> ExecutiveDocument:
         warn = on_warning or (lambda _msg: None)
         model.compute_counts()
+        if ai_context is None and client is not None:
+            ai_context = build_job_context(model, client, warn)
 
         # Reuse the full deterministic audit engine (Phase 1) for the
         # maintenance note, top risks, and next steps, rather than
@@ -252,7 +255,7 @@ class ExecutiveSummaryGenerator:
         )
         failed_practice_count = sum(1 for c in best_practices if not c.passed)
 
-        key_kpis = _key_kpis(model, client, warn)
+        key_kpis = _key_kpis(model, client, warn, ai_context)
         key_kpi_names = [k.split(" — ", 1)[0] for k in key_kpis]
         top_risks, shown_rule_ids = _top_risks(recommendations)
 
@@ -274,7 +277,7 @@ class ExecutiveSummaryGenerator:
                     known_risks=[f"[{r.severity}] {r.consequence}" for r in top_risks],
                     maintenance_draft=maintenance_note,
                 ),
-                io.EXECUTIVE_WRITER_SCHEMA, warn, "Executive Writer",
+                io.EXECUTIVE_WRITER_SCHEMA, warn, "Executive Writer", ai_context=ai_context,
             )
             if data:
                 purpose = data.get("business_purpose") or purpose
@@ -301,6 +304,6 @@ class ExecutiveSummaryGenerator:
         )
 
         if client is not None:
-            _run_critic(doc, model, client, warn)
+            _run_critic(doc, model, client, warn, ai_context)
 
         return doc

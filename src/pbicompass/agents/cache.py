@@ -32,20 +32,23 @@ class LLMResponseCache:
                 ")"
             )
 
-    def _get_key(self, system: str, payload: dict, schema: dict, model_id: str) -> str:
+    def _get_key(self, system: str, payload: dict, schema: dict, model_id: str,
+                 effort: Optional[str] = None) -> str:
         data = {
             "system": system,
             "payload": payload,
             "schema": schema,
-            "model_id": model_id
+            "model_id": model_id,
+            "effort": effort,
         }
         serialized = json.dumps(data, sort_keys=True)
         return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
-    def get(self, system: str, payload: dict, schema: dict, model_id: str) -> Optional[dict]:
+    def get(self, system: str, payload: dict, schema: dict, model_id: str,
+            effort: Optional[str] = None) -> Optional[dict]:
         if not self.conn:
             return None
-        key = self._get_key(system, payload, schema, model_id)
+        key = self._get_key(system, payload, schema, model_id, effort)
         try:
             cursor = self.conn.cursor()
             cursor.execute("SELECT response FROM llm_cache WHERE key = ?", (key,))
@@ -56,10 +59,11 @@ class LLMResponseCache:
             pass
         return None
 
-    def set(self, system: str, payload: dict, schema: dict, model_id: str, response: dict) -> None:
+    def set(self, system: str, payload: dict, schema: dict, model_id: str, response: dict,
+            effort: Optional[str] = None) -> None:
         if not self.conn:
             return
-        key = self._get_key(system, payload, schema, model_id)
+        key = self._get_key(system, payload, schema, model_id, effort)
         try:
             with self.conn:
                 self.conn.execute(

@@ -297,6 +297,9 @@ def create_app(
         options = {
             "rules_file_path": rules_file_path,
             "enrichment_file_path": enrichment_file_path,
+            # Phase 0: the caller's plan clamps the effective effort tier
+            # (free -> at most "medium") — never raised, only ever lowered.
+            "plan": plan,
             "provider": provider, "model": model, "effort": effort,
             # BYOK: the caller's own provider key for this job only — never
             # logged, never persisted (the sandbox and job record hold no

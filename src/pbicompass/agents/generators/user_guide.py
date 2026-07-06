@@ -23,6 +23,7 @@ from typing import Optional
 
 from ...schemas.user_guide_document import GlossaryTerm, PageGuide, UserGuideDocument
 from .. import io
+from ..context import JobAIContext, build_job_context
 from ..critic import apply_critic_pass, apply_results
 from ..deterministic import business_analyst_deterministic
 from ..llm import LLMClient
@@ -54,30 +55,29 @@ def _dimension_definition(name: str) -> str:
     return f"A field used to filter or group the data by {name}."
 
 
-def _build_glossary(model, client: Optional[LLMClient], warn: Warn) -> list[GlossaryTerm]:
+def _build_glossary(model, client: Optional[LLMClient], warn: Warn,
+                     ai_context: Optional[JobAIContext]) -> list[GlossaryTerm]:
     """Priority order per measure: human-provided description -> the DAX
-    Translator's *actual* business definition (an LLM call, when a client is
-    available — the same agent the technical doc's Measure Catalog uses, so
-    the two documents describe a measure the same way instead of the
-    glossary falling back to a mechanical DAX-to-English gloss whenever an
-    LLM was available but just never consulted) -> the deterministic
-    business-safe fallback -> a typed fallback for the rare measure with
-    neither. Never the generic "a custom metric specific to this report"
-    bucket — a business glossary that can't tell two measures apart isn't
-    documentation."""
+    Translator's *actual* business definition (Phase 0: the job-shared
+    ``ai_context.translations`` — the same result the technical doc's
+    Measure Catalog consumes, so the two documents describe a measure the
+    same way instead of the glossary falling back to a mechanical
+    DAX-to-English gloss whenever a translation was available but just
+    never consulted) -> the deterministic business-safe fallback -> a typed
+    fallback for the rare measure with neither. Never the generic "a custom
+    metric specific to this report" bucket — a business glossary that can't
+    tell two measures apart isn't documentation."""
     llm_translations: dict[str, str] = {}
-    if client is not None:
-        # Same DAX Translator call the technical doc's Measure Catalog makes
-        # (agents/generators/technical.py::_measure_catalog) — batched the
-        # same way, so a real business definition ("users who had sales last
-        # year but not this year") reaches the glossary too, instead of only
-        # ever falling back to the mechanical DAX-to-English gloss.
-        for batch in io.dax_translator_batches(model):
-            data = call_llm(client, io.DAX_TRANSLATOR_SYSTEM, batch, io.DAX_TRANSLATOR_SCHEMA, warn, "DAX Translator")
-            if data:
-                for t in data.get("translations", []):
-                    if t.get("plain_english"):
-                        llm_translations[t["name"]] = first_sentence(t["plain_english"])
+    if ai_context is not None and ai_context.translations:
+        # Same DAX Translator result the technical doc's Measure Catalog
+        # consumes (agents/generators/technical.py::_measure_catalog) — one
+        # job-wide call instead of a second one here, so a real business
+        # definition ("users who had sales last year but not this year")
+        # reaches the glossary too, instead of only ever falling back to the
+        # mechanical DAX-to-English gloss.
+        for name, t in ai_context.translations.items():
+            if t.get("plain_english"):
+                llm_translations[name] = first_sentence(t["plain_english"])
 
     terms: list[GlossaryTerm] = []
     seen_measure_names = set()
@@ -214,7 +214,7 @@ def _getting_started(pages: list[PageGuide]) -> list[str]:
     return tips
 
 
-def _run_critic(doc: UserGuideDocument, model, client, warn: Warn) -> None:
+def _run_critic(doc: UserGuideDocument, model, client, warn: Warn, ai_context: Optional[JobAIContext]) -> None:
     """5.3: one critic pass over the user guide's narrative fields."""
     known_names = {t.name for t in model.tables}
     known_names |= {m.name for m in model.all_measures()}
@@ -237,7 +237,7 @@ def _run_critic(doc: UserGuideDocument, model, client, warn: Warn) -> None:
         triples.append((f"glossary[{i}].plain_definition", term.plain_definition, _set_definition))
 
     fields = [(loc, text) for loc, text, _ in triples]
-    results = apply_critic_pass(fields, client, known_names=known_names, warn=warn)
+    results = apply_critic_pass(fields, client, known_names=known_names, warn=warn, ai_context=ai_context)
     apply_results(triples, results)
 
 
@@ -258,9 +258,12 @@ class BusinessGuideGenerator:
         status: Optional[str] = None,
         classification: Optional[str] = None,
         on_warning: Optional[Warn] = None,
+        ai_context: Optional[JobAIContext] = None,
     ) -> UserGuideDocument:
         warn = on_warning or (lambda _msg: None)
         model.compute_counts()
+        if ai_context is None and client is not None:
+            ai_context = build_job_context(model, client, warn)
 
         analyst = business_analyst_deterministic(model)
         page_summary_by_title = {p.page_title: p.summary for p in analyst.pages}
@@ -319,7 +322,7 @@ class BusinessGuideGenerator:
             ))
 
         introduction = _introduction(model, analyst.core_purpose)
-        glossary = _build_glossary(model, client, warn)
+        glossary = _build_glossary(model, client, warn, ai_context)
         getting_started = _getting_started(pages)
 
         if client is not None:
@@ -336,7 +339,8 @@ class BusinessGuideGenerator:
             offset = 0
             for batch in io.user_guide_writer_batches(model.report_name, introduction, page_drafts):
                 batch_titles = [p["page_title"] for p in batch["pages"]]
-                data = call_llm_with_retry(client, io.USER_GUIDE_WRITER_SYSTEM, batch, io.USER_GUIDE_WRITER_SCHEMA)
+                data = call_llm_with_retry(client, io.USER_GUIDE_WRITER_SYSTEM, batch, io.USER_GUIDE_WRITER_SCHEMA,
+                                            ai_context=ai_context, name="User Guide Writer")
                 if data:
                     if not introduction_set and data.get("introduction"):
                         introduction, introduction_set = data["introduction"], True
@@ -363,6 +367,6 @@ class BusinessGuideGenerator:
         )
 
         if client is not None:
-            _run_critic(doc, model, client, warn)
+            _run_critic(doc, model, client, warn, ai_context)
 
         return doc
