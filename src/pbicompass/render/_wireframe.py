@@ -145,7 +145,7 @@ def render_wireframe(
 
     svg = [
         f'<svg viewBox="0 0 {target_w:.0f} {target_h:.0f}" width="100%" xmlns="http://www.w3.org/2000/svg" '
-        f'role="img" aria-labelledby="{title_id}">'
+        f'font-family="inherit" role="img" aria-labelledby="{title_id}">'
     ]
     svg.append(f'<title id="{title_id}">Wireframe layout for page {html_e(page.display_name)}</title>')
     svg.append(_glyph_defs(glyph_suffix))
