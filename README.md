@@ -108,9 +108,10 @@ PYTHONPATH=src python -m pbicompass generate path/to/Project.pbip --provider ant
 PYTHONPATH=src python -m pbicompass generate path/to/Project.pbip --provider gemini    -o report.md   # GEMINI_API_KEY
 PYTHONPATH=src python -m pbicompass generate path/to/Project.pbip --provider cohere    -o report.md   # COHERE_API_KEY
 
-# Or one key for any of 1000+ models via https://developers.meshapi.ai (model ids are "provider/model-name" —
-# note MeshAPI's own catalog uses dots for Claude point releases, e.g. "claude-opus-4.8", not Anthropic's native "-4-8"):
-PYTHONPATH=src python -m pbicompass generate path/to/Project.pbip --provider meshapi --model anthropic/claude-opus-4.8 -o report.md   # MESHAPI_API_KEY
+# Or one key for any of 1000+ models via https://developers.meshapi.ai (model ids are "provider/model-name";
+# defaults to openai/gpt-4o — MeshAPI's Bedrock-routed Anthropic models don't yet support the structured
+# JSON output every agent here needs, per MeshAPI's own structured-output docs):
+PYTHONPATH=src python -m pbicompass generate path/to/Project.pbip --provider meshapi -o report.md   # MESHAPI_API_KEY
 ```
 
 Output format is inferred from the `-o` extension (or forced with `--format`):

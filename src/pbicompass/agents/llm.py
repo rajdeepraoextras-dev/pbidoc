@@ -236,12 +236,23 @@ class MeshAPIClient:
     OpenAI-compatible endpoint, so BYOK users no longer need a separate
     ``ANTHROPIC_API_KEY``/``GEMINI_API_KEY``/``COHERE_API_KEY`` per provider.
 
-    Model ids are ``provider/model-name`` (e.g. ``"anthropic/claude-opus-4.8"``,
-    ``"openai/gpt-4o"``) — see MeshAPI's model catalog for the full list. Note
-    MeshAPI's own catalog uses dot-separated point releases for Claude models
-    (``claude-opus-4.8``), unlike Anthropic's native API model ids, which use
-    hyphens (``claude-opus-4-8``, as :class:`AnthropicClient` expects) — the
-    two are not interchangeable.
+    Model ids are ``provider/model-name`` (e.g. ``"openai/gpt-4o"``,
+    ``"anthropic/claude-opus-4.8"``) — see MeshAPI's model catalog for the
+    full list. Note MeshAPI's own catalog uses dot-separated point releases
+    for Claude models (``claude-opus-4.8``), unlike Anthropic's native API
+    model ids, which use hyphens (``claude-opus-4-8``, as
+    :class:`AnthropicClient` expects) — the two are not interchangeable.
+
+    Defaults to ``openai/gpt-4o`` rather than a Claude model: MeshAPI routes
+    at least some Anthropic model ids through AWS Bedrock's Converse API,
+    which doesn't support the structured-output parameter MeshAPI's
+    translation layer attaches for them (every ``complete_json`` call here
+    fails with a Bedrock ``ValidationException`` on ``output_config.format``
+    for those ids) — MeshAPI's own docs confirm first-class structured-output
+    support for OpenAI (and Google Gemini) models, not Anthropic-via-Bedrock.
+    Pass an explicit ``model=`` to use a different one once MeshAPI's
+    Bedrock-routed structured-output support catches up.
+
     Implemented with the official ``openai`` SDK pointed at MeshAPI's base
     URL, exactly as MeshAPI's own quickstart recommends ("replace the Base
     URL of any OpenAI-compatible SDK with https://api.meshapi.ai"), rather
@@ -259,7 +270,7 @@ class MeshAPIClient:
 
     def __init__(
         self,
-        model: str = "anthropic/claude-opus-4.8",
+        model: str = "openai/gpt-4o",
         *,
         api_key: Optional[str] = None,
         effort: Optional[str] = None,
@@ -316,7 +327,10 @@ _DEFAULT_MODEL = {
     "anthropic": "claude-opus-4-8",
     "gemini": "gemini-3.5-flash",
     "cohere": "command-a-03-2025",
-    "meshapi": "anthropic/claude-opus-4.8",
+    # openai/gpt-4o, not a Claude id — see MeshAPIClient's docstring: MeshAPI
+    # routes at least some Anthropic ids through AWS Bedrock's Converse API,
+    # which rejects the structured-output parameter every agent here needs.
+    "meshapi": "openai/gpt-4o",
 }
 
 

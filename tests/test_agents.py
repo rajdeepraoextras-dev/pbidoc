@@ -485,6 +485,32 @@ class ClientFactoryTest(unittest.TestCase):
         self.assertEqual(captured["model"], "anthropic/claude-opus-4.8")
         self.assertEqual(client.last_usage, {"input_tokens": 10, "output_tokens": 5})
 
+    def test_meshapi_default_model_is_not_a_bedrock_routed_anthropic_id(self):
+        # Regression: MeshAPI routes at least some "anthropic/..." model ids
+        # through AWS Bedrock's Converse API, which 400s on the
+        # structured-output parameter MeshAPI's translation layer attaches
+        # for them ("output_config.format: Extra inputs are not permitted") —
+        # every agent here needs strict JSON output, so the default must be a
+        # model MeshAPI's own docs confirm has first-class structured-output
+        # support (OpenAI or Gemini), never an unqualified Claude id.
+        import sys
+        from types import ModuleType
+        from unittest.mock import patch
+
+        from pbicompass.agents.llm import get_client
+
+        class _FakeOpenAI:
+            def __init__(self, **kwargs):
+                pass
+
+        fake_module = ModuleType("openai")
+        fake_module.OpenAI = _FakeOpenAI
+
+        with patch.dict(sys.modules, {"openai": fake_module}):
+            client = get_client("meshapi")
+
+        self.assertFalse(client.model.startswith("anthropic/"))
+
     def test_gemini_schema_strips_additional_properties(self):
         from pbicompass.agents.llm import _gemini_schema
         schema = {
