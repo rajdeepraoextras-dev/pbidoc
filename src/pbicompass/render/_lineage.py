@@ -140,7 +140,7 @@ def build_lineage_data(model: SemanticModel) -> tuple[list[dict[str, str]], str]
     
     svg = [
         f'<svg viewBox="0 0 {W} {H}" width="100%" xmlns="http://www.w3.org/2000/svg" '
-        f'font-family="inherit" role="img" aria-labelledby="lineage-diagram-title">'
+        f'font-family="\'Poppins\', sans-serif" role="img" aria-labelledby="lineage-diagram-title">'
     ]
     svg.append('<title id="lineage-diagram-title">Data lineage graph: sources to pages</title>')
     

@@ -131,7 +131,7 @@ def render_navigation_map(model: SemanticModel) -> tuple[list[dict[str, str]], s
 
     svg = [
         f'<svg viewBox="0 0 {W} {H}" width="100%" xmlns="http://www.w3.org/2000/svg" '
-        f'font-family="inherit" role="img" aria-labelledby="nav-diagram-title">'
+        f'font-family="\'Poppins\', sans-serif" role="img" aria-labelledby="nav-diagram-title">'
     ]
     svg.append('<title id="nav-diagram-title">Report page navigation flow map</title>')
 
@@ -178,7 +178,7 @@ def render_navigation_map(model: SemanticModel) -> tuple[list[dict[str, str]], s
             lbl = lbl[:16] + "..."
             
         svg.append(f'  <text x="{lx_offset:.1f}" y="{ly_offset + 3:.1f}" font-size="8" fill="#475569" '
-                   f'text-anchor="middle" font-family="sans-serif">{html_e(lbl)}</text>')
+                   f'text-anchor="middle">{html_e(lbl)}</text>')
 
     # Render node boxes
     for p in pages:
@@ -204,7 +204,7 @@ def render_navigation_map(model: SemanticModel) -> tuple[list[dict[str, str]], s
             display_name = display_name[:16] + "..."
             
         svg.append(f'    <text x="{x:.1f}" y="{y + 3:.1f}" font-size="8.5" font-weight="600" fill="{text_color}" '
-                   f'text-anchor="middle" font-family="sans-serif">{html_e(display_name)}</text>')
+                   f'text-anchor="middle">{html_e(display_name)}</text>')
         svg.append('  </a>')
 
     svg.append('</svg>')

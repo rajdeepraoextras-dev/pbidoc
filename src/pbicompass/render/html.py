@@ -78,9 +78,9 @@ def format_prose_with_code(text: str) -> str:
             
             if lang == "dax":
                 highlighted = highlight_dax(code_text)
-                o.append(f'<div style="margin: 8px 0; position: relative;"><pre style="font-size:0.85em; background:#f1f5f9; padding:8px; border-radius:4px; overflow-x:auto;"><code>{highlighted}</code></pre></div>')
+                o.append(f'<div style="margin: 8px 0; position: relative;"><pre><code>{highlighted}</code></pre></div>')
             else:
-                o.append(f'<div style="margin: 8px 0; position: relative;"><pre style="font-size:0.85em; background:#f1f5f9; padding:8px; border-radius:4px; overflow-x:auto;"><code>{_e(code_text)}</code></pre></div>')
+                o.append(f'<div style="margin: 8px 0; position: relative;"><pre><code>{_e(code_text)}</code></pre></div>')
     return "".join(o)
 
 
@@ -332,13 +332,13 @@ def render_html(
                 o.append('<ol class="transformation-steps" style="margin-bottom:0.5rem;">')
                 for s in steps:
                     o.append(f'<li style="margin-bottom:0.4rem;"><strong>{_e(s.get("step"))}</strong> — <i>{_e(s.get("type"))}</i><br>'
-                             f'<code style="font-size:0.85em; background:#f1f5f9; padding:2px 4px; border-radius:4px; word-break:break-all;">{_e(s.get("expr"))}</code></li>')
+                             f'<code style="word-break:break-all;">{_e(s.get("expr"))}</code></li>')
                 o.append('</ol>')
             
             raw_m = t.get("raw_m")
             if raw_m:
                 o.append(f'<details class="collapsible"><summary>Full M Query Script</summary>'
-                         f'<pre style="font-size:0.85em; background:#1e293b; color:#f8fafc; padding:10px; border-radius:6px; overflow-x:auto;"><code>{_e(raw_m)}</code></pre></details>')
+                         f'<pre><code>{_e(raw_m)}</code></pre></details>')
             o.append('</div>')
     if ln.lineage_svg:
         o.append("<h3>Data lineage graph</h3>")
@@ -673,7 +673,7 @@ def render_html(
             if script_lines:
                 o.append('<h4>Tabular Editor C# Script</h4>')
                 script_text = f'// Tabular Editor C# script to remove unused assets in Table {t_name}\n' + "\n".join(script_lines)
-                o.append(f'<pre style="font-size:0.85em; background:#f1f5f9; padding:8px; border-radius:4px; overflow-x:auto;"><code>{_e(script_text)}</code></pre>')
+                o.append(f'<pre><code>{_e(script_text)}</code></pre>')
                 
             o.append('</div></details>')
             
