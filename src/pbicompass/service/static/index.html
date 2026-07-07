@@ -725,6 +725,17 @@
   }
   #job-warnings.show { display: block; }
   #job-warnings ul { margin: 6px 0 0 18px; }
+  /* Distinct from #job-warnings: these are quality-pass notes (the critic/
+     grounding passes flagging something for review) — the AI engine ran
+     normally, so this is styled as a neutral/positive signal, not an amber
+     "something degraded" warning. */
+  #job-notes {
+    margin-top: 10px; padding: 12px 14px; border-radius: 12px;
+    background: rgba(52,211,153,.08); border: 1px solid rgba(52,211,153,.3);
+    color: var(--success); font-size: .84rem; line-height: 1.5; text-align: left; display: none;
+  }
+  #job-notes.show { display: block; }
+  #job-notes ul { margin: 6px 0 0 18px; }
 
   .progress-track { margin-top: 14px; height: 6px; border-radius: 100px; background: rgba(255,255,255,.07); overflow: hidden; }
   .progress-fill { height: 100%; width: 0%; border-radius: 100px; background: var(--grad); transition: width .4s var(--ease); }
@@ -1281,6 +1292,7 @@
 
         <div id="status"></div>
         <div id="job-warnings"></div>
+        <div id="job-notes"></div>
         <div id="progress-wrap" style="display:none">
           <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
           <div id="progress-text" class="progress-text"></div>
@@ -1763,16 +1775,47 @@ function setStatus(msg, cls) {
   else if (cls === "warn") c.style.borderColor = "var(--amber)";
   else c.style.borderColor = "var(--hair-2)";
 }
+// Only these mean a section actually fell back to the deterministic/offline
+// engine instead of the selected AI provider — everything else the backend
+// warns about (the critic's unknown-name check, the grounding pass flagging
+// or correcting a claim, an enrichment/rules-file issue) is the AI engine
+// running normally and doing its job, not a degradation. Keeping the two
+// separated avoids telling a user "the offline engine was used" every time
+// the grounding pass (working as designed) has a note for them.
+const FALLBACK_MARKERS = [
+  "LLM call failed", "AI narrative unavailable", "malformed response", "provider unavailable",
+];
+function isFallbackWarning(w) {
+  return FALLBACK_MARKERS.some(m => w.includes(m));
+}
+function escHtml(s) {
+  return s.replace(/[<>&]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
+}
 function renderWarnings(warnings) {
-  const box = $("job-warnings");
+  const fallbackBox = $("job-warnings"), noteBox = $("job-notes");
   if (!Array.isArray(warnings) || !warnings.length) {
-    box.classList.remove("show");
-    box.innerHTML = "";
+    fallbackBox.classList.remove("show"); fallbackBox.innerHTML = "";
+    noteBox.classList.remove("show"); noteBox.innerHTML = "";
     return;
   }
-  const items = warnings.map(w => `<li>${w.replace(/[<>&]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]))}</li>`).join("");
-  box.innerHTML = `<strong>Some sections used the offline engine instead of the selected AI engine:</strong><ul>${items}</ul>`;
-  box.classList.add("show");
+  const fallback = warnings.filter(isFallbackWarning);
+  const notes = warnings.filter(w => !isFallbackWarning(w));
+
+  if (fallback.length) {
+    const items = fallback.map(w => `<li>${escHtml(w)}</li>`).join("");
+    fallbackBox.innerHTML = `<strong>Some sections used the offline engine instead of the selected AI engine:</strong><ul>${items}</ul>`;
+    fallbackBox.classList.add("show");
+  } else {
+    fallbackBox.classList.remove("show"); fallbackBox.innerHTML = "";
+  }
+
+  if (notes.length) {
+    const items = notes.map(w => `<li>${escHtml(w)}</li>`).join("");
+    noteBox.innerHTML = `<strong>Notes from this run (the AI engine ran normally):</strong><ul>${items}</ul>`;
+    noteBox.classList.add("show");
+  } else {
+    noteBox.classList.remove("show"); noteBox.innerHTML = "";
+  }
 }
 function setBusy(busy) {
   $("submit").disabled = busy;
@@ -1859,10 +1902,14 @@ async function poll(jobId) {
       return;
     }
     if (job.status === "done") {
-      const hasWarnings = Array.isArray(job.warnings) && job.warnings.length > 0;
+      const warnings = Array.isArray(job.warnings) ? job.warnings : [];
+      const hasFallback = warnings.some(isFallbackWarning);
+      const hasNotes = warnings.some(w => !isFallbackWarning(w));
       setStatus(
-        hasWarnings ? "Documentation compiled — with fallback notes below." : "Documentation compiled successfully!",
-        hasWarnings ? "warn" : "ok"
+        hasFallback ? "Documentation compiled — with fallback notes below."
+          : hasNotes ? "Documentation compiled — with review notes below."
+          : "Documentation compiled successfully!",
+        hasFallback ? "warn" : "ok"
       );
       renderWarnings(job.warnings);
       finishProgress(true);
