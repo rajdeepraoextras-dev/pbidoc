@@ -587,7 +587,7 @@ details.collapsible > .code-block pre {
   touch-action: none;
 }
 .diagram svg text {
-  font-family: var(--font-sans);
+  font-family: 'Poppins', sans-serif !important;
 }
 .diagram svg:active {
   cursor: grabbing;
