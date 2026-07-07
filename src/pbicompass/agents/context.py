@@ -12,6 +12,17 @@ before their doc-type loop and hand the same instance to each generator.
 directly (as every existing test does) builds its own context on demand,
 so direct-import callers keep working unchanged — the shared-context path is
 purely an optimization for multi-document jobs, never a requirement.
+
+Phase 2 adds the Report Intelligence pass here too: one whole-model
+synthesis call, run before the DAX Translator batches (so the translator
+itself can consume the resulting ``report_context``), with its result
+stashed on ``JobAIContext.insights`` — the field Phase 0 reserved for this.
+The deterministic digest that call is built from is stashed separately on
+``JobAIContext.model_digest`` regardless of whether the synthesis call
+itself succeeds — Phase 3's grounding pass (``agents/grounding.py``) needs
+that same digest as its own verification ground truth, and digest-building
+has no LLM involved, so there is no reason to couple its availability to
+the Report Intelligence call's success.
 """
 
 from __future__ import annotations
@@ -39,6 +50,12 @@ class JobAIContext:
     # Populated by Phase 2's report-intelligence pass; ``None`` until then.
     insights: Optional[dict] = None
 
+    # The deterministic whole-model digest the Report Intelligence call was
+    # built from (Phase 2) — kept even when that call itself fails/is
+    # offline, since Phase 3's grounding pass reuses it as pure ground-truth
+    # text and needs no LLM to have succeeded for it to exist.
+    model_digest: Optional[str] = None
+
     # Job-sandbox-scoped LLM response cache path (service only); ``None``
     # means "use the client-wide default" (``LLMResponseCache``'s own
     # ``PBICOMPASS_LLM_CACHE`` env-var lookup, e.g. the CLI's persistent
@@ -57,6 +74,60 @@ class JobAIContext:
         bucket["output_tokens"] += output_tokens
 
 
+def _compute_audit_summary(model: SemanticModel) -> dict:
+    """Deterministic finding-count summary for the Report Intelligence
+    digest (``insights.build_model_digest``) — the same rule engine every
+    document generator already runs independently (audit.py, technical.py's
+    ``_health_and_recommendations``, executive.py), computed here with no
+    owner/classification context since this pass runs before either is
+    resolved by the caller; close enough for a reasoning aid that is never
+    rendered to a reader verbatim."""
+    from . import audit_rules
+
+    audit_rules.reset_suppressed_rules()
+    measures = model.all_measures()
+    dax_findings = audit_rules.find_dax_findings(measures)
+    best_practices = audit_rules.check_best_practices(model)
+    performance_risks = audit_rules.find_performance_risks(model)
+    governance = audit_rules.check_governance(model)
+    unused_assets = audit_rules.find_unused_assets(model)
+    health = audit_rules.compute_health_score(
+        dax_findings, best_practices, performance_risks, governance, unused_assets,
+    )
+    complexity = audit_rules.compute_complexity(model)
+    return {
+        "health_overall": health.overall,
+        "health_band": health.band,
+        "complexity_level": complexity.level,
+        "dax_finding_count": len(dax_findings),
+        "failed_practice_count": sum(1 for c in best_practices if not c.passed),
+        "performance_risk_count": len(performance_risks),
+        "governance_finding_count": len(governance),
+        "unused_asset_count": (
+            len(unused_assets.measures) + len(unused_assets.columns)
+            + len(unused_assets.tables) + len(unused_assets.calculated_columns)
+            + len(unused_assets.report_pages)
+        ),
+    }
+
+
+def _build_insights(
+    model: SemanticModel, client: LLMClient, warn: Warn, ctx: "JobAIContext", digest: str,
+) -> Optional[dict]:
+    """Phase 2: the one whole-model Report Intelligence call, over the
+    ``digest`` the caller already built. ``None`` on offline/failure — every
+    downstream ``report_context`` consumer already treats a missing value as
+    "reason from the concrete metadata alone"."""
+    from . import insights
+    from .generators.base import call_llm
+
+    return call_llm(
+        client, insights.REPORT_INTELLIGENCE_SYSTEM,
+        insights.report_intelligence_input(digest),
+        insights.REPORT_INTELLIGENCE_SCHEMA, warn, "Report Intelligence", ai_context=ctx,
+    )
+
+
 def build_job_context(
     model: SemanticModel,
     client: Optional[LLMClient],
@@ -64,22 +135,33 @@ def build_job_context(
     *,
     cache_path: Optional[str] = None,
 ) -> JobAIContext:
-    """Run the DAX Translator once for every measure in ``model`` and stash
-    the merged result. Offline (``client is None``) or a fully failed pass
-    both degrade to ``translations=None`` — every consumer already has a
-    deterministic per-measure fallback for that case."""
+    """Run the Report Intelligence pass and the DAX Translator once for the
+    whole job and stash both results. Offline (``client is None``) or a
+    fully failed pass degrade ``insights``/``translations`` to ``None`` —
+    every consumer already has a deterministic (or context-free) fallback
+    for that case.
+
+    Insights are built *before* the DAX Translator batches so the
+    translator's own prompt can consume the resulting ``report_context``
+    (Phase 2) — the one deliberate ordering dependency in this function.
+    """
     # Local import: ``generators.base`` needs ``io.AGENT_EFFORT``, and
     # ``generators/__init__.py`` (via audit/executive/technical/user_guide,
     # each needing ``JobAIContext`` for their ``generate(...)`` signature)
     # imports this module — a module-level import here would cycle back
     # into a not-yet-defined ``JobAIContext``.
+    from . import insights as insights_mod
     from .generators.base import call_llm
 
     ctx = JobAIContext(cache_path=cache_path)
     if client is None:
         return ctx
+
+    ctx.model_digest = insights_mod.build_model_digest(model, _compute_audit_summary(model))
+    ctx.insights = _build_insights(model, client, warn, ctx, ctx.model_digest)
+
     merged: dict[str, dict] = {}
-    for batch in io.dax_translator_batches(model):
+    for batch in io.dax_translator_batches(model, report_context=ctx.insights):
         data = call_llm(
             client, io.DAX_TRANSLATOR_SYSTEM, batch, io.DAX_TRANSLATOR_SCHEMA,
             warn, "DAX Translator", ai_context=ctx,

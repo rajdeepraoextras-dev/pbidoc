@@ -40,6 +40,23 @@ def _model():
     return detect_and_parse(FIXTURE)
 
 
+def _fake_report_intelligence_response() -> dict:
+    """Canned schema-valid ``ModelInsights`` (Phase 2) — every generator here
+    that builds its own ``ai_context`` (executive/user-guide) triggers the
+    Report Intelligence pass before its own agent call, so any fake client
+    reaching ``build_job_context`` needs this branch too."""
+    return {
+        "business_domain": "FAKE_DOMAIN",
+        "report_purpose": {"statement": "FAKE_REPORT_PURPOSE", "confidence": "High"},
+        "audience_hypotheses": [],
+        "entity_definitions": [],
+        "page_workflows": [],
+        "kpi_relationships": [],
+        "cross_cutting_observations": [],
+        "data_quality_notes": [],
+    }
+
+
 class FakeAuditNarratorClient:
     """Returns a canned narrative for the Audit Narrator system prompt."""
 
@@ -65,6 +82,8 @@ class FakeExecutiveWriterClient:
 
     def complete_json(self, system: str, user: str, schema: dict, *, effort: str | None = None) -> dict:
         self.calls += 1
+        if "Report Intelligence" in system:
+            return _fake_report_intelligence_response()
         if "executive summary" in system:
             return {
                 "business_purpose": "FAKE_BUSINESS_PURPOSE",
@@ -84,6 +103,8 @@ class FakeExecutiveWriterClient:
             }
         if "expert technical editor" in system:  # the critic pass (5.3)
             return {"violations": []}
+        if "fact-checker" in system:  # the grounding pass (Phase 3)
+            return {"claims": []}
         raise AssertionError("unexpected system prompt")
 
 
@@ -270,10 +291,12 @@ class ExecutiveGeneratorLlmTest(unittest.TestCase):
         self.assertEqual(doc.purpose, "FAKE_BUSINESS_PURPOSE")
         self.assertEqual(doc.business_value, "FAKE_BUSINESS_VALUE")
         self.assertEqual(doc.maintenance_note, "FAKE_MAINTENANCE_OVERVIEW")
-        # 1 Executive Writer call + 1 DAX Translator batch call (P3: Key KPI
+        # 1 Report Intelligence call (Phase 2's whole-model synthesis pass,
+        # run once by build_job_context before any other agent) + 1
+        # Executive Writer call + 1 DAX Translator batch call (P3: Key KPI
         # meanings reuse the same DAX Translator agent as the technical doc)
-        # + 1 critic pass (5.3).
-        self.assertEqual(client.calls, 3)
+        # + 1 critic pass (5.3) + 1 grounding pass (Phase 3).
+        self.assertEqual(client.calls, 5)
         self.assertTrue(any("FAKE_KPI_MEANING" in kpi for kpi in doc.key_kpis))
         # deterministic facts stay identical regardless of the LLM client
         deterministic_doc = ExecutiveSummaryGenerator.generate(_model())
@@ -300,6 +323,8 @@ class FakeUserGuideWriterClient:
 
     def complete_json(self, system: str, user: str, schema: dict, *, effort: str | None = None) -> dict:
         self.calls += 1
+        if "Report Intelligence" in system:
+            return _fake_report_intelligence_response()
         if "Business User Guide" in system:
             import json as _json
             payload = _json.loads(user)
@@ -324,6 +349,8 @@ class FakeUserGuideWriterClient:
             }
         if "expert technical editor" in system:  # the critic pass (5.3)
             return {"violations": []}
+        if "fact-checker" in system:  # the grounding pass (Phase 3)
+            return {"claims": []}
         raise AssertionError("unexpected system prompt")
 
 
@@ -445,11 +472,13 @@ class BusinessGuideGeneratorLlmTest(unittest.TestCase):
         self.assertEqual(doc.introduction, "FAKE_INTRODUCTION")
         self.assertTrue(all(p.purpose == "FAKE_PURPOSE" for p in doc.pages))
         self.assertTrue(all(p.common_scenarios == ["FAKE_SCENARIO"] for p in doc.pages))
-        # 1 User Guide Writer call + 1 DAX Translator batch call (P3: the
-        # glossary reuses the same DAX Translator agent as the technical doc
-        # instead of only ever falling back to the deterministic gloss)
-        # + 1 critic pass (5.3).
-        self.assertEqual(client.calls, 3)
+        # 1 Report Intelligence call (Phase 2's whole-model synthesis pass,
+        # run once by build_job_context before any other agent) + 1 User
+        # Guide Writer call + 1 DAX Translator batch call (P3: the glossary
+        # reuses the same DAX Translator agent as the technical doc instead
+        # of only ever falling back to the deterministic gloss) + 1 critic
+        # pass (5.3) + 1 grounding pass (Phase 3).
+        self.assertEqual(client.calls, 5)
         measure_terms = [g for g in doc.glossary if g.term in {m.name for m in _model().all_measures()}]
         self.assertTrue(measure_terms)
         self.assertTrue(all("FAKE_GLOSSARY_MEANING" in g.plain_definition for g in measure_terms))

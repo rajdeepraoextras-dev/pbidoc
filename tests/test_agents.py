@@ -19,6 +19,23 @@ from pbicompass.render import render_markdown
 FIXTURE = Path(__file__).parent / "fixtures" / "SampleSales" / "SampleSales.pbip"
 
 
+def _fake_report_intelligence_response() -> dict:
+    """Canned schema-valid ``ModelInsights`` (Phase 2) shared by every fake
+    client below that reaches ``build_job_context`` (anything answering
+    the Business Analyst/Data Modeler/Executive/User-Guide prompts also
+    triggers the Report Intelligence pass first)."""
+    return {
+        "business_domain": "FAKE_DOMAIN",
+        "report_purpose": {"statement": "FAKE_REPORT_PURPOSE", "confidence": "High"},
+        "audience_hypotheses": [],
+        "entity_definitions": [],
+        "page_workflows": [],
+        "kpi_relationships": [],
+        "cross_cutting_observations": [],
+        "data_quality_notes": [],
+    }
+
+
 class FakeLLMClient:
     """Returns canned schema-valid JSON, routed by the agent's system prompt."""
 
@@ -27,6 +44,8 @@ class FakeLLMClient:
 
     def complete_json(self, system: str, user: str, schema: dict, *, effort: str | None = None) -> dict:
         self.calls += 1
+        if "Report Intelligence" in system:
+            return _fake_report_intelligence_response()
         if "Business Analyst" in system or "BI consultant" in system:
             return {
                 "core_purpose": "FAKE_PURPOSE",
@@ -58,6 +77,8 @@ class FakeLLMClient:
             }
         if "expert technical editor" in system:  # the critic pass (5.3)
             return {"violations": []}
+        if "fact-checker" in system:  # the grounding pass (Phase 3)
+            return {"claims": []}
         raise AssertionError("unexpected system prompt")
 
 
@@ -273,6 +294,8 @@ class _FakeAllAgentsClient:
 
     def complete_json(self, system: str, user: str, schema: dict, *, effort: str | None = None) -> dict:
         self.calls += 1
+        if "Report Intelligence" in system:
+            return _fake_report_intelligence_response()
         if "senior DAX developer" in system or "DAX measures" in system:
             self.dax_calls += 1
             payload = json.loads(user)
@@ -321,6 +344,8 @@ class _FakeAllAgentsClient:
             }
         if "expert technical editor" in system:  # the critic pass (5.3)
             return {"violations": []}
+        if "fact-checker" in system:  # the grounding pass (Phase 3)
+            return {"claims": []}
         raise AssertionError(f"unexpected system prompt: {system[:80]!r}")
 
 
@@ -350,6 +375,101 @@ class SharedJobContextTest(unittest.TestCase):
         # Every document type consumed the shared translations — no generator
         # made its own additional DAX Translator call.
         self.assertEqual(client.dax_calls, calls_after_context_build)
+
+
+class ReportIntelligenceTest(unittest.TestCase):
+    """Phase 2 (``AI_NATIVE_PLAN.md``): the one whole-model Report
+    Intelligence call, wired into ``build_job_context`` and stored on
+    ``JobAIContext.insights`` (the field Phase 0 reserved for it)."""
+
+    def test_insights_populated_when_client_succeeds(self):
+        from pbicompass.agents.context import build_job_context
+
+        model = detect_and_parse(FIXTURE)
+        ai_context = build_job_context(model, _FakeAllAgentsClient(), lambda _msg: None)
+        self.assertIsNotNone(ai_context.insights)
+        self.assertEqual(ai_context.insights["business_domain"], "FAKE_DOMAIN")
+        self.assertEqual(ai_context.insights["report_purpose"]["statement"], "FAKE_REPORT_PURPOSE")
+
+    def test_insights_none_when_offline(self):
+        from pbicompass.agents.context import build_job_context
+
+        model = detect_and_parse(FIXTURE)
+        ai_context = build_job_context(model, None, lambda _msg: None)
+        self.assertIsNone(ai_context.insights)
+
+    def test_insights_none_on_failure_with_warning(self):
+        from pbicompass.agents.context import build_job_context
+
+        model = detect_and_parse(FIXTURE)
+        warnings: list[str] = []
+        ai_context = build_job_context(model, FailingClient(), warnings.append)
+        self.assertIsNone(ai_context.insights)
+        self.assertTrue(any("Report Intelligence" in w for w in warnings))
+
+    def test_digest_contains_tables_measures_and_audit_counts(self):
+        from pbicompass.agents.insights import build_model_digest
+
+        model = detect_and_parse(FIXTURE)
+        audit_summary = {
+            "health_overall": 80, "health_band": "Good", "complexity_level": "Low",
+            "dax_finding_count": 1, "failed_practice_count": 2,
+            "performance_risk_count": 0, "governance_finding_count": 0,
+            "unused_asset_count": 3,
+        }
+        digest = build_model_digest(model, audit_summary)
+        self.assertIn("Health score: 80/100 (Good)", digest)
+        self.assertIn("== Tables ==", digest)
+        self.assertIn("== Measures ==", digest)
+        self.assertIn("== Pages ==", digest)
+        self.assertTrue(any(t.name in digest for t in model.tables))
+
+    def test_digest_respects_char_budget(self):
+        from pbicompass.agents.insights import build_model_digest
+
+        model = detect_and_parse(FIXTURE)
+        audit_summary = {
+            "health_overall": 0, "health_band": "Poor", "complexity_level": "Low",
+            "dax_finding_count": 0, "failed_practice_count": 0,
+            "performance_risk_count": 0, "governance_finding_count": 0,
+            "unused_asset_count": 0,
+        }
+        digest = build_model_digest(model, audit_summary, char_budget=200)
+        self.assertLessEqual(len(digest), 200 + len("\n... (truncated)"))
+        self.assertTrue(digest.endswith("... (truncated)"))
+
+    def test_report_context_embedded_when_present_and_omitted_when_none(self):
+        from pbicompass.agents import io
+
+        model = detect_and_parse(FIXTURE)
+        ctx = {"business_domain": "FAKE_DOMAIN"}
+
+        with_ctx = io.business_analyst_input(model, report_context=ctx)
+        without_ctx = io.business_analyst_input(model)
+        self.assertEqual(with_ctx["report_context"], ctx)
+        self.assertNotIn("report_context", without_ctx)
+
+        dax_with_ctx = io.dax_translator_input(model, report_context=ctx)
+        dax_without_ctx = io.dax_translator_input(model)
+        self.assertEqual(dax_with_ctx["report_context"], ctx)
+        self.assertNotIn("report_context", dax_without_ctx)
+
+        for batch in io.dax_translator_batches(model, report_context=ctx):
+            self.assertEqual(batch["report_context"], ctx)
+        for batch in io.dax_translator_batches(model):
+            self.assertNotIn("report_context", batch)
+
+        dm_with_ctx = io.data_modeler_input(model, report_context=ctx)
+        self.assertEqual(dm_with_ctx["report_context"], ctx)
+        self.assertNotIn("report_context", io.data_modeler_input(model))
+
+        ew_with_ctx = io.executive_writer_input("p", [], {}, {}, [], "m", report_context=ctx)
+        self.assertEqual(ew_with_ctx["report_context"], ctx)
+        self.assertNotIn("report_context", io.executive_writer_input("p", [], {}, {}, [], "m"))
+
+        ugw_with_ctx = io.user_guide_writer_input("R", "intro", [], report_context=ctx)
+        self.assertEqual(ugw_with_ctx["report_context"], ctx)
+        self.assertNotIn("report_context", io.user_guide_writer_input("R", "intro", []))
 
 
 class SandboxedLlmCacheTest(unittest.TestCase):
@@ -402,7 +522,7 @@ class StructuredOutputSchemaTest(unittest.TestCase):
         return problems
 
     def test_every_agent_schema_sets_additional_properties_false(self):
-        from pbicompass.agents import io
+        from pbicompass.agents import grounding, insights, io
         from pbicompass.agents.critic import CRITIC_SCHEMA
 
         schemas = {
@@ -414,6 +534,8 @@ class StructuredOutputSchemaTest(unittest.TestCase):
             "EXECUTIVE_WRITER_SCHEMA": io.EXECUTIVE_WRITER_SCHEMA,
             "USER_GUIDE_WRITER_SCHEMA": io.USER_GUIDE_WRITER_SCHEMA,
             "CRITIC_SCHEMA": CRITIC_SCHEMA,
+            "REPORT_INTELLIGENCE_SCHEMA": insights.REPORT_INTELLIGENCE_SCHEMA,
+            "GROUNDING_SCHEMA": grounding.GROUNDING_SCHEMA,
         }
         for name, schema in schemas.items():
             with self.subTest(schema=name):

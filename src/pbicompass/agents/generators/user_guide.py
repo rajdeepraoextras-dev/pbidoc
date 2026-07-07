@@ -26,6 +26,7 @@ from .. import io
 from ..context import JobAIContext, build_job_context
 from ..critic import apply_critic_pass, apply_results
 from ..deterministic import business_analyst_deterministic
+from ..grounding import apply_grounding_pass
 from ..llm import LLMClient
 from ..report_facts import (
     business_plain_english,
@@ -200,7 +201,15 @@ def _drillthrough_actions(drillthrough_page_names: list[str]) -> list[str]:
             for name in drillthrough_page_names]
 
 
-def _introduction(model, core_purpose: str) -> str:
+def _introduction(model, core_purpose: str, insights: Optional[dict] = None) -> str:
+    """Phase 2: when the whole-model synthesis has a confident report
+    purpose, it seeds this intro's core_purpose instead of the generic
+    deterministic one — the same free upgrade ``technical.py``'s Business
+    Analyst fallback gets, purchased by a call already made for this job."""
+    if insights:
+        rp = insights.get("report_purpose") or {}
+        if rp.get("statement") and rp.get("confidence") in ("High", "Medium"):
+            core_purpose = rp["statement"]
     return (f"Welcome! This guide explains how to use the '{model.report_name}' report — no "
             f"technical background needed. {core_purpose}")
 
@@ -214,12 +223,10 @@ def _getting_started(pages: list[PageGuide]) -> list[str]:
     return tips
 
 
-def _run_critic(doc: UserGuideDocument, model, client, warn: Warn, ai_context: Optional[JobAIContext]) -> None:
-    """5.3: one critic pass over the user guide's narrative fields."""
-    known_names = {t.name for t in model.tables}
-    known_names |= {m.name for m in model.all_measures()}
-    known_names |= {p.display_name for p in model.pages}
-
+def _narrative_triples(doc: UserGuideDocument) -> list[tuple[str, str, "callable"]]:
+    """The user guide's narrative fields as ``(location, text, setter)``
+    triples — shared by the critic (5.3) and grounding (Phase 3) passes so
+    neither re-derives the other's field list."""
     triples: list[tuple[str, str, "callable"]] = []
 
     def _set_introduction(v: str) -> None:
@@ -235,9 +242,31 @@ def _run_critic(doc: UserGuideDocument, model, client, warn: Warn, ai_context: O
         def _set_definition(v: str, _t=term) -> None:
             _t.plain_definition = v
         triples.append((f"glossary[{i}].plain_definition", term.plain_definition, _set_definition))
+    return triples
 
+
+def _run_critic(doc: UserGuideDocument, model, client, warn: Warn, ai_context: Optional[JobAIContext]) -> None:
+    """5.3: one critic pass over the user guide's narrative fields."""
+    known_names = {t.name for t in model.tables}
+    known_names |= {m.name for m in model.all_measures()}
+    known_names |= {p.display_name for p in model.pages}
+
+    triples = _narrative_triples(doc)
     fields = [(loc, text) for loc, text, _ in triples]
     results = apply_critic_pass(fields, client, known_names=known_names, warn=warn, ai_context=ai_context)
+    apply_results(triples, results)
+
+
+def _run_grounding(doc: UserGuideDocument, client, warn: Warn, ai_context: Optional[JobAIContext]) -> None:
+    """Phase 3: one fact-verification call over the same narrative fields,
+    run after the critic pass so it judges the already style-corrected text.
+    Skipped when no shared ``ai_context``/digest is available."""
+    if ai_context is None or not ai_context.model_digest:
+        return
+    triples = _narrative_triples(doc)
+    fields = [(loc, text) for loc, text, _ in triples]
+    results = apply_grounding_pass(fields, client, model_digest=ai_context.model_digest,
+                                    warn=warn, ai_context=ai_context)
     apply_results(triples, results)
 
 
@@ -321,7 +350,8 @@ class BusinessGuideGenerator:
                 wireframe_svg=pf.get("wireframe_svg"),
             ))
 
-        introduction = _introduction(model, analyst.core_purpose)
+        report_context = ai_context.insights if ai_context is not None else None
+        introduction = _introduction(model, analyst.core_purpose, report_context)
         glossary = _build_glossary(model, client, warn, ai_context)
         getting_started = _getting_started(pages)
 
@@ -337,7 +367,8 @@ class BusinessGuideGenerator:
             ]
             introduction_set = False
             offset = 0
-            for batch in io.user_guide_writer_batches(model.report_name, introduction, page_drafts):
+            for batch in io.user_guide_writer_batches(model.report_name, introduction, page_drafts,
+                                                       report_context=report_context):
                 batch_titles = [p["page_title"] for p in batch["pages"]]
                 data = call_llm_with_retry(client, io.USER_GUIDE_WRITER_SYSTEM, batch, io.USER_GUIDE_WRITER_SCHEMA,
                                             ai_context=ai_context, name="User Guide Writer")
@@ -368,5 +399,6 @@ class BusinessGuideGenerator:
 
         if client is not None:
             _run_critic(doc, model, client, warn, ai_context)
+            _run_grounding(doc, client, warn, ai_context)
 
         return doc

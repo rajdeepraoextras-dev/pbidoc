@@ -121,6 +121,13 @@ class CriticGeneratorWiringTest(unittest.TestCase):
         something real to strip."""
 
         def complete_json(self, system: str, user: str, schema: dict, *, effort: str | None = None) -> dict:
+            if "Report Intelligence" in system:
+                return {
+                    "business_domain": "FAKE_DOMAIN",
+                    "report_purpose": {"statement": "FAKE_REPORT_PURPOSE", "confidence": "High"},
+                    "audience_hypotheses": [], "entity_definitions": [], "page_workflows": [],
+                    "kpi_relationships": [], "cross_cutting_observations": [], "data_quality_notes": [],
+                }
             if "Business Analyst" in system or "BI consultant" in system:
                 return {
                     "core_purpose": "This revolutionary report shows your sales.",
@@ -148,6 +155,8 @@ class CriticGeneratorWiringTest(unittest.TestCase):
                 ]}
             if "expert technical editor" in system:
                 return {"violations": []}
+            if "fact-checker" in system:  # the grounding pass (Phase 3)
+                return {"claims": []}
             raise AssertionError(f"unexpected system prompt: {system[:60]}")
 
     def test_banned_word_stripped_in_all_three_formats(self):

@@ -28,6 +28,7 @@ from .. import usage
 from ..context import JobAIContext, build_job_context
 from ..critic import apply_critic_pass, apply_results
 from ..deterministic import business_analyst_deterministic, schema_shape, translate_dax
+from ..grounding import apply_grounding_pass
 from ..llm import LLMClient
 from ..report_facts import business_plain_english, data_source_type_counts, first_sentence
 from .base import Warn, build_core_metadata, call_llm
@@ -188,11 +189,10 @@ def _next_steps(recommendations, shown_rule_ids: set[str], metadata) -> list[str
     return steps
 
 
-def _run_critic(doc: ExecutiveDocument, model, client, warn: Warn, ai_context: Optional[JobAIContext]) -> None:
-    """5.3: one critic pass over the executive doc's narrative fields."""
-    known_names = {t.name for t in model.tables}
-    known_names |= {m.name for m in model.all_measures()}
-
+def _narrative_triples(doc: ExecutiveDocument) -> list[tuple[str, str, "callable"]]:
+    """The executive doc's narrative fields as ``(location, text, setter)``
+    triples — shared by the critic (5.3) and grounding (Phase 3) passes so
+    neither re-derives the other's field list."""
     triples: list[tuple[str, str, "callable"]] = []
 
     def _set_purpose(v: str) -> None:
@@ -211,9 +211,30 @@ def _run_critic(doc: ExecutiveDocument, model, client, warn: Warn, ai_context: O
         def _set_consequence(v: str, _r=risk) -> None:
             _r.consequence = v
         triples.append((f"top_risks[{i}].consequence", risk.consequence, _set_consequence))
+    return triples
 
+
+def _run_critic(doc: ExecutiveDocument, model, client, warn: Warn, ai_context: Optional[JobAIContext]) -> None:
+    """5.3: one critic pass over the executive doc's narrative fields."""
+    known_names = {t.name for t in model.tables}
+    known_names |= {m.name for m in model.all_measures()}
+
+    triples = _narrative_triples(doc)
     fields = [(loc, text) for loc, text, _ in triples]
     results = apply_critic_pass(fields, client, known_names=known_names, warn=warn, ai_context=ai_context)
+    apply_results(triples, results)
+
+
+def _run_grounding(doc: ExecutiveDocument, client, warn: Warn, ai_context: Optional[JobAIContext]) -> None:
+    """Phase 3: one fact-verification call over the same narrative fields,
+    run after the critic pass so it judges the already style-corrected text.
+    Skipped when no shared ``ai_context``/digest is available."""
+    if ai_context is None or not ai_context.model_digest:
+        return
+    triples = _narrative_triples(doc)
+    fields = [(loc, text) for loc, text, _ in triples]
+    results = apply_grounding_pass(fields, client, model_digest=ai_context.model_digest,
+                                    warn=warn, ai_context=ai_context)
     apply_results(triples, results)
 
 
@@ -276,6 +297,7 @@ class ExecutiveSummaryGenerator:
                     },
                     known_risks=[f"[{r.severity}] {r.consequence}" for r in top_risks],
                     maintenance_draft=maintenance_note,
+                    report_context=ai_context.insights if ai_context is not None else None,
                 ),
                 io.EXECUTIVE_WRITER_SCHEMA, warn, "Executive Writer", ai_context=ai_context,
             )
@@ -305,5 +327,6 @@ class ExecutiveSummaryGenerator:
 
         if client is not None:
             _run_critic(doc, model, client, warn, ai_context)
+            _run_grounding(doc, client, warn, ai_context)
 
         return doc

@@ -16,6 +16,7 @@ from .. import audit_rules
 from .. import io
 from ..context import JobAIContext
 from ..critic import apply_critic_pass, apply_results
+from ..grounding import apply_grounding_pass
 from ..llm import LLMClient
 from .base import Warn, build_core_metadata, call_llm
 
@@ -48,14 +49,13 @@ def _deterministic_overview(
     return " ".join(parts)
 
 
-def _run_critic(doc: AuditDocument, model, client, warn: Warn, ai_context: Optional[JobAIContext]) -> None:
-    """5.3: one critic pass over the audit doc's narrative fields. Findings'
-    ``detail`` text is deterministic-template fact, not free LLM prose —
-    only ``narrative_overview`` and the recommendation write-ups go through
-    the critic."""
-    known_names = {t.name for t in model.tables}
-    known_names |= {m.name for m in model.all_measures()}
-
+def _narrative_triples(doc: AuditDocument) -> list[tuple[str, str, "callable"]]:
+    """The audit doc's narrative fields as ``(location, text, setter)``
+    triples — shared by the critic (5.3) and grounding (Phase 3) passes so
+    neither re-derives the other's field list. Findings' ``detail`` text is
+    deterministic-template fact, not free LLM prose — only
+    ``narrative_overview`` and the recommendation write-ups go through
+    either pass."""
     triples: list[tuple[str, str, "callable"]] = []
 
     def _set_narrative(v: str) -> None:
@@ -72,9 +72,34 @@ def _run_critic(doc: AuditDocument, model, client, warn: Warn, ai_context: Optio
         triples.append((f"recommendations[{i}].why_it_matters", rec.why_it_matters, _set_why))
         triples.append((f"recommendations[{i}].suggested_fix", rec.suggested_fix, _set_fix))
         triples.append((f"recommendations[{i}].expected_benefit", rec.expected_benefit, _set_benefit))
+    return triples
 
+
+def _run_critic(doc: AuditDocument, model, client, warn: Warn, ai_context: Optional[JobAIContext]) -> None:
+    """5.3: one critic pass over the audit doc's narrative fields."""
+    known_names = {t.name for t in model.tables}
+    known_names |= {m.name for m in model.all_measures()}
+
+    triples = _narrative_triples(doc)
     fields = [(loc, text) for loc, text, _ in triples]
     results = apply_critic_pass(fields, client, known_names=known_names, warn=warn, ai_context=ai_context)
+    apply_results(triples, results)
+
+
+def _run_grounding(doc: AuditDocument, client, warn: Warn, ai_context: Optional[JobAIContext]) -> None:
+    """Phase 3: one fact-verification call over the same narrative fields,
+    run *after* the critic pass so it judges the already style-corrected
+    text — re-collecting the triples here (rather than reusing the critic's
+    own list) picks up ``doc``'s post-critic values for free, since
+    ``apply_results`` already mutated it in place. Skipped when no shared
+    ``ai_context``/digest is available (e.g. this generator called directly
+    without one) — mirrors the DAX Translator/insights fallback elsewhere."""
+    if ai_context is None or not ai_context.model_digest:
+        return
+    triples = _narrative_triples(doc)
+    fields = [(loc, text) for loc, text, _ in triples]
+    results = apply_grounding_pass(fields, client, model_digest=ai_context.model_digest,
+                                    warn=warn, ai_context=ai_context)
     apply_results(triples, results)
 
 
@@ -176,5 +201,6 @@ class AuditReportGenerator:
 
         if client is not None:
             _run_critic(doc, model, client, warn, ai_context)
+            _run_grounding(doc, client, warn, ai_context)
 
         return doc

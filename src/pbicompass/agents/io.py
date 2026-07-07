@@ -10,6 +10,8 @@ They follow the structured-output constraints (every object sets
 
 from __future__ import annotations
 
+from typing import Optional
+
 from ..schemas.model import SemanticModel
 
 # --------------------------------------------------------------------------
@@ -44,7 +46,26 @@ AGENT_EFFORT: dict[str, str] = {
     "Business Analyst": "high",
     "Data Modeler": "high",
     "Executive Writer": "high",
+    # Phase 2: the one whole-model synthesis call per job — the deepest
+    # reasoning tier since every other document's quality now leans on it.
+    "Report Intelligence": "xhigh",
+    # Phase 3: one fact-verification call per document — checking claims
+    # against an already-built digest needs less depth than writing the
+    # narrative in the first place.
+    "Grounding": "medium",
 }
+
+# --------------------------------------------------------------------------
+# Phase 2: appended to every prompt whose input builder accepts a
+# ``report_context`` (the slimmed ``JobAIContext.insights`` produced by the
+# Report Intelligence pass — see ``agents/insights.py``). Kept as one shared
+# paragraph so every consuming prompt states the same ground rule: use it for
+# depth/consistency, never let it override or get echoed verbatim over the
+# concrete metadata the rest of the payload already carries.
+# --------------------------------------------------------------------------
+REPORT_CONTEXT_NOTE = """
+You may also be given report_context — a synthesized understanding of the whole report produced by a separate whole-model reasoning pass (business domain, purpose, page workflows, entity definitions, KPI relationships). Use it to write with more depth and consistency with the rest of the report. Never contradict the concrete tables/measures/pages given elsewhere in this input, and never copy report_context's wording verbatim — restate its substance in your own words for this specific field.
+"""
 
 # --------------------------------------------------------------------------
 # Business Analyst Agent  (-> Executive Summary & Business Guide, §II)
@@ -63,7 +84,7 @@ Populate:
   - confidence: "High", "Medium", or "Low" — how confident you are in the inferred purpose. Use "Low" whenever the page content is too generic to infer intent.
 - navigation_guide: Short imperative steps (one sentence each) referencing the exact slicers, fields, and drill-through targets. Include cross-filtering behaviour only where it exists in the input.
 - complex_visual_explainers: Only for genuinely non-obvious visuals (decomposition trees, key influencers, scatter, maps, gauges, waterfall, custom visuals). 2-3 sentences: how to read it and what to act on. Skip bar/line/card visuals.
-""" + STYLE_RULES
+""" + REPORT_CONTEXT_NOTE + STYLE_RULES
 
 BUSINESS_ANALYST_SCHEMA = {
     "type": "object",
@@ -106,9 +127,9 @@ BUSINESS_ANALYST_SCHEMA = {
 }
 
 
-def business_analyst_input(model: SemanticModel) -> dict:
+def business_analyst_input(model: SemanticModel, report_context: Optional[dict] = None) -> dict:
     key_measures = [m.name for m in model.all_measures() if not m.is_hidden][:25]
-    return {
+    payload = {
         "report_name": model.report_name,
         "tables": [
             {"name": t.name, "kind": t.kind, "has_measures": bool(t.measures)}
@@ -133,6 +154,9 @@ def business_analyst_input(model: SemanticModel) -> dict:
             for p in model.pages
         ],
     }
+    if report_context is not None:
+        payload["report_context"] = report_context
+    return payload
 
 
 # Batch cap for the Business Analyst prompt's per-page work. Mirrors
@@ -141,7 +165,10 @@ def business_analyst_input(model: SemanticModel) -> dict:
 BUSINESS_ANALYST_BATCH_SIZE = 6
 
 
-def business_analyst_batches(model: SemanticModel, batch_size: int = BUSINESS_ANALYST_BATCH_SIZE) -> list[dict]:
+def business_analyst_batches(
+    model: SemanticModel, batch_size: int = BUSINESS_ANALYST_BATCH_SIZE,
+    report_context: Optional[dict] = None,
+) -> list[dict]:
     """Split the report's *visible* pages into bounded batches, each shaped
     like :func:`business_analyst_input`'s return value (same report-wide
     ``tables``/``key_measures`` context, a subset of ``pages``). Hidden pages
@@ -150,7 +177,7 @@ def business_analyst_batches(model: SemanticModel, batch_size: int = BUSINESS_AN
     contiguous slice of the deterministic visible-pages list callers already
     have, letting a failed batch be mapped straight back to the pages it
     covers."""
-    base = business_analyst_input(model)
+    base = business_analyst_input(model, report_context=report_context)
     visible_pages = [p for p in base["pages"] if not p["is_hidden"]]
     if not visible_pages:
         return [base]
@@ -174,7 +201,7 @@ For each measure, populate:
 - confidence: "High", "Medium", or "Low" — confidence in the inferred BUSINESS meaning (the calculation logic is read from the DAX and is not what this rates). Use "Low" when the name and expression do not make the business intent clear; in that case plain_english must say "Business meaning could not be inferred automatically; requires business confirmation." rather than a guess.
 
 Return a translation for every measure in the input, keyed by its exact name.
-""" + STYLE_RULES
+""" + REPORT_CONTEXT_NOTE + STYLE_RULES
 
 DAX_TRANSLATOR_SCHEMA = {
     "type": "object",
@@ -207,8 +234,8 @@ DAX_TRANSLATOR_SCHEMA = {
 }
 
 
-def dax_translator_input(model: SemanticModel) -> dict:
-    return {
+def dax_translator_input(model: SemanticModel, report_context: Optional[dict] = None) -> dict:
+    payload = {
         "measures": [
             {
                 "name": m.name,
@@ -219,6 +246,9 @@ def dax_translator_input(model: SemanticModel) -> dict:
             for m in model.all_measures()
         ]
     }
+    if report_context is not None:
+        payload["report_context"] = report_context
+    return payload
 
 
 # Batch caps for the DAX Translator prompt. A real-world model can have
@@ -230,7 +260,7 @@ DAX_TRANSLATOR_BATCH_SIZE = 25
 DAX_TRANSLATOR_BATCH_CHARS = 8000
 
 
-def dax_translator_batches(model: SemanticModel) -> list[dict]:
+def dax_translator_batches(model: SemanticModel, report_context: Optional[dict] = None) -> list[dict]:
     """Split all measures into bounded batches, each shaped like
     :func:`dax_translator_input`'s return value, so a large model is
     translated across several smaller, bounded LLM calls instead of one."""
@@ -255,6 +285,9 @@ def dax_translator_batches(model: SemanticModel) -> list[dict]:
         batch_chars += entry_chars
     if batch:
         batches.append({"measures": batch})
+    if report_context is not None:
+        for b in batches:
+            b["report_context"] = report_context
     return batches
 
 
@@ -267,7 +300,7 @@ You are an enterprise data-modeling architect. You receive the table metadata (f
 Your response must include:
 - summary: 3-5 sentences. Name the schema shape (star, snowflake, galaxy, flat), the fact table(s) and their grain if inferable, the key dimensions, and anything a maintainer must know about filter propagation. Facts only — no praise of the design, no generic architecture prose.
 - risks: One item per concrete modeling risk found (bi-directional filters, inactive relationships, many-to-many, disconnected tables, missing relationships). Each item: the specific objects involved, the failure it can cause, and the standard mitigation, in 1-2 sentences (e.g. "Sales ↔ Targets is many-to-many; totals can double-count — add a bridge table on Region key."). Empty list if none.
-""" + STYLE_RULES
+""" + REPORT_CONTEXT_NOTE + STYLE_RULES
 
 DATA_MODELER_SCHEMA = {
     "type": "object",
@@ -280,8 +313,8 @@ DATA_MODELER_SCHEMA = {
 }
 
 
-def data_modeler_input(model: SemanticModel) -> dict:
-    return {
+def data_modeler_input(model: SemanticModel, report_context: Optional[dict] = None) -> dict:
+    payload = {
         "tables": [
             {"name": t.name, "kind": t.kind, "has_measures": bool(t.measures),
              "columns": len(t.columns)}
@@ -298,6 +331,9 @@ def data_modeler_input(model: SemanticModel) -> dict:
             for r in model.relationships
         ],
     }
+    if report_context is not None:
+        payload["report_context"] = report_context
+    return payload
 
 
 # --------------------------------------------------------------------------
@@ -413,7 +449,7 @@ Populate exactly these three fields:
 - maintenance_overview: 1-2 sentences: the known risks that matter and what it takes to keep the report healthy, in plain language.
 
 Do not invent facts, statistics, or risks beyond what is given. Do not restate every input number — synthesize.
-""" + STYLE_RULES
+""" + REPORT_CONTEXT_NOTE + STYLE_RULES
 
 EXECUTIVE_WRITER_SCHEMA = {
     "type": "object",
@@ -434,8 +470,9 @@ def executive_writer_input(
     report_statistics: dict[str, int],
     known_risks: list[str],
     maintenance_draft: str,
+    report_context: Optional[dict] = None,
 ) -> dict:
-    return {
+    payload = {
         "business_purpose_draft": business_purpose_draft,
         "key_kpis": key_kpis,
         "model_statistics": model_statistics,
@@ -443,6 +480,9 @@ def executive_writer_input(
         "known_risks": known_risks,
         "maintenance_draft": maintenance_draft,
     }
+    if report_context is not None:
+        payload["report_context"] = report_context
+    return payload
 
 
 # --------------------------------------------------------------------------
@@ -458,7 +498,7 @@ Rewrite them into plain, direct English that:
 - For the introduction, writes 2-3 sentences that orient a first-time user: what the report covers and where to start.
 
 Do not invent pages, fields, roles, or workflows beyond what is given in the drafts.
-""" + STYLE_RULES
+""" + REPORT_CONTEXT_NOTE + STYLE_RULES
 
 USER_GUIDE_WRITER_SCHEMA = {
     "type": "object",
@@ -487,12 +527,16 @@ def user_guide_writer_input(
     report_name: str,
     introduction_draft: str,
     pages: list[dict],
+    report_context: Optional[dict] = None,
 ) -> dict:
-    return {
+    payload = {
         "report_name": report_name,
         "introduction_draft": introduction_draft,
         "pages": pages,
     }
+    if report_context is not None:
+        payload["report_context"] = report_context
+    return payload
 
 
 # Batch cap mirroring ``business_analyst_batches`` — a failed/invalid batch
@@ -503,13 +547,15 @@ USER_GUIDE_WRITER_BATCH_SIZE = 8
 def user_guide_writer_batches(
     report_name: str, introduction_draft: str, pages: list[dict],
     batch_size: int = USER_GUIDE_WRITER_BATCH_SIZE,
+    report_context: Optional[dict] = None,
 ) -> list[dict]:
     """Split ``pages`` (each ``{page_title, purpose_draft, common_scenarios_draft}``)
     into bounded batches, each shaped like :func:`user_guide_writer_input`'s
     return value."""
     if not pages:
-        return [user_guide_writer_input(report_name, introduction_draft, [])]
+        return [user_guide_writer_input(report_name, introduction_draft, [], report_context=report_context)]
     return [
-        user_guide_writer_input(report_name, introduction_draft, pages[i:i + batch_size])
+        user_guide_writer_input(report_name, introduction_draft, pages[i:i + batch_size],
+                                 report_context=report_context)
         for i in range(0, len(pages), batch_size)
     ]

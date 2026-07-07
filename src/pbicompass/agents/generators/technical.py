@@ -38,6 +38,7 @@ from ..deterministic import (
     relationship_lines,
     translate_dax,
 )
+from ..grounding import apply_grounding_pass
 from ..llm import LLMClient
 from ..report_facts import (
     calc_columns,
@@ -109,7 +110,17 @@ def _executive_summary(model: SemanticModel, client, warn, ai_context: Optional[
     core_purpose_set = False
     offset = 0
 
-    for batch in io.business_analyst_batches(model):
+    report_context = ai_context.insights if ai_context is not None else None
+    # Phase 2: when every batch fails, seed the deterministic fallback with
+    # the whole-model synthesis's own purpose statement rather than the
+    # generic template one — a strictly-better fallback purchased by a call
+    # already paid for this job, not an extra one.
+    if report_context:
+        rp = report_context.get("report_purpose") or {}
+        if rp.get("statement") and rp.get("confidence") in ("High", "Medium"):
+            core_purpose = rp["statement"]
+
+    for batch in io.business_analyst_batches(model, report_context=report_context):
         batch_size = len(batch["pages"])
         slice_titles = [p.page_title for p in pages[offset:offset + batch_size]]
         data = call_llm_with_retry(client, io.BUSINESS_ANALYST_SYSTEM, batch, io.BUSINESS_ANALYST_SCHEMA,
@@ -313,7 +324,8 @@ def _semantic_model(model: SemanticModel, client, warn, col_descs: dict,
     rels = relationship_lines(model)
     summary, risks = data_modeler_deterministic(model)
     if client is not None:
-        data = _call(client, io.DATA_MODELER_SYSTEM, io.data_modeler_input(model),
+        report_context = ai_context.insights if ai_context is not None else None
+        data = _call(client, io.DATA_MODELER_SYSTEM, io.data_modeler_input(model, report_context=report_context),
                      io.DATA_MODELER_SCHEMA, warn, "Data Modeler", ai_context=ai_context)
         if data and "summary" in data:
             summary = data["summary"]
@@ -576,15 +588,11 @@ def _health_and_recommendations(
     return dataclasses.asdict(health), [dataclasses.asdict(r) for r in recommendations], suppressed
 
 
-def _run_critic(doc: Document, model: SemanticModel, client, warn, ai_context: Optional[JobAIContext]) -> None:
-    """5.3: one critic pass over every narrative prose field, applied
-    in place onto ``doc``. Only called when a client is available (offline
-    runs are unaffected — see the caller)."""
-    known_names = {t.name for t in model.tables}
-    known_names |= {c.name for t in model.tables for c in t.columns}
-    known_names |= {m.name for m in model.all_measures()}
-    known_names |= {p.display_name for p in model.pages}
-
+def _narrative_triples(doc: Document) -> list[tuple[str, str, "callable"]]:
+    """Every narrative prose field in the technical document as
+    ``(location, text, setter)`` triples — shared by the critic (5.3) and
+    grounding (Phase 3) passes so neither re-derives the other's field
+    list."""
     triples: list[tuple[str, str, "callable"]] = []
     es = doc.executive_summary
 
@@ -623,9 +631,34 @@ def _run_critic(doc: Document, model: SemanticModel, client, warn, ai_context: O
         def _set_note(v: str, _i=i) -> None:
             doc.tech_debt.notes[_i] = v
         triples.append((f"tech_debt.notes[{i}]", note, _set_note))
+    return triples
 
+
+def _run_critic(doc: Document, model: SemanticModel, client, warn, ai_context: Optional[JobAIContext]) -> None:
+    """5.3: one critic pass over every narrative prose field, applied
+    in place onto ``doc``. Only called when a client is available (offline
+    runs are unaffected — see the caller)."""
+    known_names = {t.name for t in model.tables}
+    known_names |= {c.name for t in model.tables for c in t.columns}
+    known_names |= {m.name for m in model.all_measures()}
+    known_names |= {p.display_name for p in model.pages}
+
+    triples = _narrative_triples(doc)
     fields = [(loc, text) for loc, text, _ in triples]
     results = apply_critic_pass(fields, client, known_names=known_names, warn=warn, ai_context=ai_context)
+    apply_results(triples, results)
+
+
+def _run_grounding(doc: Document, client, warn, ai_context: Optional[JobAIContext]) -> None:
+    """Phase 3: one fact-verification call over the same narrative fields,
+    run after the critic pass so it judges the already style-corrected text.
+    Skipped when no shared ``ai_context``/digest is available."""
+    if ai_context is None or not ai_context.model_digest:
+        return
+    triples = _narrative_triples(doc)
+    fields = [(loc, text) for loc, text, _ in triples]
+    results = apply_grounding_pass(fields, client, model_digest=ai_context.model_digest,
+                                    warn=warn, ai_context=ai_context)
     apply_results(triples, results)
 
 
@@ -736,5 +769,6 @@ class TechnicalDocumentationGenerator:
 
         if client is not None:
             _run_critic(doc, model, client, warn, ai_context)
+            _run_grounding(doc, client, warn, ai_context)
 
         return doc
