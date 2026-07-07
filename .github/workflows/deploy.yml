@@ -28,5 +28,12 @@ jobs:
               --env-file ~/pbicompass.env \
               --restart unless-stopped \
               pbicompass
-            sleep 3
-            curl -sf http://localhost:8000/healthz
+            for i in $(seq 1 30); do
+              if curl -sf http://localhost:8000/healthz; then
+                echo "Service is healthy after ${i}s"
+                exit 0
+              fi
+              sleep 1
+            done
+            echo "Service did not become healthy within 30s" >&2
+            exit 1
