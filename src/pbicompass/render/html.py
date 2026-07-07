@@ -341,8 +341,9 @@ def render_html(
                          f'<pre><code>{_e(raw_m)}</code></pre></details>')
             o.append('</div>')
     if ln.lineage_svg:
-        o.append("<h3>Data lineage graph</h3>")
-        o.append(ln.lineage_svg)
+        # o.append("<h3>Data lineage graph</h3>")
+        # o.append(ln.lineage_svg)
+        pass
     if ln.lineage_edges:
         o.append("<h3>Lineage connection list</h3>")
         o.append(_table(["From", "To", "Link Type"],
@@ -359,8 +360,9 @@ def render_html(
         for r in sm.risks:
             o.append(f'<div class="risk">{_e(r)}</div>')
     if sm.tables:
-        o.append("<h3>Model diagram</h3>")
-        o.append(_diagram(sm.tables, sm.relationship_edges))
+        # o.append("<h3>Model diagram</h3>")
+        # o.append(_diagram(sm.tables, sm.relationship_edges))
+        pass
     o.append("<h3>Key tables</h3>")
     table_ids = dedupe_ids([f"table-{anchor_slug(t['name'])}" for t in sm.tables])
     if sm.tables:
@@ -390,8 +392,9 @@ def render_html(
     # 7. Measures & Calculations (DAX Dictionary)
     o.append(f'<h2 id="sec7">7. Measures &amp; Calculations (DAX Dictionary){_header_badge(7)}</h2>')
     if doc.measure_catalog.dependency_svg:
-        o.append("<h3>Measure dependency graph</h3>")
-        o.append(doc.measure_catalog.dependency_svg)
+        # o.append("<h3>Measure dependency graph</h3>")
+        # o.append(doc.measure_catalog.dependency_svg)
+        pass
     for m in doc.measure_catalog.measures:
         home = f" · {_e(m.table)}" if m.table else ""
         cat = f'<span class="pill">{_e(m.category)}</span>' if m.category else ""
@@ -451,7 +454,8 @@ def render_html(
         flag = f' <span class="muted">({", ".join(flags)})</span>' if flags else ""
         o.append(f"<h3>{_e(p['name'])}{flag}</h3>")
         if p.get("wireframe_svg"):
-            o.append(p["wireframe_svg"])
+            # o.append(p["wireframe_svg"])
+            pass
         pd = page_docs.get(p["name"])
         if pd:
             if pd.summary:
@@ -478,8 +482,9 @@ def render_html(
     # 9. Filters, Slicers & Navigation
     o.append(f'<h2 id="sec9">9. Filters, Slicers &amp; Navigation{_header_badge(9)}</h2>')
     if doc.navigation_map_svg:
-        o.append("<h3>Page Navigation Map</h3>")
-        o.append(doc.navigation_map_svg)
+        # o.append("<h3>Page Navigation Map</h3>")
+        # o.append(doc.navigation_map_svg)
+        pass
     if es.navigation_guide:
         o.append("<ul>" + "".join(f"<li>{_e(x)}</li>" for x in es.navigation_guide) + "</ul>")
     o.append(_table(["Slicer field", "Page"],
