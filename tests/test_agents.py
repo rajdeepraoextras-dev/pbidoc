@@ -260,6 +260,125 @@ class BusinessAnalystBatchFailureTest(unittest.TestCase):
         self.assertTrue(any("Page 7" in w for w in warnings))
 
 
+class _PuntAndMetaCommentaryClient:
+    """Simulates the two production leaks fixed by D2/D6: the Column
+    Describer returning a bare punt or a leaked editing directive, and the
+    DAX Translator returning a punt for a measure's business meaning. Every
+    other agent answers cleanly so only the guarded merge points are under
+    test."""
+
+    def complete_json(self, system: str, user: str, schema: dict, *, effort: str | None = None) -> dict:
+        if "Report Intelligence" in system:
+            return _fake_report_intelligence_response()
+        if "Business Analyst" in system or "BI consultant" in system:
+            return {
+                "core_purpose": "FAKE_PURPOSE", "pages": [],
+                "navigation_guide": [], "complex_visual_explainers": [],
+            }
+        if "senior DAX developer" in system or "DAX measures" in system:
+            payload = json.loads(user)
+            return {
+                "translations": [
+                    {"name": m["name"],
+                     "plain_english": "Business meaning could not be inferred automatically; requires business confirmation.",
+                     "calculation_logic": "", "caveats": "", "category": "Other", "confidence": "Low"}
+                    for m in payload["measures"]
+                ]
+            }
+        if "data-modeling" in system:
+            return {"summary": "FAKE_MODEL", "risks": []}
+        if "description for every column" in system or "Column Describer" in system:
+            payload = json.loads(user)
+            descriptions = {
+                "CustomerRef": "Unknown — requires business confirmation.",
+                "Notes": "Consider providing a more specific description of what Notes contains.",
+                "OrderId": "Unique identifier for each order line; used for order-level joins.",
+            }
+            return {
+                "columns": [
+                    {"table": c["table"], "column": c["column"],
+                     "description": descriptions.get(c["column"], "")}
+                    for c in payload["columns"]
+                ]
+            }
+        if "expert technical editor" in system:  # critic pass
+            return {"violations": []}
+        if "fact-checker" in system:  # grounding pass
+            return {"claims": []}
+        raise AssertionError(f"unexpected system prompt: {system[:60]}")
+
+
+class AntiPuntGuardTest(unittest.TestCase):
+    """D6: the LLM may only improve a description, never downgrade one —
+    and D2: a leaked editing directive is rejected outright. Uses a small
+    hand-built model (rather than the SampleSales fixture) so a
+    relationship on a column *not* named ``*Id``/``*Key`` is under direct
+    control, exercising the broadened join-key derivation."""
+
+    @staticmethod
+    def _model():
+        from pbicompass.schemas.model import Column, Measure, Page, Relationship, SemanticModel, Table, Visual
+        orders = Table(name="Orders", columns=[
+            Column(name="OrderId"),
+            Column(name="CustomerRef"),
+            Column(name="Notes"),
+            Column(name="Segment"),
+        ], measures=[Measure(name="Order Count", expression="COUNTROWS ( Orders )", table="Orders")])
+        customers = Table(name="Customers", columns=[Column(name="CustomerKey")])
+        page = Page(id="p1", display_name="Overview", visuals=[
+            Visual(id="v1", type="card", fields=["Orders.Segment"]),
+        ])
+        return SemanticModel(
+            report_name="GuardTest",
+            tables=[orders, customers],
+            relationships=[Relationship(from_table="Orders", from_column="CustomerRef",
+                                         to_table="Customers", to_column="CustomerKey")],
+            pages=[page],
+        )
+
+    def test_relationship_column_keeps_deterministic_join_key_over_a_punt(self):
+        doc = generate_document(self._model(), _PuntAndMetaCommentaryClient())
+        by_col = {(c["table"], c["column"]): c["description"] for c in doc.semantic_model.data_dictionary}
+        desc = by_col[("Orders", "CustomerRef")]
+        self.assertNotIn("requires business confirmation", desc)
+        self.assertIn("Join key linking Orders to Customers", desc)
+
+    def test_meta_commentary_description_is_rejected(self):
+        doc = generate_document(self._model(), _PuntAndMetaCommentaryClient())
+        by_col = {(c["table"], c["column"]): c["description"] for c in doc.semantic_model.data_dictionary}
+        desc = by_col[("Orders", "Notes")]
+        self.assertNotIn("Consider providing", desc)
+        self.assertEqual(desc, "No description set.")
+
+    def test_llm_can_still_improve_a_column_description(self):
+        doc = generate_document(self._model(), _PuntAndMetaCommentaryClient())
+        by_col = {(c["table"], c["column"]): c["description"] for c in doc.semantic_model.data_dictionary}
+        self.assertIn("order-level joins", by_col[("Orders", "OrderId")])
+
+    def test_no_column_ever_renders_the_punt_phrase(self):
+        doc = generate_document(self._model(), _PuntAndMetaCommentaryClient())
+        for col in doc.semantic_model.data_dictionary:
+            self.assertNotIn("requires business confirmation", col["description"])
+
+    def test_measure_keeps_deterministic_gloss_over_a_punt(self):
+        doc = generate_document(self._model(), _PuntAndMetaCommentaryClient())
+        entry = next(m for m in doc.measure_catalog.measures if m.name == "Order Count")
+        self.assertNotIn("requires business confirmation", entry.plain_english)
+        self.assertTrue(entry.plain_english)  # the deterministic translate_dax gloss, not empty
+
+    def test_glossary_dimension_with_no_keyword_match_never_gets_the_punt_phrase(self):
+        # D6 residual gap found in Sprint 1 Day 5 QA: _infer_glossary (the
+        # section-14 business glossary) had its own, un-fixed fallback that
+        # still defaulted a genuinely roleless dimension (no date/customer/
+        # product/region keyword match) to "Unknown — requires business
+        # confirmation." even after the section-6 data dictionary was fixed
+        # to say "No description set." for the exact same case.
+        doc = generate_document(self._model(), _PuntAndMetaCommentaryClient())
+        entry = next(g for g in doc.glossary_entries if g["term"] == "Segment")
+        self.assertNotIn("requires business confirmation", entry["definition"])
+        self.assertEqual(entry["definition"], "No description set.")
+
+
 class DaxTranslatorUnitTest(unittest.TestCase):
     def test_sumx_with_filter(self):
         en, caveats, cat = translate_dax(
@@ -695,6 +814,266 @@ class ClientFactoryTest(unittest.TestCase):
         self.assertNotIn("additionalProperties", dumped)
         self.assertIn('"required"', dumped)   # preserved
         self.assertIn('"enum"', dumped)        # preserved
+
+
+class ReasoningEffortWiringTest(unittest.TestCase):
+    """Day 6 (§4.0): the ``effort`` tier must reach each provider's own
+    native reasoning knob where the configured model supports one, and a
+    model that rejects the param must degrade via a retry-without-it
+    fallback rather than failing the whole agent call."""
+
+    # -- Gemini: thinking_config --------------------------------------
+
+    def test_gemini_effort_maps_to_thinking_budget(self):
+        from pbicompass.agents.llm import GeminiClient
+
+        client = GeminiClient(api_key="dummy")
+        captured: dict = {}
+
+        def fake_generate_content(*, model, contents, config):
+            captured["config"] = config
+            from types import SimpleNamespace
+            return SimpleNamespace(text='{"ok": true}')
+
+        client._client.models.generate_content = fake_generate_content
+        out = client.complete_json("sys", "user", {"type": "object"}, effort="xhigh")
+
+        self.assertEqual(out, {"ok": True})
+        self.assertEqual(captured["config"].thinking_config.thinking_budget, 24576)
+
+    def test_gemini_max_effort_requests_dynamic_thinking_budget(self):
+        from pbicompass.agents.llm import GeminiClient
+
+        client = GeminiClient(api_key="dummy")
+        captured: dict = {}
+
+        def fake_generate_content(*, model, contents, config):
+            captured["config"] = config
+            from types import SimpleNamespace
+            return SimpleNamespace(text='{"ok": true}')
+
+        client._client.models.generate_content = fake_generate_content
+        client.complete_json("sys", "user", {"type": "object"}, effort="max")
+
+        self.assertEqual(captured["config"].thinking_config.thinking_budget, -1)
+
+    def test_gemini_retries_without_thinking_config_on_client_error(self):
+        from google.genai import errors as genai_errors
+        from pbicompass.agents.llm import GeminiClient
+
+        client = GeminiClient(api_key="dummy")
+        calls: list = []
+
+        def fake_generate_content(*, model, contents, config):
+            calls.append(config)
+            if len(calls) == 1:
+                raise genai_errors.ClientError(400, {"error": {"message": "thinking not supported"}})
+            from types import SimpleNamespace
+            return SimpleNamespace(text='{"ok": true}')
+
+        client._client.models.generate_content = fake_generate_content
+        out = client.complete_json("sys", "user", {"type": "object"}, effort="high")
+
+        self.assertEqual(out, {"ok": True})
+        self.assertEqual(len(calls), 2)
+        self.assertIsNotNone(calls[0].thinking_config)
+        self.assertIsNone(calls[1].thinking_config)
+
+    # -- Cohere: thinking (reasoning-capable models only) --------------
+
+    def test_cohere_thinking_not_sent_for_non_reasoning_model(self):
+        from pbicompass.agents.llm import CohereClient
+
+        client = CohereClient(api_key="dummy")  # default command-a-03-2025
+        captured: dict = {}
+
+        def fake_chat(**kwargs):
+            captured.update(kwargs)
+            from types import SimpleNamespace
+            text = SimpleNamespace(type="text", text='{"ok": true}')
+            return SimpleNamespace(message=SimpleNamespace(content=[text]))
+
+        client._client.chat = fake_chat
+        client.complete_json("sys", "user", {"type": "object"}, effort="high")
+
+        self.assertNotIn("thinking", captured)
+
+    def test_cohere_thinking_sent_for_reasoning_capable_model(self):
+        from pbicompass.agents.llm import CohereClient
+
+        client = CohereClient(model="command-a-reasoning", api_key="dummy")
+        captured: dict = {}
+
+        def fake_chat(**kwargs):
+            captured.update(kwargs)
+            from types import SimpleNamespace
+            text = SimpleNamespace(type="text", text='{"ok": true}')
+            return SimpleNamespace(message=SimpleNamespace(content=[text]))
+
+        client._client.chat = fake_chat
+        client.complete_json("sys", "user", {"type": "object"}, effort="high")
+
+        self.assertEqual(captured["thinking"], {"type": "enabled", "token_budget": 8192})
+
+    def test_cohere_retries_without_thinking_on_bad_request(self):
+        import cohere
+        from pbicompass.agents.llm import CohereClient
+
+        client = CohereClient(model="command-a-reasoning", api_key="dummy")
+        calls: list = []
+
+        def fake_chat(**kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                raise cohere.BadRequestError(body={"message": "thinking not supported"})
+            from types import SimpleNamespace
+            text = SimpleNamespace(type="text", text='{"ok": true}')
+            return SimpleNamespace(message=SimpleNamespace(content=[text]))
+
+        client._client.chat = fake_chat
+        out = client.complete_json("sys", "user", {"type": "object"}, effort="high")
+
+        self.assertEqual(out, {"ok": True})
+        self.assertEqual(len(calls), 2)
+        self.assertIn("thinking", calls[0])
+        self.assertNotIn("thinking", calls[1])
+
+    # -- MeshAPI: reasoning_effort (o-series/gpt-5 models only) --------
+
+    def _fake_openai_module(self, on_create):
+        import sys
+        from types import ModuleType, SimpleNamespace
+
+        class _FakeCompletions:
+            def create(self, **kwargs):
+                return on_create(kwargs)
+
+        class _FakeChat:
+            completions = _FakeCompletions()
+
+        class _FakeOpenAI:
+            def __init__(self, **kwargs):
+                self.chat = _FakeChat()
+
+        class BadRequestError(Exception):
+            pass
+
+        fake_module = ModuleType("openai")
+        fake_module.OpenAI = _FakeOpenAI
+        fake_module.BadRequestError = BadRequestError
+        return fake_module
+
+    @staticmethod
+    def _fake_meshapi_response():
+        from types import SimpleNamespace
+        return SimpleNamespace(
+            choices=[SimpleNamespace(finish_reason="stop",
+                                      message=SimpleNamespace(content='{"ok": true}'))],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1),
+        )
+
+    def test_meshapi_sends_reasoning_effort_for_reasoning_capable_model(self):
+        import sys
+        from unittest.mock import patch
+        from pbicompass.agents.llm import MeshAPIClient
+
+        captured: dict = {}
+
+        def on_create(kwargs):
+            captured.update(kwargs)
+            return self._fake_meshapi_response()
+
+        fake_module = self._fake_openai_module(on_create)
+        with patch.dict(sys.modules, {"openai": fake_module}):
+            client = MeshAPIClient(model="openai/gpt-5", api_key="rsk_test")
+            out = client.complete_json("sys", "user", {"type": "object"}, effort="medium")
+
+        self.assertEqual(out, {"ok": True})
+        self.assertEqual(captured["reasoning_effort"], "medium")
+
+    def test_meshapi_xhigh_and_max_clamp_to_high(self):
+        import sys
+        from unittest.mock import patch
+        from pbicompass.agents.llm import MeshAPIClient
+
+        captured: dict = {}
+
+        def on_create(kwargs):
+            captured.update(kwargs)
+            return self._fake_meshapi_response()
+
+        fake_module = self._fake_openai_module(on_create)
+        with patch.dict(sys.modules, {"openai": fake_module}):
+            client = MeshAPIClient(model="openai/o3-mini", api_key="rsk_test")
+            client.complete_json("sys", "user", {"type": "object"}, effort="max")
+
+        self.assertEqual(captured["reasoning_effort"], "high")
+
+    def test_meshapi_retries_without_reasoning_effort_on_bad_request(self):
+        import sys
+        from unittest.mock import patch
+        from pbicompass.agents.llm import MeshAPIClient
+
+        calls: list = []
+
+        def on_create(kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                raise fake_module.BadRequestError("reasoning_effort not supported")
+            return self._fake_meshapi_response()
+
+        fake_module = self._fake_openai_module(on_create)
+        with patch.dict(sys.modules, {"openai": fake_module}):
+            client = MeshAPIClient(model="openai/gpt-5", api_key="rsk_test")
+            out = client.complete_json("sys", "user", {"type": "object"}, effort="high")
+
+        self.assertEqual(out, {"ok": True})
+        self.assertEqual(len(calls), 2)
+        self.assertIn("reasoning_effort", calls[0])
+        self.assertNotIn("reasoning_effort", calls[1])
+
+    # -- Anthropic: graceful degradation on a rejected effort tier -----
+
+    def test_anthropic_retries_without_effort_on_bad_request(self):
+        import sys
+        from types import ModuleType, SimpleNamespace
+        from unittest.mock import patch
+
+        class BadRequestError(Exception):
+            pass
+
+        calls: list = []
+
+        def fake_create(**kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                raise BadRequestError("effort not supported")
+            return SimpleNamespace(
+                stop_reason="end_turn",
+                content=[SimpleNamespace(type="text", text='{"ok": true}')],
+                usage=SimpleNamespace(input_tokens=1, output_tokens=1),
+            )
+
+        class _FakeMessages:
+            create = staticmethod(fake_create)
+
+        class _FakeAnthropic:
+            def __init__(self, **kwargs):
+                self.messages = _FakeMessages()
+
+        fake_module = ModuleType("anthropic")
+        fake_module.Anthropic = _FakeAnthropic
+        fake_module.BadRequestError = BadRequestError
+
+        with patch.dict(sys.modules, {"anthropic": fake_module}):
+            from pbicompass.agents.llm import AnthropicClient
+            client = AnthropicClient(api_key="dummy")
+            out = client.complete_json("sys", "user", {"type": "object"}, effort="max")
+
+        self.assertEqual(out, {"ok": True})
+        self.assertEqual(len(calls), 2)
+        self.assertIn("effort", calls[0]["output_config"])
+        self.assertNotIn("effort", calls[1]["output_config"])
 
 
 if __name__ == "__main__":

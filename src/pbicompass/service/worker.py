@@ -36,7 +36,6 @@ from .. import enrichment as enrichment_mod
 from ..agents import audit_rules, generate_document, get_client
 from ..agents.context import JobAIContext, build_job_context
 from ..agents.generators import DOCUMENT_TYPES
-from ..agents.llm import EFFORT_LEVELS
 from ..render import pandoc, registry
 from ..render._shared import format_timestamp
 from ..render.hub import doc_switcher_links, hub_stats, render_hub
@@ -54,20 +53,11 @@ _FRIENDLY = {
 }
 
 
-# Phase 0: per-plan ceiling on the Anthropic thinking-effort tier — never
-# raised above what the caller asked for, only ever lowered. Free-plan jobs
-# never spend more than a "medium" thinking budget regardless of the
-# ``effort`` Form field; pro/enterprise get the deeper tiers.
-_PLAN_EFFORT_CEILING = {"free": "medium", "pro": "xhigh", "enterprise": "max"}
-
-
-def _clamp_effort_for_plan(effort: str, plan: str) -> str:
-    ceiling = _PLAN_EFFORT_CEILING.get(plan, _PLAN_EFFORT_CEILING["free"])
-    if effort not in EFFORT_LEVELS or ceiling not in EFFORT_LEVELS:
-        return effort
-    if EFFORT_LEVELS.index(effort) > EFFORT_LEVELS.index(ceiling):
-        return ceiling
-    return effort
+# Cost policy (owner decision, 2026-07-07, §4.0): best output, token cost is
+# not a concern. Reasoning depth is never clamped by plan — every tier runs
+# at whatever ``effort`` the caller asked for. The daily job quota
+# (``PLAN_LIMITS`` in accounts.py) is the only cost guardrail; a prior
+# per-plan effort ceiling was removed here.
 
 
 def _make_client(options: dict) -> tuple[object | None, str | None]:
@@ -78,9 +68,7 @@ def _make_client(options: dict) -> tuple[object | None, str | None]:
     provider = options.get("provider")
     if provider in (None, "", "none", "offline", "deterministic"):
         return None, None
-    kwargs = {"model": options.get("model", "claude-opus-4-8")}
-    if provider in ("anthropic", "claude"):
-        kwargs["effort"] = _clamp_effort_for_plan(options.get("effort") or "high", options.get("plan", "free"))
+    kwargs = {"model": options.get("model", "claude-opus-4-8"), "effort": options.get("effort") or "high"}
     api_key = options.get("provider_api_key")
     if api_key:
         kwargs["api_key"] = api_key

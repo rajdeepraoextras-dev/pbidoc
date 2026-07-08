@@ -224,8 +224,12 @@ def main(argv: list[str] | None = None) -> int:
                             "across providers; use a 'provider/model-name' --model id, e.g. 'openai/gpt-4o')")
     p_gen.add_argument("--model", default="claude-opus-4-8", help="Model id for the LLM provider")
     p_gen.add_argument("--effort", default="high", choices=["low", "medium", "high", "xhigh", "max"],
-                       help="Anthropic thinking effort (quality vs. latency). "
-                            "Ignored for --provider gemini/cohere/meshapi/none.")
+                       help="Reasoning effort (quality vs. latency), applied to every "
+                            "provider's own native reasoning knob where the configured "
+                            "model supports one (Anthropic always; Gemini via thinking "
+                            "budget; Cohere/MeshAPI only for reasoning-capable models, "
+                            "e.g. --model command-a-reasoning / openai/gpt-5). "
+                            "Ignored for --provider none.")
     p_gen.add_argument("--document", default="technical", choices=[*DOCUMENT_TYPES, "all"],
                        help="Document type to generate (default: technical — the original documentation). "
                             "'all' generates every document type from a single parse.")
@@ -422,9 +426,7 @@ def main(argv: list[str] | None = None) -> int:
 
         client = None
         if args.provider not in ("none", "offline", "deterministic"):
-            client_kwargs = {"model": args.model}
-            if args.provider in ("anthropic", "claude"):
-                client_kwargs["effort"] = args.effort
+            client_kwargs = {"model": args.model, "effort": args.effort}
             try:
                 client = get_client(args.provider, **client_kwargs)
             except Exception as exc:

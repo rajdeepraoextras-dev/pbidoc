@@ -1688,13 +1688,15 @@ const providerApikey = $("provider-apikey");
 providerApikey.value = localStorage.getItem("pbicompass_provider_key") || "";
 providerApikey.addEventListener("change", () => localStorage.setItem("pbicompass_provider_key", providerApikey.value.trim()));
 
-// Effort only applies to the Claude engine — hide it otherwise; the engine
-// key field only makes sense once an LLM engine is selected. MeshAPI fronts
-// 1000+ models of wildly varying reasoning-effort support with no per-model
-// signal exposed here, and its own gateway 400s instead of ignoring the
-// parameter for models that don't recognize it, so effort is never sent
-// for it (see MeshAPIClient.complete_json).
-const EFFORT_CAPABLE_PROVIDERS = ["anthropic"];
+// Effort is offered for every LLM engine — hide it only for the offline
+// engine; the engine key field only makes sense once an LLM engine is
+// selected. Every provider maps effort to its own native reasoning knob
+// where the configured model supports one (Anthropic always; Gemini via a
+// thinking budget; Cohere/MeshAPI only for reasoning-capable models, e.g.
+// command-a-reasoning / openai/gpt-5) — where it doesn't, the server-side
+// client accepts and ignores it rather than risk a rejected call (see
+// llm.py).
+const EFFORT_CAPABLE_PROVIDERS = ["anthropic", "gemini", "cohere", "meshapi"];
 function syncEffortVisibility() {
   const isOffline = $("provider").value === "none";
   $("effort-row").style.display = EFFORT_CAPABLE_PROVIDERS.includes($("provider").value) ? "" : "none";
@@ -1718,10 +1720,10 @@ $("select-all-docs").addEventListener("click", () => {
 // approaches but never reaches 100% until the job actually completes.
 const ESTIMATED_SECONDS = {
   none: 4,
-  gemini: 25,
-  cohere: 30,
   anthropic: { low: 18, medium: 35, high: 60, xhigh: 100, max: 150 },
-  meshapi: 30,
+  gemini: { low: 15, medium: 25, high: 40, xhigh: 65, max: 90 },
+  cohere: { low: 20, medium: 30, high: 45, xhigh: 65, max: 65 },
+  meshapi: { low: 20, medium: 30, high: 50, xhigh: 80, max: 80 },
 };
 let progressTimer = null;
 

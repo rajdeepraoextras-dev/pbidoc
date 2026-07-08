@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Any, Optional, Protocol
 
 
@@ -26,8 +27,11 @@ class LLMClient(Protocol):
 
         ``effort`` (Phase 0) is a per-call override of the client's own
         thinking-depth default (see ``EFFORT_LEVELS`` below) — ``None`` keeps
-        the client's own default. Providers with no such concept (Gemini,
-        Cohere) accept and ignore it.
+        the client's own default. Every provider maps it to its own native
+        reasoning knob where the configured model supports one (§4.0);
+        where it doesn't (e.g. Cohere's non-reasoning models, MeshAPI models
+        outside the o-series/gpt-5 families), it's accepted for protocol
+        compatibility and silently ignored rather than risk a rejected call.
         """
         ...
 
@@ -42,6 +46,24 @@ EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
 # ``call_llm`` (agents/generators/base.py) catches the resulting timeout
 # exception and falls back to the deterministic engine for that agent.
 _DEFAULT_TIMEOUT_SECONDS = 180.0
+
+
+def _resolve_error_class(module: Any, *dotted_paths: str, default: type = Exception) -> type:
+    """Look up one of several dotted attribute paths on ``module`` (e.g. an
+    SDK's ``BadRequestError`` living either at the package root or under a
+    version-specific ``errors`` submodule) and return the first that
+    resolves, else ``default``. Used so the reasoning-fallback retry below
+    can catch "this model/param combination was rejected" without hard-
+    coding an exact SDK layout that might shift between versions."""
+    for path in dotted_paths:
+        obj = module
+        for part in path.split("."):
+            obj = getattr(obj, part, None)
+            if obj is None:
+                break
+        if isinstance(obj, type) and issubclass(obj, BaseException):
+            return obj
+    return default
 
 
 class AnthropicClient:
@@ -83,17 +105,30 @@ class AnthropicClient:
         self.timeout = timeout
 
     def complete_json(self, system: str, user: str, schema: dict, *, effort: Optional[str] = None) -> dict:
-        response = self._client.messages.create(
-            model=self.model,
-            max_tokens=self.max_tokens,
-            system=system,
-            thinking={"type": "adaptive"},
-            output_config={
-                "effort": effort or self.effort,
-                "format": {"type": "json_schema", "schema": schema},
-            },
-            messages=[{"role": "user", "content": user}],
-        )
+        resolved_effort = effort or self.effort
+
+        def _call(include_effort: bool):
+            output_config: dict = {"format": {"type": "json_schema", "schema": schema}}
+            if include_effort:
+                output_config["effort"] = resolved_effort
+            return self._client.messages.create(
+                model=self.model,
+                max_tokens=self.max_tokens,
+                system=system,
+                thinking={"type": "adaptive"},
+                output_config=output_config,
+                messages=[{"role": "user", "content": user}],
+            )
+
+        # Graceful degradation (§4.0): if this model/account rejects the
+        # effort tier, retry once without it rather than failing the whole
+        # agent call — ``call_llm`` would otherwise fall back to the
+        # deterministic engine for a problem that a plain retry fixes.
+        bad_request = _resolve_error_class(self._anthropic, "BadRequestError")
+        try:
+            response = _call(True)
+        except bad_request:
+            response = _call(False)
         if response.stop_reason == "refusal":
             raise RuntimeError("Claude declined the request (stop_reason=refusal).")
         text = next((b.text for b in response.content if b.type == "text"), None)
@@ -121,6 +156,22 @@ def _gemini_schema(schema: dict) -> dict:
     return clean(schema)
 
 
+# effort -> Gemini ``thinking_budget`` (tokens the model may spend
+# thinking before answering). ``-1`` is Gemini's own convention for
+# "dynamic" thinking — the model sizes its own budget per request, which is
+# the closest fit for "max" now that token cost is not a constraint (§4.0).
+# (Some Gemini 3.x models additionally expose a coarser ``thinking_level``
+# knob; not wired here — ``thinking_budget`` is the stable, model-agnostic
+# knob and is sufficient for every effort tier below.)
+_GEMINI_THINKING_BUDGET = {
+    "low": 1024,
+    "medium": 4096,
+    "high": 8192,
+    "xhigh": 24576,
+    "max": -1,
+}
+
+
 class GeminiClient:
     """Google Gemini-backed client using JSON structured output.
 
@@ -130,7 +181,10 @@ class GeminiClient:
     """
 
     def __init__(self, model: str = "gemini-3.5-flash", *, api_key: Optional[str] = None,
-                 max_output_tokens: int = 16000, timeout: float = _DEFAULT_TIMEOUT_SECONDS) -> None:
+                 effort: Optional[str] = None, max_output_tokens: int = 16000,
+                 timeout: float = _DEFAULT_TIMEOUT_SECONDS) -> None:
+        if effort is not None and effort not in EFFORT_LEVELS:
+            raise ValueError(f"Unknown effort level {effort!r}. Choose from {EFFORT_LEVELS}.")
         try:
             from google import genai  # noqa: PLC0415 (intentional lazy import)
             from google.genai import types  # noqa: PLC0415
@@ -148,25 +202,61 @@ class GeminiClient:
             if key else genai.Client(http_options=http_options)
         )
         self.model = model
+        self.effort = effort
         self.max_output_tokens = max_output_tokens
 
     def complete_json(self, system: str, user: str, schema: dict, *, effort: Optional[str] = None) -> dict:
-        # Gemini has no thinking-effort knob equivalent to Claude's — accepted
-        # for protocol compatibility and silently ignored.
         from google.genai import types  # noqa: PLC0415
-        config = types.GenerateContentConfig(
-            system_instruction=system,
-            response_mime_type="application/json",
-            response_schema=_gemini_schema(schema),
-            max_output_tokens=self.max_output_tokens,
-        )
-        response = self._client.models.generate_content(
-            model=self.model, contents=user, config=config,
-        )
+
+        resolved_effort = effort if effort is not None else self.effort
+        budget = _GEMINI_THINKING_BUDGET.get(resolved_effort)
+
+        def _config(include_thinking: bool):
+            kwargs: dict = dict(
+                system_instruction=system,
+                response_mime_type="application/json",
+                response_schema=_gemini_schema(schema),
+                max_output_tokens=self.max_output_tokens,
+            )
+            if include_thinking and budget is not None:
+                kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=budget)
+            return types.GenerateContentConfig(**kwargs)
+
+        # Graceful degradation (§4.0): a model with no thinking support
+        # rejects ``thinking_config`` — retry once without it rather than
+        # failing the agent call outright.
+        from google.genai import errors as genai_errors  # noqa: PLC0415
+        client_error = _resolve_error_class(genai_errors, "ClientError")
+        try:
+            response = self._client.models.generate_content(
+                model=self.model, contents=user, config=_config(True),
+            )
+        except client_error:
+            if budget is None:
+                raise
+            response = self._client.models.generate_content(
+                model=self.model, contents=user, config=_config(False),
+            )
         text = getattr(response, "text", None)
         if not text:
             raise RuntimeError("Gemini returned no text content.")
         return json.loads(text)
+
+
+# effort -> Cohere reasoning ``token_budget``. Only sent when the configured
+# model actually supports reasoning (``command-a-reasoning`` and similar) —
+# see ``_cohere_reasoning_capable`` below.
+_COHERE_THINKING_BUDGET = {
+    "low": 1024,
+    "medium": 4096,
+    "high": 8192,
+    "xhigh": 16000,
+    "max": 16000,
+}
+
+
+def _cohere_reasoning_capable(model: str) -> bool:
+    return "reasoning" in model.lower()
 
 
 class CohereClient:
@@ -186,7 +276,10 @@ class CohereClient:
 
     # Command A models cap output at 8192 tokens; sending more 400s the request.
     def __init__(self, model: str = "command-a-03-2025", *, api_key: Optional[str] = None,
-                 max_tokens: int = 8192, timeout: float = _DEFAULT_TIMEOUT_SECONDS) -> None:
+                 effort: Optional[str] = None, max_tokens: int = 8192,
+                 timeout: float = _DEFAULT_TIMEOUT_SECONDS) -> None:
+        if effort is not None and effort not in EFFORT_LEVELS:
+            raise ValueError(f"Unknown effort level {effort!r}. Choose from {EFFORT_LEVELS}.")
         try:
             import cohere  # noqa: PLC0415 (intentional lazy import)
         except ImportError as exc:  # pragma: no cover - depends on environment
@@ -199,23 +292,46 @@ class CohereClient:
         # ClientV2 timeout is in seconds.
         self._client = cohere.ClientV2(api_key=key, timeout=timeout)
         self.model = model
+        self.effort = effort
         self.max_tokens = max_tokens
         self.timeout = timeout
 
     def complete_json(self, system: str, user: str, schema: dict, *, effort: Optional[str] = None) -> dict:
-        # Cohere has no thinking-effort knob — accepted for protocol
-        # compatibility and silently ignored.
-        response = self._client.chat(
-            model=self.model,
-            max_tokens=self.max_tokens,
-            messages=[
-                {"role": "system", "content": system},
-                # Cohere's json_object mode wants the request to explicitly ask
-                # for JSON, on top of the enforced schema.
-                {"role": "user", "content": f"{user}\n\nRespond with a single JSON object."},
-            ],
-            response_format={"type": "json_object", "schema": schema},
+        # The reasoning knob only exists on Cohere's reasoning models
+        # (command-a-reasoning and similar) — the default command-a-03-2025
+        # has none, so effort is accepted-and-ignored there; pass --model to
+        # opt into a reasoning model.
+        resolved_effort = effort if effort is not None else self.effort
+        budget = (
+            _COHERE_THINKING_BUDGET.get(resolved_effort)
+            if _cohere_reasoning_capable(self.model) else None
         )
+
+        def _call(include_thinking: bool):
+            kwargs: dict = dict(
+                model=self.model,
+                max_tokens=self.max_tokens,
+                messages=[
+                    {"role": "system", "content": system},
+                    # Cohere's json_object mode wants the request to
+                    # explicitly ask for JSON, on top of the enforced schema.
+                    {"role": "user", "content": f"{user}\n\nRespond with a single JSON object."},
+                ],
+                response_format={"type": "json_object", "schema": schema},
+            )
+            if include_thinking and budget is not None:
+                kwargs["thinking"] = {"type": "enabled", "token_budget": budget}
+            return self._client.chat(**kwargs)
+
+        # Graceful degradation (§4.0): retry once without the thinking param
+        # if this model/account rejects it, rather than failing the call.
+        bad_request = _resolve_error_class(self._cohere, "BadRequestError", "errors.BadRequestError")
+        try:
+            response = _call(True)
+        except bad_request:
+            if budget is None:
+                raise
+            response = _call(False)
         # message.content is a list of typed items; reasoning models lead with a
         # 'thinking' item, so pick the 'text' one (mirrors the Anthropic client)
         # rather than blindly taking content[0].
@@ -228,6 +344,29 @@ class CohereClient:
         if not text:
             raise RuntimeError("Cohere returned no text content.")
         return json.loads(text)
+
+
+# Model-name pattern for OpenAI's reasoning-capable families routed through
+# MeshAPI (``provider/model-name`` ids — matched against the part after the
+# slash): o-series (o1, o3, o4-mini, ...) and gpt-5. Everything else
+# (gpt-4o, gpt-4.1, third-party models, ...) is treated as non-reasoning.
+_MESHAPI_REASONING_MODEL_RE = re.compile(r"^(o[1-9](-mini|-preview|-pro)?|gpt-5)(-|$)", re.IGNORECASE)
+
+# OpenAI's ``reasoning_effort`` only accepts a handful of values
+# ("minimal"/"low"/"medium"/"high" depending on model family) — our finer
+# 5-tier scale collapses onto it, with xhigh/max clamped to its ceiling.
+_MESHAPI_REASONING_EFFORT = {
+    "low": "low",
+    "medium": "medium",
+    "high": "high",
+    "xhigh": "high",
+    "max": "high",
+}
+
+
+def _meshapi_reasoning_capable(model: str) -> bool:
+    name = model.rsplit("/", 1)[-1]
+    return bool(_MESHAPI_REASONING_MODEL_RE.match(name))
 
 
 class MeshAPIClient:
@@ -281,6 +420,7 @@ class MeshAPIClient:
             ) from exc
         key = api_key or os.environ.get("MESHAPI_API_KEY")
         self._client = openai.OpenAI(base_url=self._BASE_URL, api_key=key, timeout=timeout)
+        self._openai = openai
         self.model = model
         self.effort = effort
         self.max_tokens = max_tokens
@@ -293,21 +433,42 @@ class MeshAPIClient:
         # instead, confirmed against openai/gpt-4o (a non-reasoning model),
         # failing every single agent call. MeshAPI fronts 1000+ models of
         # wildly varying reasoning-effort support with no per-model signal
-        # exposed here, so — like GeminiClient/CohereClient — effort is
-        # accepted for protocol compatibility and silently ignored rather
-        # than risk breaking the call for whichever model is configured.
-        response = self._client.chat.completions.create(
-            model=self.model,
-            max_tokens=self.max_tokens,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            response_format={
-                "type": "json_schema",
-                "json_schema": {"name": "response", "schema": schema, "strict": True},
-            },
+        # exposed here, so it's only ever sent when the routed model id
+        # itself looks reasoning-capable (o-series/gpt-5); every other model
+        # — including the ``openai/gpt-4o`` default — never receives it.
+        resolved_effort = effort if effort is not None else self.effort
+        reasoning_effort = (
+            _MESHAPI_REASONING_EFFORT.get(resolved_effort)
+            if _meshapi_reasoning_capable(self.model) else None
         )
+
+        def _call(include_reasoning: bool):
+            kwargs: dict = dict(
+                model=self.model,
+                max_tokens=self.max_tokens,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {"name": "response", "schema": schema, "strict": True},
+                },
+            )
+            if include_reasoning and reasoning_effort is not None:
+                kwargs["reasoning_effort"] = reasoning_effort
+            return self._client.chat.completions.create(**kwargs)
+
+        # Graceful degradation (§4.0): a reasoning-capable-looking model that
+        # still rejects the param retries once without it, rather than
+        # failing the whole agent call.
+        bad_request = _resolve_error_class(self._openai, "BadRequestError")
+        try:
+            response = _call(True)
+        except bad_request:
+            if reasoning_effort is None:
+                raise
+            response = _call(False)
         choice = response.choices[0]
         if getattr(choice, "finish_reason", None) == "content_filter":
             raise RuntimeError("MeshAPI declined the request (finish_reason=content_filter).")
