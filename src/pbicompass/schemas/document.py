@@ -170,6 +170,13 @@ class Document:
     # Prioritized AI recommendations, each
     # {priority, issue, why_it_matters, suggested_fix, expected_benefit, effort}
     ai_recommendations: list[dict[str, str]] = field(default_factory=list)
+    # Day 8: the broadest-impact root-cause cluster from the sibling Audit
+    # document's Audit Synthesizer (Day 7), when both "technical" and
+    # "audit" are generated in the same job — {root_cause, narrative,
+    # confidence, rule_ids}. None when audit wasn't generated alongside this
+    # doc or produced no clusters; the renderer then omits the callout
+    # entirely rather than showing a placeholder.
+    top_cluster: Optional[dict[str, Any]] = None
     navigation_map_svg: Optional[str] = None
     navigation_edges: list[dict[str, str]] = field(default_factory=list)
     changelog: Optional[str] = None

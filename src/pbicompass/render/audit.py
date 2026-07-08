@@ -36,6 +36,7 @@ _SECTION_TITLES = [
     "6. Governance",
     "7. Unused Assets",
     "8. Recommendations",
+    "9. Root-Cause Analysis",
 ]
 
 _COMPONENT_LABELS = {
@@ -107,6 +108,40 @@ def _unused_rows(ua) -> list[list]:
          ", ".join(f"{c['table']}[{c['column']}]" for c in ua.calculated_columns) or "—"],
         ["Report pages", len(ua.report_pages), ", ".join(ua.report_pages) or "—"],
     ]
+
+
+def _top_cluster(doc: AuditDocument):
+    """The broadest-impact cluster (most related findings) — what gets
+    surfaced onto the technical document's §16 (Day 8). ``None`` when no
+    clusters were produced."""
+    if not doc.clusters:
+        return None
+    return max(doc.clusters, key=lambda c: len(c.rule_ids))
+
+
+def _rule_id_anchors(doc: AuditDocument) -> dict[str, list[tuple[str, str, str]]]:
+    """``rule_id -> [(section_label, anchor_id, display_text), ...]`` for
+    every finding/check/recommendation that carries that stable rule ID —
+    the deep-link targets a cluster's ``rule_ids`` resolve against (Day 8)."""
+    index: dict[str, list[tuple[str, str, str]]] = {}
+
+    def _add(rule_id: str, section: str, anchor: str, text: str) -> None:
+        if not rule_id:
+            return
+        index.setdefault(rule_id, []).append((section, anchor, text))
+
+    for i, f in enumerate(doc.dax_findings):
+        _add(f.rule_id, "DAX Review", f"finding-dax-{i}", f"{f.measure} — {_kind_label(f.kind)}")
+    for bp in doc.best_practices:
+        _add(bp.rule_id, "Model Best Practices", f"check-{bp.id}", bp.name)
+    for i, r in enumerate(doc.performance_risks):
+        _add(r.rule_id, "Performance Risks", f"finding-perf-{i}", f"{r.object_name} — {_kind_label(r.kind)}")
+    for i, g in enumerate(doc.governance):
+        _add(g.rule_id, "Governance", f"finding-gov-{i}", _area_label(g.area))
+    for i, r in enumerate(doc.recommendations):
+        rid = f"rec-{r.rule_id}" if getattr(r, "rule_id", "") else f"rec-{i}"
+        _add(getattr(r, "rule_id", ""), "Recommendations", rid, r.issue)
+    return index
 
 
 # -- Markdown -------------------------------------------------------------------
@@ -201,6 +236,17 @@ def render_markdown(doc: AuditDocument) -> str:
     else:
         out.append("_No recommendations — the model passed every deterministic check._\n")
 
+    if doc.clusters:
+        out.append(f"\n## {_SECTION_TITLES[8]}\n")
+        if doc.strategic_narrative:
+            out.append(f"{doc.strategic_narrative}\n")
+        for cl in doc.clusters:
+            out.append(f"\n### {cl.root_cause} ({cl.confidence} confidence)\n")
+            if cl.narrative:
+                out.append(f"{cl.narrative}\n")
+            if cl.rule_ids:
+                out.append(f"**Related findings:** {', '.join(cl.rule_ids)}\n")
+
     return "\n".join(out).rstrip() + "\n"
 
 
@@ -234,7 +280,11 @@ def render_html(
     h = doc.health
     c = doc.complexity
 
-    toc = [(f"sec{i+1}", title.split(". ", 1)[1]) for i, title in enumerate(_SECTION_TITLES)]
+    # Section 9 (Root-Cause Analysis) only exists when the Audit Synthesizer
+    # produced clusters (Day 7/8) — deterministic fallback is that it's
+    # simply absent from the TOC, not an empty section.
+    _visible_titles = _SECTION_TITLES if doc.clusters else _SECTION_TITLES[:8]
+    toc = [(f"sec{i+1}", title.split(". ", 1)[1]) for i, title in enumerate(_visible_titles)]
     kpis = [
         ("Health Score", f"{h.overall}/100"), ("Band", h.band), ("Complexity", c.level),
         ("Findings", str(len(doc.dax_findings) + len(doc.performance_risks) + len(doc.governance))),
@@ -345,7 +395,34 @@ def render_html(
     else:
         o.append('<p class="muted">No recommendations — the model passed every deterministic check.</p>')
 
+    cluster_ids = [f"cluster-{i}" for i in range(len(doc.clusters))]
+    if doc.clusters:
+        anchor_index = _rule_id_anchors(doc)
+        o.append(f'<h2 id="sec9">{_e(_SECTION_TITLES[8])}</h2>')
+        if doc.strategic_narrative:
+            o.append(f'<div class="card-section"><p>{_e(doc.strategic_narrative)}</p></div>')
+        for cl, cluster_id in zip(doc.clusters, cluster_ids):
+            o.append(f'<div class="card-section" id="{_e(cluster_id)}">')
+            o.append(f'<h3>{_e(cl.root_cause)} {_severity_pill(cl.confidence)}</h3>')
+            if cl.narrative:
+                o.append(f'<p>{_e(cl.narrative)}</p>')
+            links = []
+            for rid in cl.rule_ids:
+                targets = anchor_index.get(rid)
+                if not targets:
+                    links.append(f'<code>{_e(rid)}</code>')
+                    continue
+                links.extend(f'<a href="#{_e(anchor)}">{_e(rid)} — {_e(text)}</a>'
+                             for _section, anchor, text in targets)
+            if links:
+                o.append(f'<p class="caveat"><strong>Related findings:</strong> {", ".join(links)}</p>')
+            o.append('</div>')
+
     search_index = [{"title": sec_title, "type": "section", "anchor": sec_id} for sec_id, sec_title in toc]
+    search_index += [
+        {"title": cl.root_cause, "type": "finding", "anchor": cid}
+        for cl, cid in zip(doc.clusters, cluster_ids)
+    ]
     search_index += [
         {"title": f"{f.measure} — {_kind_label(f.kind)}", "type": "finding", "anchor": rid}
         for f, rid in zip(doc.dax_findings, dax_ids)
@@ -469,6 +546,17 @@ def render_docx(doc: AuditDocument, out_path) -> Path:
             d.para([d._run("Estimated effort: ", bold=True), d._run(getattr(r, "effort", "Medium"))])
     else:
         d.para("No recommendations — the model passed every deterministic check.")
+
+    if doc.clusters:
+        d.heading(1, _SECTION_TITLES[8])
+        if doc.strategic_narrative:
+            d.para(doc.strategic_narrative)
+        for cl in doc.clusters:
+            d.heading(3, f"{cl.root_cause} ({cl.confidence} confidence)")
+            if cl.narrative:
+                d.para(cl.narrative)
+            if cl.rule_ids:
+                d.para([d._run("Related findings: ", bold=True), d._run(", ".join(cl.rule_ids))])
 
     d.save(out_path)
     return out_path

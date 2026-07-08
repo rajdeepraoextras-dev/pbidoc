@@ -71,7 +71,7 @@ def format_prose_with_code(text: str) -> str:
             lines = part.split("\n")
             lang = "csharp"
             code_lines = lines
-            if lines and lines[0].strip() in ("csharp", "dax", "powerquery", "pq"):
+            if lines and lines[0].strip() in ("csharp", "dax", "powerquery", "pq", "m", "text"):
                 lang = lines[0].strip()
                 code_lines = lines[1:]
             code_text = "\n".join(code_lines)
@@ -703,6 +703,18 @@ def render_html(
                           _e(notes.get(k, ""))]
                          for k, v in hs.get("component_scores", {}).items()]))
         o.append('<p class="muted">Scored by deterministic rules over the model metadata — reproducible, not an AI guess.</p>')
+    top_cluster = getattr(doc, "top_cluster", None)
+    if top_cluster:
+        o.append('<div class="card-section">')
+        o.append(f'<h3>Root cause: {_e(top_cluster.get("root_cause", ""))}</h3>')
+        o.append(f'<p>{_e(top_cluster.get("narrative", ""))}</p>')
+        if top_cluster.get("rule_ids"):
+            ids = ", ".join(f"<code>{_e(rid)}</code>" for rid in top_cluster["rule_ids"])
+            o.append(f'<p class="muted">Related findings: {ids}</p>')
+        if audit_href:
+            o.append(f'<p class="muted">See the full <a href="{_e(audit_href)}#sec9">Root-Cause '
+                     f'Analysis</a> in the Audit &amp; Health Report.</p>')
+        o.append('</div>')
     recs = doc.ai_recommendations or []
     suppressed = doc.tech_debt.suppressed_rules if hasattr(doc, "tech_debt") and doc.tech_debt else []
     suppressed_count = len(suppressed)

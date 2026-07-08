@@ -21,6 +21,7 @@ from pbicompass.agents.generators import (
     ExecutiveSummaryGenerator,
 )
 from pbicompass.parsers import detect_and_parse
+from pbicompass.schemas.audit_document import FindingCluster
 from pbicompass.render import (
     pandoc,
     render_audit_docx,
@@ -60,6 +61,26 @@ def _doc():
 
 def _audit_doc():
     return AuditReportGenerator.generate(detect_and_parse(FIXTURE))
+
+
+def _audit_doc_with_clusters():
+    """A Day-7/8 root-cause cluster attached to a real generated audit doc —
+    one rule_id that genuinely resolves to a finding already on the doc (so
+    the deep link can be asserted to resolve), plus one that doesn't (so the
+    unresolved fallback can be asserted too)."""
+    doc = _audit_doc()
+    real_rule_id = next((bp.rule_id for bp in doc.best_practices if bp.rule_id), "")
+    assert real_rule_id, "fixture must produce at least one rule-ID-backed best-practice check"
+    doc.clusters = [
+        FindingCluster(
+            root_cause="Auto Date/Time is enabled",
+            rule_ids=[real_rule_id, "PBIC-DOES-NOT-EXIST"],
+            narrative="Disabling Auto Date/Time clears this and its dependent findings.",
+            confidence="High",
+        )
+    ]
+    doc.strategic_narrative = "Fixing the top root cause clears the largest share of findings."
+    return doc, real_rule_id
 
 
 def _executive_doc():
@@ -312,6 +333,51 @@ class MarkdownRenderTest(unittest.TestCase):
             self.assertIn(label, ("Extracted", "AI-inferred", "Human-provided"))
 
 
+class TechnicalTopClusterTest(unittest.TestCase):
+    """Day 8: the technical doc's §16 surfaces the sibling Audit document's
+    broadest-impact root-cause cluster when the caller (cli.py/worker.py)
+    passes one; omitted entirely when it doesn't (deterministic fallback,
+    including every offline/no-client run)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.model = detect_and_parse(FIXTURE)
+        cls.cluster = FindingCluster(
+            root_cause="Auto Date/Time is enabled",
+            rule_ids=["PBIC-PERF-007", "PBIC-MOD-003"],
+            narrative="Disabling Auto Date/Time clears this and its dependent findings.",
+            confidence="High",
+        )
+        cls.doc_with = generate_document(cls.model, top_cluster=cls.cluster)
+        cls.doc_without = generate_document(cls.model)
+
+    def test_top_cluster_populated_on_the_document(self):
+        self.assertEqual(self.doc_with.top_cluster["root_cause"], "Auto Date/Time is enabled")
+        self.assertEqual(self.doc_with.top_cluster["rule_ids"], ["PBIC-PERF-007", "PBIC-MOD-003"])
+        self.assertIsNone(self.doc_without.top_cluster)
+
+    def test_markdown_callout(self):
+        md = render_markdown(self.doc_with)
+        self.assertIn("Root cause: Auto Date/Time is enabled", md)
+        self.assertIn("Disabling Auto Date/Time clears this and its dependent findings.", md)
+        self.assertIn("PBIC-PERF-007", md)
+        self.assertNotIn("Root cause:", render_markdown(self.doc_without))
+
+    def test_html_callout(self):
+        html = render_html(self.doc_with)
+        self.assertIn("Root cause: Auto Date/Time is enabled", html)
+        self.assertIn("PBIC-PERF-007", html)
+        self.assertNotIn("Root cause:", render_html(self.doc_without))
+
+    def test_docx_callout(self):
+        with tempfile.TemporaryDirectory() as td:
+            out = render_docx(self.doc_with, Path(td) / "technical.docx")
+            with zipfile.ZipFile(out) as zf:
+                document = zf.read("word/document.xml").decode("utf-8")
+            self.assertIn("Root cause: Auto Date/Time is enabled", document)
+            self.assertIn("PBIC-PERF-007", document)
+
+
 class PandocAdapterTest(unittest.TestCase):
     def test_detection_returns_sane_types(self):
         self.assertIsInstance(pandoc.pandoc_available(), bool)
@@ -379,6 +445,11 @@ class AuditMarkdownRenderTest(unittest.TestCase):
         self.assertIn("/ 100", self.md)
         self.assertIn("Why it matters", self.md)
 
+    def test_no_root_cause_section_when_no_clusters(self):
+        # Day 8: deterministic fallback is that the section is simply
+        # absent, never an empty placeholder.
+        self.assertNotIn("Root-Cause Analysis", self.md)
+
 
 class AuditHtmlRenderTest(unittest.TestCase):
     @classmethod
@@ -411,6 +482,10 @@ class AuditHtmlRenderTest(unittest.TestCase):
         # practice check, that check too.
         self.assertIn('"type": "finding"', self.html)
         self.assertIn('"type": "recommendation"', self.html)
+
+    def test_no_root_cause_section_when_no_clusters(self):
+        self.assertNotIn("Root-Cause Analysis", self.html)
+        self.assertNotIn('id="sec9"', self.html)
 
     def test_searching_a_measure_typo_finds_the_naming_finding(self):
         from pbicompass.schemas.model import Measure, SemanticModel, Table
@@ -446,6 +521,75 @@ class AuditDocxRenderTest(unittest.TestCase):
             minidom.parseString(document)  # well-formed XML or raises
             self.assertIn("SampleSales", document)
             self.assertIn("Overall Health Score", document)
+
+
+class AuditRootCauseSectionTest(unittest.TestCase):
+    """Day 8: renders the Root-Cause Analysis section from the Day-7 Audit
+    Synthesizer clusters, deep-linking each cluster's rule_ids to the
+    finding anchor that carries that rule ID."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.doc, cls.real_rule_id = _audit_doc_with_clusters()
+        cls.md = render_audit_markdown(cls.doc)
+        cls.html = render_audit_html(cls.doc)
+
+    def test_markdown_contains_the_section_and_narrative(self):
+        self.assertIn("9. Root-Cause Analysis", self.md)
+        self.assertIn("Fixing the top root cause clears the largest share of findings.", self.md)
+        self.assertIn("Auto Date/Time is enabled", self.md)
+        self.assertIn("Disabling Auto Date/Time clears this and its dependent findings.", self.md)
+        self.assertIn(self.real_rule_id, self.md)
+        self.assertIn("PBIC-DOES-NOT-EXIST", self.md)
+
+    def test_html_section_and_toc_present(self):
+        self.assertIn('<h2 id="sec9">9. Root-Cause Analysis</h2>', self.html)
+        self.assertIn(">Root-Cause Analysis<", self.html)  # sidebar TOC entry
+        self.assertIn("Fixing the top root cause clears the largest share of findings.", self.html)
+
+    def test_html_resolved_rule_id_becomes_a_working_anchor_link(self):
+        # the real rule ID must resolve to an <a href="#..."> pointing at
+        # the finding/check that actually carries it — not just be printed.
+        self.assertRegex(self.html, rf'<a href="#[\w-]+">{re.escape(self.real_rule_id)} — ')
+
+    def test_html_unresolved_rule_id_falls_back_to_plain_text(self):
+        # a cluster rule_id with no matching finding anywhere on the
+        # document must never render as a dead link.
+        self.assertIn("<code>PBIC-DOES-NOT-EXIST</code>", self.html)
+        self.assertNotIn('href="#PBIC-DOES-NOT-EXIST"', self.html)
+
+    def test_docx_contains_the_section(self):
+        with tempfile.TemporaryDirectory() as td:
+            out = render_audit_docx(self.doc, Path(td) / "audit.docx")
+            with zipfile.ZipFile(out) as zf:
+                document = zf.read("word/document.xml").decode("utf-8")
+            self.assertIn("Root-Cause Analysis", document)
+            self.assertIn("Auto Date/Time is enabled", document)
+            self.assertIn(self.real_rule_id, document)
+
+
+class TopClusterSelectionTest(unittest.TestCase):
+    """The helper cli.py/worker.py use (Day 8) to pick which cluster gets
+    surfaced onto the technical doc's §16 — the broadest-impact one (most
+    related findings), not just ``clusters[0]``."""
+
+    def test_picks_the_cluster_with_the_most_rule_ids(self):
+        from pbicompass.render.audit import _top_cluster
+
+        doc, _ = _audit_doc_with_clusters()
+        doc.clusters = [
+            FindingCluster(root_cause="Narrow cause", rule_ids=["A"], confidence="Low"),
+            FindingCluster(root_cause="Broad cause", rule_ids=["A", "B", "C"], confidence="Medium"),
+        ]
+        top = _top_cluster(doc)
+        self.assertEqual(top.root_cause, "Broad cause")
+
+    def test_none_when_no_clusters(self):
+        from pbicompass.render.audit import _top_cluster
+
+        doc, _ = _audit_doc_with_clusters()
+        doc.clusters = []
+        self.assertIsNone(_top_cluster(doc))
 
 
 class RendererRegistryCompatibilityTest(unittest.TestCase):

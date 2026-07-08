@@ -38,6 +38,7 @@ from ..agents.context import JobAIContext, build_job_context
 from ..agents.generators import DOCUMENT_TYPES
 from ..render import pandoc, registry
 from ..render._shared import format_timestamp
+from ..render.audit import _top_cluster as _audit_top_cluster
 from ..render.hub import doc_switcher_links, hub_stats, render_hub
 from .ingest import ingest_to_model
 from .jobs import JobStore
@@ -117,7 +118,7 @@ def _effective_metadata(options: dict, enrichment_meta: dict) -> dict:
 
 
 def _generate_one(document_type: str, model, client, meta: dict, warn: Callable[[str], None],
-                   ai_context: JobAIContext | None) -> object:
+                   ai_context: JobAIContext | None, top_cluster=None, plan: str | None = None) -> object:
     if document_type == "technical":
         return generate_document(
             model, client,
@@ -138,7 +139,18 @@ def _generate_one(document_type: str, model, client, meta: dict, warn: Callable[
             glossary=meta.get("glossary"),
             assumptions=meta.get("assumptions"),
             support_notes=meta.get("support_notes"),
-            on_warning=warn, ai_context=ai_context,
+            on_warning=warn, ai_context=ai_context, top_cluster=top_cluster,
+        )
+    if document_type == "audit":
+        return DOCUMENT_TYPES["audit"].generate(
+            model, client,
+            owner=meta.get("owner"),
+            audience=meta.get("audience"),
+            refresh=meta.get("refresh"),
+            version=meta.get("version"),
+            status=meta.get("status"),
+            classification=meta.get("classification"),
+            on_warning=warn, ai_context=ai_context, plan=plan,
         )
     return DOCUMENT_TYPES[document_type].generate(
         model, client,
@@ -237,10 +249,32 @@ def process_job(store: JobStore, job_id: str, upload_path: Path,
         # cross-document links below assume these exact names.
         html_filenames = {d: f"{d}.html" for d in document_types} if multi else {}
 
+        # Day 8: when both "technical" and "audit" are requested, generate
+        # the Audit document first so its Audit Synthesizer clusters (Day 7)
+        # can be surfaced on the technical doc's §16 — avoids a second,
+        # potentially-inconsistent Synthesizer call. The pre-generated audit
+        # doc is reused below when the main loop reaches "audit" rather than
+        # regenerated, so this never doubles LLM cost.
+        # Day 9: the AI fix-snippets feature is plan-gated (pro/enterprise
+        # only) — threaded here rather than read again per-doc, matching how
+        # ``options.get("plan")`` is already validated once by the quota
+        # check above in ``app.py``.
+        plan = options.get("plan")
+
+        pre_audit_doc = None
+        if client is not None and "technical" in document_types and "audit" in document_types:
+            pre_audit_doc = _generate_one("audit", model, client, meta, warn, ai_context, plan=plan)
+        top_cluster = _audit_top_cluster(pre_audit_doc) if pre_audit_doc is not None else None
+
         outputs: dict[str, bytes] = {}
         docs: dict[str, object] = {}
         for dtype in document_types:
-            doc = _generate_one(dtype, model, client, meta, warn, ai_context)
+            if dtype == "audit" and pre_audit_doc is not None:
+                doc = pre_audit_doc
+            else:
+                doc = _generate_one(dtype, model, client, meta, warn, ai_context,
+                                     top_cluster=top_cluster if dtype == "technical" else None,
+                                     plan=plan if dtype == "audit" else None)
             if changelog_text and dtype in ("technical", "audit"):
                 doc.changelog = changelog_text
             docs[dtype] = doc

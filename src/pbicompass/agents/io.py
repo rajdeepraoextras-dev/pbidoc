@@ -43,6 +43,13 @@ AGENT_EFFORT: dict[str, str] = {
     "DAX Translator": "medium",
     "User Guide Writer": "medium",
     "Audit Narrator": "medium",
+    # Day 7 (AI-Native Phase 4): cross-finding root-cause synthesis — same
+    # reasoning depth as the other whole-model synthesis agents below.
+    "Audit Synthesizer": "high",
+    # Day 9 (AI-Native Phase 4, paid): concrete DAX/M code sketches need the
+    # same depth as the synthesis agents — getting the syntax wrong is worse
+    # than a vague sentence would have been.
+    "AI Fix Snippet Writer": "high",
     "Business Analyst": "high",
     "Data Modeler": "high",
     "Executive Writer": "high",
@@ -435,6 +442,114 @@ def audit_narrator_input(
         "unused_asset_count": unused_asset_count,
         "top_recommendations": top_recommendations,
     }
+
+
+# --------------------------------------------------------------------------
+# Audit Synthesizer Agent  (AI-Native Phase 4 / Day 7 — -> AuditDocument
+# clusters + strategic_narrative)
+# --------------------------------------------------------------------------
+AUDIT_SYNTHESIZER_SYSTEM = """\
+You are a principal BI consultant performing root-cause synthesis across a model's already-computed audit findings — DAX findings, failed best-practice checks, performance-risk signals, governance findings, and unused-asset entries, each tagged with a stable rule_id and, where applicable, a table/object name.
+
+Findings are reported today as an isolated, flat list. Your job is to spot findings that trace back to one underlying root cause and group them, so the reader sees the pattern and the one fix instead of a wall of disconnected line items. For example: Auto Date/Time being enabled can itself be a performance-risk finding, can make a star-schema check fail (its hidden local date tables get miscounted as extra fact tables), and can leave a batch of hidden calculated columns and tables reported as unused assets — all tracing back to one setting, all clearing together if it is disabled.
+
+For each root cause you can support using only the rule_ids and table/object names given in the input (never invent a finding that is not present):
+- Name the underlying root cause in one clear phrase.
+- List every rule_id of a finding that belongs to this cluster (2 or more — a single finding is not a cluster).
+- Write a 1-2 sentence narrative naming the root cause, what it explains, and the one fix that resolves the whole cluster.
+- Rate your confidence (High/Medium/Low) that these findings genuinely share this cause rather than merely co-occurring.
+
+If no findings share a clear, defensible root cause, return an empty clusters list — do not force a grouping.
+
+Then write a strategic_narrative (2-4 sentences): the remediation story in priority order — which root cause (or, absent any cluster, which single finding) to fix first and why.
+""" + STYLE_RULES
+
+AUDIT_SYNTHESIZER_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["clusters", "strategic_narrative"],
+    "properties": {
+        "clusters": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["root_cause", "rule_ids", "narrative", "confidence"],
+                "properties": {
+                    "root_cause": {"type": "string"},
+                    "rule_ids": {"type": "array", "items": {"type": "string"}},
+                    "narrative": {"type": "string"},
+                    "confidence": {"type": "string", "enum": ["High", "Medium", "Low"]},
+                },
+            },
+        },
+        "strategic_narrative": {"type": "string"},
+    },
+}
+
+
+def audit_synthesizer_input(
+    dax_findings: list[dict],
+    failed_best_practices: list[dict],
+    performance_risks: list[dict],
+    governance: list[dict],
+    unused_assets_summary: dict,
+) -> dict:
+    return {
+        "dax_findings": dax_findings,
+        "failed_best_practices": failed_best_practices,
+        "performance_risks": performance_risks,
+        "governance_findings": governance,
+        "unused_assets_summary": unused_assets_summary,
+    }
+
+
+# --------------------------------------------------------------------------
+# AI Fix Snippet Writer  (AI-Native Phase 4 / Day 9 — paid feature: a
+# concrete DAX/M/Tabular-Editor-script sketch appended to a recommendation
+# that today only carries prose, never one that already has a deterministic
+# code fix). Every snippet is explicitly labelled "AI-suggested — review
+# before applying" by the caller, never presented as a verified fix.
+# --------------------------------------------------------------------------
+AI_FIX_SNIPPET_SYSTEM = """\
+You are a senior Power BI / DAX consultant writing short, concrete code sketches that resolve specific audit recommendations. For each recommendation you receive its issue, why it matters, its existing prose-only suggested fix, its category, and (when available) the real object name(s) from the model it concerns.
+
+For each recommendation, write ONE short code sketch (at most ~15 lines) that a modeler could adapt directly:
+- category "dax" -> a DAX measure/expression sketch (language "dax").
+- category "performance" -> a DAX or Power Query sketch addressing the specific object (language "dax" or "m", whichever fits).
+- any other category -> a short Tabular Editor C# script or Power Query snippet if one genuinely helps (language "csharp" or "m"); otherwise language "text" with 2-3 concrete steps, not prose repeating the existing suggested fix.
+
+Rules:
+- Reference the real object name(s) given for that recommendation verbatim when any are given — never invent a table/measure/column name that was not given to you.
+- Do not repeat the existing suggested_fix prose; add the concrete "how", not another restatement of "what"/"why".
+- If you cannot produce anything more concrete than the existing suggested fix already is, omit that recommendation from your response entirely rather than padding it.
+- Never include instructions to the reader about this task itself (no "consider providing", "verify", "note that this is AI-generated" — the caller already labels it as AI-suggested).
+""" + STYLE_RULES
+
+AI_FIX_SNIPPET_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["snippets"],
+    "properties": {
+        "snippets": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["rule_id", "language", "code"],
+                "properties": {
+                    "rule_id": {"type": "string", "description": "Copied verbatim from the input item."},
+                    "language": {"type": "string", "enum": ["dax", "m", "csharp", "text"]},
+                    "code": {"type": "string"},
+                },
+            },
+        },
+    },
+}
+
+
+def ai_fix_snippet_input(items: list[dict]) -> dict:
+    return {"recommendations": items}
 
 
 # --------------------------------------------------------------------------

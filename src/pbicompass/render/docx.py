@@ -397,6 +397,12 @@ def render_docx(doc: Document, out_path) -> Path:
                 _t([[HEALTH_COMPONENT_LABELS.get(k, k), v, notes.get(k, "")]
                     for k, v in hs.get("component_scores", {}).items()]))
         d.para([d._run("Scored by deterministic rules over the model metadata — reproducible, not an AI guess.", italic=True)])
+    top_cluster = getattr(doc, "top_cluster", None)
+    if top_cluster:
+        d.heading(2, f"Root cause: {top_cluster.get('root_cause', '')}")
+        d.para(top_cluster.get("narrative", ""))
+        if top_cluster.get("rule_ids"):
+            d.para([d._run("Related findings: ", bold=True), d._run(", ".join(top_cluster["rule_ids"]))])
     recs = doc.ai_recommendations or []
     suppressed = doc.tech_debt.suppressed_rules if hasattr(doc, "tech_debt") and doc.tech_debt else []
     suppressed_count = len(suppressed)

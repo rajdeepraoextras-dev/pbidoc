@@ -106,6 +106,22 @@ class Recommendation:
 
 
 @dataclass
+class FindingCluster:
+    """One root-cause group of otherwise-isolated findings (AI-Native Phase 4
+    / Day 7 Audit Synthesizer) — e.g. Auto Date/Time being enabled explains a
+    performance-risk finding, a failed star-schema check (its hidden local
+    tables miscounted as extra facts), and a batch of unused hidden
+    calculated columns, all of which would clear together if the one root
+    cause were fixed. Populated only when an LLM client is supplied; absent
+    (``clusters == []``) is a fully valid, complete document — the
+    per-finding list is unaffected either way."""
+    root_cause: str
+    rule_ids: list[str] = field(default_factory=list)
+    narrative: str = ""
+    confidence: str = "Medium"  # High | Medium | Low
+
+
+@dataclass
 class AuditDocument:
     """Top-level ``audit_document.json`` object."""
     metadata: DocMetadataCore
@@ -120,6 +136,12 @@ class AuditDocument:
     narrative_overview: str = ""
     suppressed_rules: list[str] = field(default_factory=list)
     changelog: Optional[str] = None
+    # AI-Native Phase 4 / Day 7: root-cause clusters + the overall remediation
+    # story across them. Deterministic fallback (no client, or the call
+    # fails) = both stay empty and the Root-Cause Analysis section is simply
+    # omitted by the renderers (Day 8) — never a placeholder or an error.
+    clusters: list[FindingCluster] = field(default_factory=list)
+    strategic_narrative: str = ""
     # Rule-engine ledger (4.1 / J.A.1): counts over the full stable-ID rule
     # registry (agents.audit_rules.FINDING_RULES), not just the findings that
     # happened to fire — "checks run" must include rules that passed silently.

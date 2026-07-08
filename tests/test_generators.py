@@ -9,6 +9,7 @@ pattern in ``test_agents.py``, so no API key or network is required.
 
 from __future__ import annotations
 
+import json
 import unittest
 from pathlib import Path
 
@@ -58,13 +59,26 @@ def _fake_report_intelligence_response() -> dict:
 
 
 class FakeAuditNarratorClient:
-    """Returns a canned narrative for the Audit Narrator system prompt."""
+    """Returns a canned narrative for the Audit Narrator system prompt, and a
+    canned cluster for the Audit Synthesizer system prompt (Day 7)."""
 
     def __init__(self):
         self.calls = 0
 
     def complete_json(self, system: str, user: str, schema: dict, *, effort: str | None = None) -> dict:
         self.calls += 1
+        if "root-cause synthesis" in system:
+            return {
+                "clusters": [
+                    {
+                        "root_cause": "FAKE_ROOT_CAUSE",
+                        "rule_ids": ["PBIC-PERF-007"],
+                        "narrative": "FAKE_CLUSTER_NARRATIVE",
+                        "confidence": "High",
+                    }
+                ],
+                "strategic_narrative": "FAKE_STRATEGIC_NARRATIVE",
+            }
         if "Audit & Health Report" in system:
             return {"narrative_overview": "FAKE_NARRATIVE_OVERVIEW"}
         if "expert technical editor" in system:  # the critic pass (5.3)
@@ -183,12 +197,26 @@ class AuditGeneratorLlmTest(unittest.TestCase):
         client = FakeAuditNarratorClient()
         doc = AuditReportGenerator.generate(_model(), client)
         self.assertEqual(doc.narrative_overview, "FAKE_NARRATIVE_OVERVIEW")
-        # 1 Audit Narrator call + 1 critic pass (5.3).
-        self.assertEqual(client.calls, 2)
+        # 1 Audit Narrator call + 1 Audit Synthesizer call (Day 7) + 1 critic pass (5.3).
+        self.assertEqual(client.calls, 3)
         # everything else stays deterministic even with an LLM client supplied
         deterministic_doc = AuditReportGenerator.generate(_model())
         self.assertEqual(doc.health, deterministic_doc.health)
         self.assertEqual(doc.recommendations, deterministic_doc.recommendations)
+
+    def test_llm_synthesizer_clusters_are_used(self):
+        client = FakeAuditNarratorClient()
+        doc = AuditReportGenerator.generate(_model(), client)
+        self.assertEqual(len(doc.clusters), 1)
+        self.assertEqual(doc.clusters[0].root_cause, "FAKE_ROOT_CAUSE")
+        self.assertEqual(doc.clusters[0].rule_ids, ["PBIC-PERF-007"])
+        self.assertEqual(doc.clusters[0].confidence, "High")
+        self.assertEqual(doc.strategic_narrative, "FAKE_STRATEGIC_NARRATIVE")
+
+    def test_failing_client_leaves_clusters_empty(self):
+        doc = AuditReportGenerator.generate(_model(), FailingClient(), on_warning=lambda _m: None)
+        self.assertEqual(doc.clusters, [])
+        self.assertEqual(doc.strategic_narrative, "")
 
     def test_failing_client_falls_back_to_deterministic_overview(self):
         warnings = []
@@ -197,6 +225,117 @@ class AuditGeneratorLlmTest(unittest.TestCase):
         )
         self.assertTrue(warnings)
         self.assertIn(str(doc.health.overall), doc.narrative_overview)
+
+
+class FakeAiFixSnippetClient:
+    """Routes the Audit Narrator/Synthesizer/critic calls to inert canned
+    responses (so a test isolates the Day 9 AI Fix Snippet Writer call) and
+    echoes back a fake DAX snippet for every recommendation it's asked
+    about, keyed by the ``rule_id`` the caller must round-trip."""
+
+    def __init__(self, code: str = "FAKE_DAX_CODE", language: str = "dax"):
+        self.calls = 0
+        self.fix_snippet_requests: list[list[dict]] = []
+        self._code = code
+        self._language = language
+
+    def complete_json(self, system: str, user: str, schema: dict, *, effort: str | None = None) -> dict:
+        self.calls += 1
+        if "concrete code sketches" in system:  # AI Fix Snippet Writer (Day 9)
+            payload = json.loads(user)
+            self.fix_snippet_requests.append(payload["recommendations"])
+            return {
+                "snippets": [
+                    {"rule_id": item["rule_id"], "language": self._language, "code": self._code}
+                    for item in payload["recommendations"]
+                ]
+            }
+        if "root-cause synthesis" in system:
+            return {"clusters": [], "strategic_narrative": ""}
+        if "Audit & Health Report" in system:
+            return {"narrative_overview": "FAKE_NARRATIVE_OVERVIEW"}
+        if "expert technical editor" in system:  # the critic pass (5.3)
+            return {"violations": []}
+        raise AssertionError(f"unexpected system prompt: {system[:80]!r}")
+
+
+class AuditGeneratorAiFixSnippetTest(unittest.TestCase):
+    """Day 9: AI-suggested fix snippets are a paid, plan-gated add-on to the
+    top-N prose-only recommendations — never on the free plan, never
+    duplicating a recommendation that already has a deterministic code
+    fence, and always fenced (so the critic/grounding passes skip them, per
+    their own ``"```" in text`` guard)."""
+
+    def test_free_plan_omits_ai_fix_snippets(self):
+        client = FakeAiFixSnippetClient()
+        doc = AuditReportGenerator.generate(_model(), client, plan="free")
+        self.assertEqual(client.fix_snippet_requests, [])
+        self.assertFalse(any("AI-suggested" in r.suggested_fix for r in doc.recommendations))
+
+    def test_no_plan_specified_omits_ai_fix_snippets(self):
+        """The CLI/offline default (``plan=None``) must not silently grant
+        the paid feature — an explicit pro/enterprise plan is required."""
+        client = FakeAiFixSnippetClient()
+        doc = AuditReportGenerator.generate(_model(), client)
+        self.assertEqual(client.fix_snippet_requests, [])
+        self.assertFalse(any("AI-suggested" in r.suggested_fix for r in doc.recommendations))
+
+    def test_pro_plan_appends_fenced_ai_suggested_snippet(self):
+        client = FakeAiFixSnippetClient()
+        doc = AuditReportGenerator.generate(_model(), client, plan="pro")
+        touched = [r for r in doc.recommendations if "AI-suggested — review before applying" in r.suggested_fix]
+        self.assertTrue(touched)
+        for r in touched:
+            self.assertIn("```dax\nFAKE_DAX_CODE\n```", r.suggested_fix)
+
+    def test_enterprise_plan_also_gets_ai_fix_snippets(self):
+        client = FakeAiFixSnippetClient()
+        doc = AuditReportGenerator.generate(_model(), client, plan="enterprise")
+        self.assertTrue(any("AI-suggested" in r.suggested_fix for r in doc.recommendations))
+
+    def test_candidates_are_bounded_to_top_n_and_exclude_already_fenced(self):
+        client = FakeAiFixSnippetClient()
+        doc = AuditReportGenerator.generate(_model(), client, plan="pro")
+        self.assertEqual(len(client.fix_snippet_requests), 1)
+        requested_rule_ids = {item["rule_id"] for item in client.fix_snippet_requests[0]}
+        self.assertLessEqual(len(requested_rule_ids), 3)
+        # Recommendations that already carry a deterministic code fence
+        # (e.g. PBIC-MOD-001/015's Tabular Editor scripts) must never be
+        # re-sent to the AI Fix Snippet Writer.
+        already_fenced = {r.rule_id for r in doc.recommendations if r.rule_id
+                          and "AI-suggested" not in r.suggested_fix and "```" in r.suggested_fix}
+        self.assertTrue(already_fenced)
+        self.assertEqual(requested_rule_ids & already_fenced, set())
+
+    def test_meta_commentary_snippet_is_rejected_not_appended(self):
+        client = FakeAiFixSnippetClient(code="Consider providing a more specific fix here.")
+        before = AuditReportGenerator.generate(_model(), None).recommendations
+        doc = AuditReportGenerator.generate(_model(), client, plan="pro")
+        self.assertTrue(client.fix_snippet_requests)  # the call did happen
+        for r_before, r_after in zip(before, doc.recommendations):
+            self.assertEqual(r_before.suggested_fix, r_after.suggested_fix)
+
+    def test_failing_client_leaves_recommendations_untouched(self):
+        deterministic = AuditReportGenerator.generate(_model(), None).recommendations
+        doc = AuditReportGenerator.generate(
+            _model(), FailingClient(), plan="pro", on_warning=lambda _m: None,
+        )
+        self.assertEqual(
+            [r.suggested_fix for r in doc.recommendations],
+            [r.suggested_fix for r in deterministic],
+        )
+
+    def test_critic_pass_does_not_alter_the_fenced_ai_snippet(self):
+        """The critic (5.3) skips any field containing a fenced code block
+        (``critic.py::apply_critic_pass``'s ``"```" in text`` guard) — this
+        proves that guard actually protects the new Day 9 snippet end to
+        end, not just in critic.py's own unit tests."""
+        client = FakeAiFixSnippetClient(code="SUM ( Sales[Amount] )")
+        doc = AuditReportGenerator.generate(_model(), client, plan="pro")
+        touched = [r for r in doc.recommendations if "AI-suggested" in r.suggested_fix]
+        self.assertTrue(touched)
+        for r in touched:
+            self.assertIn("```dax\nSUM ( Sales[Amount] )\n```", r.suggested_fix)
 
 
 class ExecutiveGeneratorDeterministicTest(unittest.TestCase):

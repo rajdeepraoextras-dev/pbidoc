@@ -1,24 +1,114 @@
 """Audit & Health Report generator — ``SemanticModel`` -> ``AuditDocument``.
 
-Everything except ``narrative_overview`` is fully deterministic
-(:mod:`pbicompass.agents.audit_rules`) — no LLM call is on the critical path for
-the score, complexity, findings, or recommendations. ``narrative_overview``
-optionally goes through an LLM for polished prose, with a deterministic
-templated-paragraph fallback so the document is always complete offline.
+The score, complexity, and findings are fully deterministic
+(:mod:`pbicompass.agents.audit_rules`) — no LLM call is on their critical path.
+``narrative_overview``, the root-cause ``clusters``/``strategic_narrative``
+(Day 7), and a bounded top-N of ``recommendations[].suggested_fix`` (Day 9,
+paid — an appended AI-suggested code sketch) optionally go through an LLM,
+each with a deterministic/prose-only fallback so the document is always
+complete offline.
 """
 
 from __future__ import annotations
 
 from typing import Optional
 
-from ...schemas.audit_document import AuditDocument
+from ...schemas.audit_document import AuditDocument, FindingCluster
 from .. import audit_rules
 from .. import io
 from ..context import JobAIContext
 from ..critic import apply_critic_pass, apply_results
 from ..grounding import apply_grounding_pass
 from ..llm import LLMClient
+from ..sanitize import is_meta_commentary
 from .base import Warn, build_core_metadata, call_llm
+
+# Day 9 (paid feature, §4.3/4.6): the plan tiers allowed to receive
+# AI-suggested fix snippets — matches accounts.py::PLAN_LIMITS' free/pro/
+# enterprise vocabulary. A caller with no account concept (the CLI) passes
+# ``plan=None``/omits it, which stays out of this set on purpose — an
+# explicit ``--plan`` opts a self-hosted run in.
+_AI_FIX_SNIPPET_PLANS = {"pro", "enterprise"}
+# Bounded regardless of the owner's token-cost-is-not-a-concern policy
+# (§4.0) — "top-N" per the roadmap, so one job never fans out one LLM call
+# per recommendation.
+_AI_FIX_SNIPPET_TOP_N = 3
+_PRIORITY_ORDER = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
+
+
+def _recommendation_example_objects(rec, dax_findings, performance_risks) -> list[str]:
+    """Real object names from the underlying findings that share this
+    recommendation's ``rule_id`` — given to the AI Fix Snippet Writer so it
+    references an actual measure/column instead of inventing one, and kept
+    empty (never guessed) when the recommendation has no per-object finding
+    behind it (e.g. governance/modeling findings are model-wide)."""
+    if not rec.rule_id:
+        return []
+    names: list[str] = []
+    for f in dax_findings:
+        if f.rule_id == rec.rule_id and f.measure not in names:
+            names.append(f.measure)
+    for r in performance_risks:
+        if r.rule_id == rec.rule_id and r.object_name not in names:
+            names.append(r.object_name)
+    return names[:3]
+
+
+def _apply_ai_fix_snippets(
+    recommendations, dax_findings, performance_risks, client, warn: Warn,
+    ai_context: Optional[JobAIContext], plan: Optional[str],
+) -> None:
+    """Day 9: append an "AI-suggested — review before applying" DAX/M/script
+    sketch to the top-N prose-only recommendations (Critical/High first) —
+    skipped entirely offline, and plan-gated to pro/enterprise so the free
+    tier never silently gets a lesser version of this feature (it gets none,
+    per the roadmap's paid-feature framing). Recommendations that already
+    carry a deterministic code fence (``build_recommendations``'s own
+    Tabular Editor/M scripts) are left untouched rather than doubled up."""
+    if client is None or plan not in _AI_FIX_SNIPPET_PLANS:
+        return
+    candidates = sorted(
+        (r for r in recommendations if "```" not in r.suggested_fix),
+        key=lambda r: _PRIORITY_ORDER.get(r.priority, 99),
+    )[:_AI_FIX_SNIPPET_TOP_N]
+    if not candidates:
+        return
+
+    items = [
+        {
+            "rule_id": r.rule_id or f"rec-{i}",
+            "issue": r.issue,
+            "why_it_matters": r.why_it_matters,
+            "category": r.category,
+            "current_suggested_fix": r.suggested_fix,
+            "example_objects": _recommendation_example_objects(r, dax_findings, performance_risks),
+        }
+        for i, r in enumerate(candidates)
+    ]
+    # A candidate lacking a real rule_id got a synthetic "rec-{i}" key above
+    # purely so the schema always has something to echo back — match
+    # candidates back up positionally for those, by rule_id for the rest.
+    by_key = {item["rule_id"]: rec for item, rec in zip(items, candidates)}
+
+    data = call_llm(
+        client, io.AI_FIX_SNIPPET_SYSTEM, io.ai_fix_snippet_input(items),
+        io.AI_FIX_SNIPPET_SCHEMA, warn, "AI Fix Snippet Writer", ai_context=ai_context,
+    )
+    if not data:
+        return
+
+    for snippet in data.get("snippets", []):
+        rec = by_key.get((snippet.get("rule_id") or "").strip())
+        code = (snippet.get("code") or "").strip()
+        if rec is None or not code or is_meta_commentary(code):
+            continue
+        lang = snippet.get("language") or "text"
+        if lang not in ("dax", "m", "csharp", "text"):
+            lang = "text"
+        rec.suggested_fix = (
+            f"{rec.suggested_fix.rstrip()}\n\n"
+            f"**AI-suggested — review before applying:**\n```{lang}\n{code}\n```"
+        )
 
 
 def _deterministic_overview(
@@ -61,6 +151,15 @@ def _narrative_triples(doc: AuditDocument) -> list[tuple[str, str, "callable"]]:
     def _set_narrative(v: str) -> None:
         doc.narrative_overview = v
     triples.append(("narrative_overview", doc.narrative_overview, _set_narrative))
+
+    def _set_strategic(v: str) -> None:
+        doc.strategic_narrative = v
+    triples.append(("strategic_narrative", doc.strategic_narrative, _set_strategic))
+
+    for i, cluster in enumerate(doc.clusters):
+        def _set_cluster_narrative(v: str, _c=cluster) -> None:
+            _c.narrative = v
+        triples.append((f"clusters[{i}].narrative", cluster.narrative, _set_cluster_narrative))
 
     for i, rec in enumerate(doc.recommendations):
         def _set_why(v: str, _r=rec) -> None:
@@ -121,6 +220,7 @@ class AuditReportGenerator:
         classification: Optional[str] = None,
         on_warning: Optional[Warn] = None,
         ai_context: Optional[JobAIContext] = None,
+        plan: Optional[str] = None,
     ) -> AuditDocument:
         warn = on_warning or (lambda _msg: None)
         model.compute_counts()
@@ -168,6 +268,59 @@ class AuditReportGenerator:
             if data and data.get("narrative_overview"):
                 narrative = data["narrative_overview"]
 
+        clusters: list[FindingCluster] = []
+        strategic_narrative = ""
+        if client is not None:
+            failed_practices = [c for c in best_practices if not c.passed]
+            synth_data = call_llm(
+                client, io.AUDIT_SYNTHESIZER_SYSTEM,
+                io.audit_synthesizer_input(
+                    dax_findings=[
+                        {"rule_id": f.rule_id, "measure": f.measure, "table": f.table, "detail": f.detail}
+                        for f in dax_findings
+                    ],
+                    failed_best_practices=[
+                        {"rule_id": c.rule_id, "id": c.id, "name": c.name, "detail": c.detail}
+                        for c in failed_practices
+                    ],
+                    performance_risks=[
+                        {"rule_id": r.rule_id, "kind": r.kind, "object_name": r.object_name,
+                         "table": r.table, "detail": r.detail}
+                        for r in performance_risks
+                    ],
+                    governance=[
+                        {"rule_id": g.rule_id, "area": g.area, "detail": g.detail}
+                        for g in governance
+                    ],
+                    unused_assets_summary={
+                        "measures": unused_assets.measures,
+                        "columns": unused_assets.columns,
+                        "tables": unused_assets.tables,
+                        "calculated_columns": unused_assets.calculated_columns,
+                        "report_pages": unused_assets.report_pages,
+                    },
+                ),
+                io.AUDIT_SYNTHESIZER_SCHEMA, warn, "Audit Synthesizer", ai_context=ai_context,
+            )
+            if synth_data:
+                clusters = [
+                    FindingCluster(
+                        root_cause=c.get("root_cause", ""),
+                        rule_ids=list(c.get("rule_ids", [])),
+                        narrative=c.get("narrative", ""),
+                        confidence=c.get("confidence", "Medium"),
+                    )
+                    for c in synth_data.get("clusters", [])
+                ]
+                strategic_narrative = synth_data.get("strategic_narrative", "")
+
+        # Day 9: runs last, after the deterministic overview and the Audit
+        # Narrator/Synthesizer calls have already read ``recommendations``
+        # — so neither the narrative prose nor the narrator's own input
+        # payload ever picks up an appended code fence meant only for the
+        # recommendation card itself.
+        _apply_ai_fix_snippets(recommendations, dax_findings, performance_risks, client, warn, ai_context, plan)
+
         suppressed = audit_rules.get_suppressed_rules()
         meta = build_core_metadata(
             model, "audit", default_audience="BI architects, technical leads, and governance teams",
@@ -192,6 +345,8 @@ class AuditReportGenerator:
             recommendations=recommendations,
             narrative_overview=narrative,
             suppressed_rules=suppressed,
+            clusters=clusters,
+            strategic_narrative=strategic_narrative,
             checks_run=ledger["run"],
             checks_passed=ledger["passed"],
             checks_failed=ledger["failed"],

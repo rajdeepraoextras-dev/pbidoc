@@ -29,6 +29,7 @@ from ...schemas.document import (
     TechDebtAudit,
     VisualExplainer,
 )
+from ...schemas.audit_document import FindingCluster
 from ...schemas.model import SemanticModel
 from .. import audit_rules, io
 from ..critic import apply_critic_pass, apply_results
@@ -751,6 +752,7 @@ class TechnicalDocumentationGenerator:
         assumptions: Optional[str] = None,
         support_notes: Optional[str] = None,
         ai_context: Optional[JobAIContext] = None,
+        top_cluster: Optional[FindingCluster] = None,
     ) -> Document:
         """Assemble the seven-section :class:`Document` from a parsed model.
 
@@ -762,6 +764,14 @@ class TechnicalDocumentationGenerator:
         every requested document type; omit it (or pass ``None``) and this
         generator builds its own on demand — direct-import callers and tests
         that call this generator alone keep working unchanged.
+
+        ``top_cluster`` (Day 8) is the broadest-impact root-cause cluster
+        from the sibling Audit document's Audit Synthesizer (Day 7) — the
+        caller generates the Audit document first when both types are
+        requested in the same job and passes its top cluster here, so §16
+        can surface it without a second, potentially-inconsistent Synthesizer
+        call. Omit it (or pass ``None``) and §16 simply carries no root-cause
+        callout — never a placeholder.
         """
         warn = on_warning or (lambda _msg: None)
         model.compute_counts()
@@ -819,6 +829,7 @@ class TechnicalDocumentationGenerator:
         doc.health_score = health_score
         doc.ai_recommendations = ai_recs
         doc.tech_debt.suppressed_rules = suppressed
+        doc.top_cluster = dataclasses.asdict(top_cluster) if top_cluster else None
         
         trend = audit_rules.get_and_update_score_history(
             model.report_name or "UnknownReport",

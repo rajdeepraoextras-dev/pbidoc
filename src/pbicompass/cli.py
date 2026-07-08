@@ -22,6 +22,7 @@ from .agents.context import build_job_context
 from .agents.generators import DOCUMENT_TYPES
 from .parsers import detect_and_parse
 from .render import pandoc, registry
+from .render.audit import _top_cluster as _audit_top_cluster
 from .schemas.model import SemanticModel
 
 
@@ -252,6 +253,12 @@ def main(argv: list[str] | None = None) -> int:
     p_gen.add_argument("--glossary", help="Glossary of Business terms (Data Dictionary / Glossary)")
     p_gen.add_argument("--assumptions", help="Business assumptions and limitations (Known Issues & Assumptions)")
     p_gen.add_argument("--support-notes", help="Support Escalation, SLA, & Maintenance details (Support & Maintenance)")
+    p_gen.add_argument("--plan", default="enterprise", choices=["free", "pro", "enterprise"],
+                       help="Plan tier gate for paid AI features (currently: AI-suggested fix "
+                            "snippets on the audit document, --document audit/all only). The CLI "
+                            "has no account/billing concept, so this defaults to 'enterprise' "
+                            "(every paid feature enabled) for self-hosted runs; pass --plan free "
+                            "to preview what a free-tier hosted job would omit.")
     p_gen.add_argument("--quiet", action="store_true", help="Suppress warnings/status")
 
     p_diff = sub.add_parser("diff", help="Compare two model.json files and print a change log (5.2)")
@@ -440,7 +447,24 @@ def main(argv: list[str] | None = None) -> int:
         # ``PBICOMPASS_LLM_CACHE`` env var, same as before this phase).
         ai_context = build_job_context(model, client, _warn) if client is not None else None
 
+        # Day 8: when both "technical" and "audit" are requested in the same
+        # run, generate the Audit document first so its Audit Synthesizer
+        # clusters (Day 7) can be surfaced on the technical doc's §16 —
+        # avoids a second, potentially-inconsistent Synthesizer call and is
+        # reused below instead of regenerating "audit" in the main loop.
+        pre_audit_doc = None
+        if client is not None and "technical" in document_types and "audit" in document_types:
+            pre_audit_doc = DOCUMENT_TYPES["audit"].generate(
+                model, client,
+                owner=owner, audience=audience, refresh=refresh,
+                version=doc_version, status=status, classification=classification,
+                on_warning=_warn, ai_context=ai_context, plan=args.plan,
+            )
+        top_cluster = _audit_top_cluster(pre_audit_doc) if pre_audit_doc is not None else None
+
         def _generate_one(document_type: str):
+            if document_type == "audit" and pre_audit_doc is not None:
+                return pre_audit_doc
             if document_type == "technical":
                 return generate_document(
                     model, client,
@@ -452,7 +476,14 @@ def main(argv: list[str] | None = None) -> int:
                     deployment_notes=deployment_notes, access_notes=access_notes,
                     glossary=glossary, assumptions=assumptions,
                     support_notes=support_notes,
-                    on_warning=_warn, ai_context=ai_context,
+                    on_warning=_warn, ai_context=ai_context, top_cluster=top_cluster,
+                )
+            if document_type == "audit":
+                return DOCUMENT_TYPES["audit"].generate(
+                    model, client,
+                    owner=owner, audience=audience, refresh=refresh,
+                    version=doc_version, status=status, classification=classification,
+                    on_warning=_warn, ai_context=ai_context, plan=args.plan,
                 )
             return DOCUMENT_TYPES[document_type].generate(
                 model, client,

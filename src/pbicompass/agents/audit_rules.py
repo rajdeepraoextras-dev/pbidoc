@@ -89,7 +89,9 @@ FINDING_RULES = {
     "cross_filter_complexity": "PBIC-PERF-006",
     "auto_datetime": "PBIC-PERF-007",
     "high_card_rel": "PBIC-PERF-008",
-    
+    "near_constant_dimension": "PBIC-PERF-010",
+    "wide_text_dominates_size": "PBIC-PERF-011",
+
     # GovernanceFinding area
     "rls": "PBIC-GOV-001",
     "descriptions": "PBIC-GOV-002",
@@ -280,6 +282,12 @@ RULE_METADATA = {
     "PBIC-PERF-009": ("performance", "Medium", "Calculated table performance impact",
                      "Calculated tables are computed in memory during refresh and can cause memory pressure.",
                      "Push table calculations back to Power Query or data source where possible."),
+    "PBIC-PERF-010": ("performance", "Low", "Near-constant dimension column",
+                     "A column has measured cardinality of 1-2 distinct values — almost no variation, so it adds dictionary/index overhead without analytical value.",
+                     "Remove the column, or verify the source data actually varies (a broken refresh/filter can also cause this)."),
+    "PBIC-PERF-011": ("performance", "Medium", "A single column dominates a table's measured size",
+                     "One column accounts for the large majority of a table's measured VertiPaq column size — the table's memory/disk footprint rides almost entirely on this one column.",
+                     "Move the column upstream to Power Query, drop it if unused, or reduce its cardinality (e.g. truncate free text, bucket values)."),
 }
 
 _suppressed_rules_run = []
@@ -1009,6 +1017,40 @@ def find_performance_risks(model: SemanticModel) -> list[PerformanceRisk]:
                     severity="Low",
                 ))
 
+            # PBIC-PERF-010: near-constant dimension column (VertiPaq, Day 7
+            # §4.3) — only fires on measured cardinality (pbixray --stats);
+            # no naming/type heuristic exists for "has almost no variation".
+            near_constant_max = get_threshold("near_constant_cardinality_max", 1)
+            if c.cardinality is not None and c.cardinality <= near_constant_max and not c.is_hidden:
+                risks.append(PerformanceRisk(
+                    kind="near_constant_dimension", object_name=c.name, table=t.name,
+                    detail=f"'{c.name}' has measured cardinality of {c.cardinality} distinct value(s) "
+                           f"(measured via pbixray) — almost no variation, adding dictionary overhead "
+                           f"without analytical value.",
+                    severity="Low",
+                ))
+
+    # PBIC-PERF-011: a single column dominating a table's measured VertiPaq
+    # size (Day 7 §4.3) — only fires on measured size_bytes; no-op when
+    # stats are absent (e.g. any .pbip/TMDL model, or a .pbix run without
+    # --stats).
+    dominance_pct = get_threshold("wide_text_dominance_pct", 0.6)
+    min_table_size = get_threshold("wide_text_min_table_size_bytes", 1_000_000)
+    for t in model.tables:
+        measured = [c for c in t.columns if c.size_bytes is not None]
+        total_size = sum(c.size_bytes for c in measured)
+        if total_size < min_table_size:
+            continue
+        for c in measured:
+            if c.size_bytes / total_size >= dominance_pct:
+                risks.append(PerformanceRisk(
+                    kind="wide_text_dominates_size", object_name=c.name, table=t.name,
+                    detail=f"'{c.name}' accounts for {c.size_bytes} of {total_size} measured bytes "
+                           f"({c.size_bytes / total_size:.0%}) of '{t.name}'s column size (measured via "
+                           f"pbixray) — one column dominates the table's dictionary footprint.",
+                    severity="Medium",
+                ))
+
     for m in model.all_measures():
         expr = m.expression or ""
         iterator_count = len(re.findall(r"\b(SUMX|FILTER|CALCULATE|AVERAGEX|MINX|MAXX)\s*\(", expr.upper()))
@@ -1058,8 +1100,16 @@ def find_performance_risks(model: SemanticModel) -> list[PerformanceRisk]:
                 severity="Medium",
             ))
 
-    # PBIC-PERF-007: Auto date/time enabled
-    has_auto_date = any("LocalDateTable" in t.name or "TemplateId" in t.name for t in model.tables)
+    # PBIC-PERF-007: Auto date/time enabled. Power BI's Auto Date/Time
+    # creates two hidden tables per date column, "LocalDateTable_<GUID>" and
+    # "DateTableTemplate_<GUID>" — the latter did not previously match here
+    # (only a "TemplateId" substring did, which real Auto Date/Time table
+    # names don't contain), so a model with only the template table visible
+    # in this list silently escaped detection.
+    has_auto_date = any(
+        "LocalDateTable" in t.name or "DateTableTemplate" in t.name or "TemplateId" in t.name
+        for t in model.tables
+    )
     if has_auto_date:
         risks.append(PerformanceRisk(
             kind="auto_datetime", object_name="Auto Date/Time", table=None,

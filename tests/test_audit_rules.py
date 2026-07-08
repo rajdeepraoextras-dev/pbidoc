@@ -151,6 +151,167 @@ class PerformanceRisksTest(unittest.TestCase):
         self.assertTrue(any(r.kind == "heavy_dax" and r.object_name == "Heavy" for r in risks))
 
 
+class VertiPaqRulesTest(unittest.TestCase):
+    """Day 7: threshold rules over measured ``cardinality``/``size_bytes``
+    (pbixray ``--stats`` only) — every rule here must no-op when both stats
+    are absent, since neither field is ever populated by the .pbip/TMDL/TMSL
+    parsers (only a legacy .pbix parsed with ``--stats`` carries real
+    values)."""
+
+    def test_near_constant_dimension_flagged_on_measured_cardinality(self):
+        from pbicompass.schemas.model import Column, SemanticModel, Table
+        model = SemanticModel(
+            report_name="R",
+            tables=[Table(name="Region", columns=[
+                Column(name="IsActive", data_type="string", cardinality=1),
+            ])],
+        )
+        risks = audit_rules.find_performance_risks(model)
+        near_constant = [r for r in risks if r.kind == "near_constant_dimension"]
+        self.assertEqual(len(near_constant), 1)
+        self.assertEqual(near_constant[0].object_name, "IsActive")
+        self.assertEqual(near_constant[0].table, "Region")
+        self.assertEqual(near_constant[0].rule_id, "PBIC-PERF-010")
+
+    def test_near_constant_dimension_not_flagged_when_hidden(self):
+        from pbicompass.schemas.model import Column, SemanticModel, Table
+        model = SemanticModel(
+            report_name="R",
+            tables=[Table(name="Region", columns=[
+                Column(name="IsActive", data_type="string", cardinality=1, is_hidden=True),
+            ])],
+        )
+        risks = audit_rules.find_performance_risks(model)
+        self.assertFalse(any(r.kind == "near_constant_dimension" for r in risks))
+
+    def test_near_constant_dimension_no_op_without_stats(self):
+        from pbicompass.schemas.model import Column, SemanticModel, Table
+        model = SemanticModel(
+            report_name="R",
+            tables=[Table(name="Region", columns=[Column(name="IsActive", data_type="string")])],
+        )
+        risks = audit_rules.find_performance_risks(model)
+        self.assertFalse(any(r.kind == "near_constant_dimension" for r in risks))
+
+    def test_wide_text_dominates_size_flagged(self):
+        from pbicompass.schemas.model import Column, SemanticModel, Table
+        model = SemanticModel(
+            report_name="R",
+            tables=[Table(name="Products", columns=[
+                Column(name="Comments", data_type="string", size_bytes=9_000_000),
+                Column(name="ProductKey", data_type="int64", size_bytes=500_000),
+            ])],
+        )
+        risks = audit_rules.find_performance_risks(model)
+        dominant = [r for r in risks if r.kind == "wide_text_dominates_size"]
+        self.assertEqual(len(dominant), 1)
+        self.assertEqual(dominant[0].object_name, "Comments")
+        self.assertEqual(dominant[0].rule_id, "PBIC-PERF-011")
+
+    def test_wide_text_dominates_size_not_flagged_below_dominance_threshold(self):
+        from pbicompass.schemas.model import Column, SemanticModel, Table
+        model = SemanticModel(
+            report_name="R",
+            tables=[Table(name="Products", columns=[
+                Column(name="Comments", data_type="string", size_bytes=1_200_000),
+                Column(name="ProductKey", data_type="int64", size_bytes=1_000_000),
+            ])],
+        )
+        risks = audit_rules.find_performance_risks(model)
+        self.assertFalse(any(r.kind == "wide_text_dominates_size" for r in risks))
+
+    def test_wide_text_dominates_size_no_op_below_min_table_size(self):
+        from pbicompass.schemas.model import Column, SemanticModel, Table
+        model = SemanticModel(
+            report_name="R",
+            tables=[Table(name="Products", columns=[
+                Column(name="Comments", data_type="string", size_bytes=900),
+                Column(name="ProductKey", data_type="int64", size_bytes=100),
+            ])],
+        )
+        risks = audit_rules.find_performance_risks(model)
+        self.assertFalse(any(r.kind == "wide_text_dominates_size" for r in risks))
+
+    def test_wide_text_dominates_size_no_op_without_stats(self):
+        from pbicompass.schemas.model import Column, SemanticModel, Table
+        model = SemanticModel(
+            report_name="R",
+            tables=[Table(name="Products", columns=[
+                Column(name="Comments", data_type="string"),
+                Column(name="ProductKey", data_type="int64"),
+            ])],
+        )
+        risks = audit_rules.find_performance_risks(model)
+        self.assertFalse(any(r.kind == "wide_text_dominates_size" for r in risks))
+
+    def test_sample_sales_unaffected_without_stats(self):
+        """Regression: SampleSales is parsed without ``--stats``, so neither
+        new rule should ever fire on it, and the existing 'every risk
+        discloses its heuristic nature' guarantee must still hold."""
+        risks = audit_rules.find_performance_risks(_model())
+        self.assertFalse(any(r.kind in ("near_constant_dimension", "wide_text_dominates_size")
+                              for r in risks))
+
+
+class AutoDateTimeDetectionTest(unittest.TestCase):
+    """D5 root cause: Power BI's Auto Date/Time creates two hidden tables per
+    date column, ``LocalDateTable_<GUID>`` and ``DateTableTemplate_<GUID>``.
+    Only the former used to be matched (the latter needed an unrelated
+    'TemplateId' substring no real table carries) — fixed as part of Day 7
+    since the audit synthesizer needs this signal to fire reliably to
+    cluster it with its dependent findings."""
+
+    def test_date_table_template_alone_is_detected(self):
+        from pbicompass.schemas.model import SemanticModel, Table
+        model = SemanticModel(
+            report_name="R",
+            tables=[Table(name="DateTableTemplate_abc123", is_hidden=True)],
+        )
+        risks = audit_rules.find_performance_risks(model)
+        self.assertTrue(any(r.kind == "auto_datetime" for r in risks))
+
+    def test_local_date_table_alone_is_still_detected(self):
+        from pbicompass.schemas.model import SemanticModel, Table
+        model = SemanticModel(
+            report_name="R",
+            tables=[Table(name="LocalDateTable_abc123", is_hidden=True)],
+        )
+        risks = audit_rules.find_performance_risks(model)
+        self.assertTrue(any(r.kind == "auto_datetime" for r in risks))
+
+    def test_no_auto_date_tables_not_flagged(self):
+        from pbicompass.schemas.model import SemanticModel, Table
+        model = SemanticModel(report_name="R", tables=[Table(name="Sales")])
+        risks = audit_rules.find_performance_risks(model)
+        self.assertFalse(any(r.kind == "auto_datetime" for r in risks))
+
+
+class AutoDateTimeClusterSignalsTest(unittest.TestCase):
+    """D5: Auto Date/Time should not just fire its own isolated performance
+    risk — it should leave the co-occurring, independently-computed signals
+    (unused hidden calculated columns on the same hidden tables) that a
+    root-cause synthesizer needs in order to cluster them together, rather
+    than reporting each in isolation."""
+
+    def test_auto_date_time_root_cause_and_its_dependent_findings_co_occur(self):
+        from pbicompass.schemas.model import Column, SemanticModel, Table
+        model = SemanticModel(
+            report_name="R",
+            tables=[
+                Table(name="Sales"),
+                Table(name="LocalDateTable_abc123", is_hidden=True, columns=[
+                    Column(name="Year", data_type="int64", is_hidden=True,
+                           is_calculated=True, expression="YEAR([Date])"),
+                ]),
+            ],
+        )
+        risks = audit_rules.find_performance_risks(model)
+        self.assertTrue(any(r.kind == "auto_datetime" for r in risks),
+                         "root-cause finding must fire")
+        unused = audit_rules.find_unused_assets(model)
+        self.assertIn({"table": "LocalDateTable_abc123", "column": "Year"}, unused.calculated_columns)
+
+
 class GovernanceTest(unittest.TestCase):
     def test_flags_missing_owner_and_classification(self):
         findings = audit_rules.check_governance(_model())

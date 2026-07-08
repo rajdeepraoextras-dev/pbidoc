@@ -405,6 +405,12 @@ def render_markdown(doc: Document) -> str:
                           [[HEALTH_COMPONENT_LABELS.get(k, k), v, notes.get(k, "")]
                            for k, v in hs.get("component_scores", {}).items()]))
         out.append("_Scored by deterministic rules over the model metadata — reproducible, not an AI guess._\n")
+    top_cluster = getattr(doc, "top_cluster", None)
+    if top_cluster:
+        out.append(f"\n**Root cause: {top_cluster.get('root_cause', '')}**\n")
+        out.append(f"{top_cluster.get('narrative', '')}\n")
+        if top_cluster.get("rule_ids"):
+            out.append(f"_Related findings: {', '.join(top_cluster['rule_ids'])}_\n")
     recs = doc.ai_recommendations or []
     suppressed = doc.tech_debt.suppressed_rules if hasattr(doc, "tech_debt") and doc.tech_debt else []
     suppressed_count = len(suppressed)
