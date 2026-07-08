@@ -263,8 +263,16 @@ def render_wireframe(
     page_area = page_w * page_h
 
     target_w = 480
-    scale = target_w / page_w
-    target_h = page_h * scale
+    margin = 8  # inset between the canvas's rounded edge and the visuals
+    # sitting on it (v4's own padded-canvas treatment) — scale/size the
+    # content area *inside* that inset, not the full viewBox, or a visual
+    # at real x=0/y=0 lands exactly on the viewBox edge while the canvas
+    # rect it's meant to sit on starts `margin` units further in, poking
+    # the card's square corner out past the canvas's rounded one.
+    content_w = target_w - 2 * margin
+    scale = content_w / page_w
+    content_h = page_h * scale
+    target_h = content_h + 2 * margin
 
     page_title_slug = anchor_slug(page.display_name)
     # Same anchor formula both html.py's Report Pages section and
@@ -288,10 +296,9 @@ def render_wireframe(
     # neutral-edge border — visuals sit on it instead of floating in empty
     # white space. Explicit hex (not shell CSS variables) so the canvas
     # stays light in dark mode, same rule as the interactive model diagram.
-    margin = 4
     svg.append(
-        f'<rect x="{margin}" y="{margin}" width="{target_w - 2 * margin:.0f}" '
-        f'height="{target_h - 2 * margin:.0f}" fill="url(#wf-dotbg-{glyph_suffix})" rx="10" stroke="{_EDGE}" stroke-width="1"/>'
+        f'<rect x="{margin}" y="{margin}" width="{content_w:.0f}" '
+        f'height="{content_h:.0f}" fill="url(#wf-dotbg-{glyph_suffix})" rx="10" stroke="{_EDGE}" stroke-width="1"/>'
     )
 
     sorted_visuals = sorted(valid_visuals, key=lambda v: v.z or 0)
@@ -301,7 +308,7 @@ def render_wireframe(
     decorative_overflow = 0
 
     for v in sorted_visuals:
-        vx, vy = v.x * scale, v.y * scale
+        vx, vy = margin + v.x * scale, margin + v.y * scale
         vw, vh = v.width * scale, v.height * scale
         if vw <= 0 or vh <= 0:
             continue
