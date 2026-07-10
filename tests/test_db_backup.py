@@ -64,7 +64,10 @@ class AccountStoreDumpRestoreTest(unittest.TestCase):
         store = AccountStore(":memory:")
         self.addCleanup(store.close)
         snapshot = store.dump()
-        self.assertEqual(snapshot, {"version": 2, "accounts": [], "usage": [], "api_keys": []})
+        self.assertEqual(snapshot, {
+            "version": 3, "accounts": [], "usage": [], "api_keys": [],
+            "account_users": [], "admin_users": [],
+        })
 
         fresh = AccountStore(":memory:")
         self.addCleanup(fresh.close)

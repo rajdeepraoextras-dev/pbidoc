@@ -10,14 +10,13 @@ runs under FastAPI ``BackgroundTasks`` today and can be moved to Celery later
 with no change to its signature.
 """
 
-from .accounts import (Account, AccountStore, ApiKeyInfo, PLAN_LIMITS,
-                       SessionInfo, User)
+from .accounts import Account, AccountStore, ApiKeyInfo, PLAN_LIMITS
 from .jobs import Job, JobStatus, JobStore
 from .sandbox import JobSandbox
 from .worker import process_job
 
 __all__ = ["Job", "JobStatus", "JobStore", "JobSandbox", "process_job", "create_app",
-           "Account", "AccountStore", "PLAN_LIMITS", "User", "SessionInfo", "ApiKeyInfo"]
+           "Account", "AccountStore", "PLAN_LIMITS", "ApiKeyInfo"]
 
 
 def create_app(*args, **kwargs):  # lazy so importing the package doesn't need FastAPI

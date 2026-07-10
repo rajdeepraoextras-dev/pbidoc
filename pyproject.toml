@@ -28,6 +28,7 @@ service = ["fastapi", "uvicorn", "python-multipart"]  # async web service + uplo
 postgres = ["psycopg[binary]"]  # managed Postgres backend for AccountStore (PBICOMPASS_DB=postgres://...); sqlite stays the self-host default
 queue = ["celery", "redis"]  # async worker (PBICOMPASS_QUEUE=celery); BackgroundTasks stays the self-host default
 observability = ["sentry-sdk"]  # error tracking (SENTRY_DSN); off and dependency-free by default
+auth = ["PyJWT[crypto]"]  # Supabase Auth JWT verification (SUPABASE_URL/JWT_SECRET); absent = the Bearer-API-key path still works alone
 dev = ["pytest", "httpx"]  # httpx backs FastAPI's TestClient
 
 [project.scripts]
@@ -37,4 +38,4 @@ pbicompass = "pbicompass.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"pbicompass.service" = ["static/*.html"]
+"pbicompass.service" = ["static/*.html", "static/vendor/*.js"]

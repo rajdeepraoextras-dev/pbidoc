@@ -1,14 +1,24 @@
 """Day 24: the account dashboard (§7.6) — a signed-in user self-serves API
-keys and sees usage/job history **without the admin token**.
+keys and sees usage/job history **without the admin token**. Day 29 moved
+its auth from a session cookie to a Supabase-issued Bearer JWT.
 
 ``AccountStore`` API-key methods and ``JobStore.list_for_tenant`` are pure
-stdlib and always run. The ``/app/api/*`` wiring tests need the service extras
-and skip cleanly without them.
+stdlib and always run. The ``/app/api/*`` wiring tests need the service
+extras *and* the ``auth`` extra (PyJWT) and skip cleanly without them.
+
+No real Supabase project or network call is used: ``jwt.PyJWKClient.fetch_data``
+is monkeypatched to return a JWKS built from a locally-generated RSA keypair
+(the same technique ``test_supabase_auth.py`` uses), so every request here
+carries a genuinely RS256-signed, fully-verified token.
 """
 
 from __future__ import annotations
 
+import json
+import time
 import unittest
+import uuid
+from unittest import mock
 
 from pbicompass.service.accounts import (MAX_API_KEYS_PER_ACCOUNT, AccountStore)
 from pbicompass.service.jobs import JobStore
@@ -20,6 +30,16 @@ try:
     _HAVE_SERVICE = True
 except Exception:  # pragma: no cover
     _HAVE_SERVICE = False
+
+try:
+    import jwt
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    from pbicompass.service.supabase_auth import SupabaseAuthConfig
+    _HAVE_AUTH = True
+except ImportError:  # pragma: no cover
+    _HAVE_AUTH = False
 
 
 class ApiKeyManagementTest(unittest.TestCase):
@@ -96,33 +116,69 @@ class JobHistoryTest(unittest.TestCase):
         self.assertEqual(len(jobs.list_for_tenant("acme", limit=3)), 3)
 
 
-@unittest.skipUnless(_HAVE_SERVICE, "service extras not installed")
+@unittest.skipUnless(_HAVE_SERVICE and _HAVE_AUTH,
+                     "service + auth extras not installed (pip install \"pbicompass[service,auth]\")")
 class DashboardApiTest(unittest.TestCase):
+    KID = "test-kid-dashboard"
+    _URL = "https://project-ref.supabase.co"
+
+    @classmethod
+    def setUpClass(cls):
+        cls._private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        cls._private_pem = cls._private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+        jwk = json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(cls._private_key.public_key()))
+        jwk["kid"] = cls.KID
+        jwk["use"] = "sig"
+        jwk["alg"] = "RS256"
+        cls._jwks = {"keys": [jwk]}
+
     def setUp(self):
         self.accounts = AccountStore(":memory:")
         self.addCleanup(self.accounts.close)
         self.store = JobStore()
         self.addCleanup(self.store.close)
+        self.cfg = SupabaseAuthConfig(url=self._URL, anon_key="anon-key")
         self.client = TestClient(
-            create_app(self.store, require_auth=False, admin_token="t", account_store=self.accounts),
+            create_app(self.store, require_auth=False, admin_token="t",
+                       account_store=self.accounts, supabase_config=self.cfg),
             base_url="https://testserver",
         )
+        from pbicompass.service import supabase_auth as supabase_auth_mod
+        supabase_auth_mod._jwks_clients.clear()
+        patcher = mock.patch.object(jwt.PyJWKClient, "fetch_data", return_value=self._jwks)
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
-    def _signup(self, email="dash@example.com", password="hunter2pass"):
-        return self.client.post("/auth/signup", json={"email": email, "password": password})
+    def _token_for(self, email: str, sub: str | None = None) -> str:
+        """Mint a fresh, fully-signed Supabase-shaped access token for a
+        (new or existing) user -- the sub claim is the stable identity
+        get_or_create_account_for_supabase_user() JIT-provisions an account
+        against, exactly as a real Supabase-issued token would."""
+        claims = {
+            "sub": sub or uuid.uuid4().hex, "email": email, "aud": "authenticated",
+            "iss": self.cfg.issuer, "exp": time.time() + 3600,
+        }
+        return jwt.encode(claims, self._private_pem, algorithm="RS256", headers={"kid": self.KID})
 
-    def _csrf(self):
-        return self.client.cookies.get("pbicompass_csrf")
+    def _headers(self, email="dash@example.com", sub=None):
+        return {"Authorization": "Bearer " + self._token_for(email, sub=sub)}
 
     # -- auth gating --------------------------------------------------------
-    def test_dashboard_apis_require_a_session(self):
+    def test_dashboard_apis_require_a_token(self):
         for path in ("/app/api/me", "/app/api/keys", "/app/api/jobs"):
             self.assertEqual(self.client.get(path).status_code, 401, path)
 
     def test_config_is_public(self):
         res = self.client.get("/app/api/config")
         self.assertEqual(res.status_code, 200)
-        self.assertIn("oidc_enabled", res.json())
+        body = res.json()
+        self.assertTrue(body["supabase_enabled"])
+        self.assertEqual(body["supabase_url"], self._URL)
+        self.assertIn("byok_enabled", body)
 
     def test_app_page_is_served(self):
         res = self.client.get("/app")
@@ -130,9 +186,8 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("PBICompass", res.text)
 
     # -- me / usage ---------------------------------------------------------
-    def test_me_reports_plan_and_usage_after_signup(self):
-        self._signup()
-        me = self.client.get("/app/api/me")
+    def test_me_reports_plan_and_usage_after_first_authenticated_request(self):
+        me = self.client.get("/app/api/me", headers=self._headers())
         self.assertEqual(me.status_code, 200)
         body = me.json()
         self.assertEqual(body["email"], "dash@example.com")
@@ -142,21 +197,14 @@ class DashboardApiTest(unittest.TestCase):
 
     # -- API keys -----------------------------------------------------------
     def test_list_keys_shows_the_default_key(self):
-        self._signup()
-        keys = self.client.get("/app/api/keys").json()["keys"]
+        headers = self._headers()
+        keys = self.client.get("/app/api/keys", headers=headers).json()["keys"]
         self.assertEqual(len(keys), 1)
         self.assertTrue(keys[0]["is_primary"])
 
-    def test_create_key_requires_csrf(self):
-        self._signup()
-        # session cookie present but no X-CSRF-Token header -> 403
-        no_csrf = self.client.post("/app/api/keys", json={"name": "x"})
-        self.assertEqual(no_csrf.status_code, 403)
-
     def test_create_and_revoke_key_via_dashboard(self):
-        self._signup()
-        created = self.client.post("/app/api/keys", json={"name": "CI"},
-                                   headers={"X-CSRF-Token": self._csrf()})
+        headers = self._headers()
+        created = self.client.post("/app/api/keys", json={"name": "CI"}, headers=headers)
         self.assertEqual(created.status_code, 200, created.text)
         new = created.json()
         self.assertTrue(new["api_key"].startswith("pbicompass_sk_"))
@@ -164,43 +212,43 @@ class DashboardApiTest(unittest.TestCase):
         me = self.client.get("/me", headers={"Authorization": "Bearer " + new["api_key"]})
         self.assertEqual(me.status_code, 200)
         # now there are two keys, then revoke the new one
-        self.assertEqual(len(self.client.get("/app/api/keys").json()["keys"]), 2)
-        gone = self.client.delete("/app/api/keys/" + new["id"],
-                                  headers={"X-CSRF-Token": self._csrf()})
+        self.assertEqual(len(self.client.get("/app/api/keys", headers=headers).json()["keys"]), 2)
+        gone = self.client.delete("/app/api/keys/" + new["id"], headers=headers)
         self.assertEqual(gone.status_code, 200)
-        self.assertEqual(len(self.client.get("/app/api/keys").json()["keys"]), 1)
+        self.assertEqual(len(self.client.get("/app/api/keys", headers=headers).json()["keys"]), 1)
         # the revoked key no longer maps to the account — with auth not
         # required, it now resolves to the anonymous "public" tenant instead.
         who = self.client.get("/me", headers={"Authorization": "Bearer " + new["api_key"]}).json()
         self.assertEqual(who["tenant"], "public")
 
     def test_revoke_missing_key_is_404(self):
-        self._signup()
-        res = self.client.delete("/app/api/keys/nonexistent",
-                                 headers={"X-CSRF-Token": self._csrf()})
+        headers = self._headers()
+        res = self.client.delete("/app/api/keys/nonexistent", headers=headers)
         self.assertEqual(res.status_code, 404)
 
     # -- job history --------------------------------------------------------
     def test_jobs_history_is_tenant_scoped(self):
-        self._signup()
-        me = self.client.get("/app/api/me").json()
+        headers = self._headers()
+        me = self.client.get("/app/api/me", headers=headers).json()
         tenant = me["tenant"]
         # a job for this tenant, and one for someone else
         self.store.create("mine.pbix", tenant=tenant)
         self.store.create("theirs.pbix", tenant="someone-else")
-        jobs = self.client.get("/app/api/jobs").json()["jobs"]
+        jobs = self.client.get("/app/api/jobs", headers=headers).json()["jobs"]
         self.assertEqual([j["filename"] for j in jobs], ["mine.pbix"])
         # status-only, zero-retention: no document content in the payload
         self.assertNotIn("outputs", jobs[0])
 
-    # -- isolation ----------------------------------------------------------
+    # -- isolation / JIT provisioning ----------------------------------------
+    def test_same_sub_maps_to_the_same_account_across_requests(self):
+        sub = uuid.uuid4().hex
+        t1 = self.client.get("/app/api/me", headers=self._headers("same@example.com", sub=sub)).json()["tenant"]
+        t2 = self.client.get("/app/api/me", headers=self._headers("same@example.com", sub=sub)).json()["tenant"]
+        self.assertEqual(t1, t2)  # JIT provisioning is idempotent per Supabase user id
+
     def test_two_users_only_see_their_own_keys(self):
-        self._signup(email="a@example.com")
-        a_keys = {k["id"] for k in self.client.get("/app/api/keys").json()["keys"]}
-        # log out, sign up a second user
-        self.client.post("/auth/logout", headers={"X-CSRF-Token": self._csrf()})
-        self._signup(email="b@example.com")
-        b_keys = {k["id"] for k in self.client.get("/app/api/keys").json()["keys"]}
+        a_keys = {k["id"] for k in self.client.get("/app/api/keys", headers=self._headers("a@example.com")).json()["keys"]}
+        b_keys = {k["id"] for k in self.client.get("/app/api/keys", headers=self._headers("b@example.com")).json()["keys"]}
         self.assertTrue(a_keys.isdisjoint(b_keys))
 
 

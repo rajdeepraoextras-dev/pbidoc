@@ -50,16 +50,16 @@ That's it. No managed database, no message broker, no third-party auth provider.
 | `PBICOMPASS_ADMIN_TOKEN` | _(off)_ | Enables the `/admin` panel (create/list/revoke accounts from the browser) **and** the `/metrics` endpoint (Day 20) — both gated by the same token. Unset = both disabled. |
 | `PBICOMPASS_UPLOAD_RATE_LIMIT` | `20` | Max `POST /jobs` requests per IP within the window below (Day 20). Independent of the per-plan daily quota — applies even to the unauthenticated `public` tenant. |
 | `PBICOMPASS_UPLOAD_RATE_WINDOW_SECONDS` | `60` | Trailing window (seconds) the upload rate limit is measured over. |
-| `PBICOMPASS_SESSION_TTL_SECONDS` | `2592000` (30 days) | How long a self-serve login session (Day 21) stays valid. |
-| `PBICOMPASS_COOKIE_SECURE` | `1` | Session/CSRF cookies are `Secure` (HTTPS-only) by default. Set `0` only for a plain-http local dev session, never in production. |
-| `PBICOMPASS_AUTH_RATE_LIMIT` / `PBICOMPASS_AUTH_RATE_WINDOW_SECONDS` | `10` / `60` | Per-IP rate limit on `/auth/*` — a separate budget from the upload limiter. |
-| `PBICOMPASS_EMAIL_BACKEND` | `console` | `console` logs verify/reset links (no provider needed); `smtp` sends them for real via `PBICOMPASS_SMTP_*` (Day 22). |
-| `PBICOMPASS_PUBLIC_URL` | _(empty)_ | Base URL the emailed verify/reset links point at, e.g. `https://docs.example.com`. Unset → bare relative paths. |
+| `SUPABASE_URL` | — | Enables Supabase Auth (Day 26-32) — signup/login/"Sign in with Microsoft" via Supabase, not this app. Unset = API-key-only, no new dependency pulled in. Install the `auth` extra too. |
+| `SUPABASE_ANON_KEY` | — | The project's public/browser key — safe to expose, handed to the frontend via `GET /app/api/config`. |
+| `SUPABASE_SERVICE_ROLE_KEY` | — | Server-only secret, used to resolve a user id by email for the admin-bootstrap step. Never sent to the frontend. |
+| `SUPABASE_JWT_SECRET` | — | Legacy HS256 fallback only — a current Supabase project verifies via JWKS automatically and needs this unset. |
+| `SUPABASE_JWT_AUD` | `authenticated` | Expected `aud` claim on a Supabase access token. |
+| `PBICOMPASS_BOOTSTRAP_ADMIN_EMAIL` | — | Grants that email's Supabase user admin rights on startup (Sprint 8). |
+| `PBICOMPASS_BYOK_UI` | _(off)_ | Show the "Engine API Key" (BYOK) field on the hosted upload form. Off by default (Day 31) — jobs use the provider key(s) configured below instead. |
+| `PBICOMPASS_EMAIL_BACKEND` | `console` | Transactional email backend (`console` logs, `smtp` sends via `PBICOMPASS_SMTP_*`) — currently unused pending the billing work (payment-failure/receipt notices); identity email (verify/reset) is Supabase's own job now. |
+| `PBICOMPASS_PUBLIC_URL` | _(empty)_ | Base URL for any future emailed links, e.g. `https://docs.example.com`. |
 | `PBICOMPASS_SMTP_HOST` / `_PORT` / `_USER` / `_PASSWORD` / `_FROM` / `_TLS` | — / `587` / — / — / — / `1` | SMTP credentials from your transactional provider, used only when `PBICOMPASS_EMAIL_BACKEND=smtp`. |
-| `PBICOMPASS_REQUIRE_EMAIL_VERIFICATION` | _(off)_ | When `1`, an unverified user can't log in (403, and a fresh verify link is re-sent). Off by default so a fresh self-host isn't locked out before email is configured. |
-| `PBICOMPASS_OIDC_CLIENT_ID` / `_CLIENT_SECRET` | — | Entra ID app registration credentials (Day 23). Both required to enable "Sign in with Microsoft"; unset → `/auth/oidc/*` is 404. |
-| `PBICOMPASS_OIDC_TENANT` | `common` | Entra tenant: a specific tenant GUID (single-tenant), or `common`/`organizations`/`consumers` (multi-tenant). |
-| `PBICOMPASS_OIDC_REDIRECT_URI` | _(derived)_ | The registered redirect URI. Defaults to `PBICOMPASS_PUBLIC_URL` + `/auth/oidc/callback`. |
 | `ANTHROPIC_API_KEY` | — | Enables the Claude engine (install the `agents` extra too). |
 | `GEMINI_API_KEY` | — | Enables the Gemini engine (install the `agents` extra too; `GOOGLE_API_KEY` also works). |
 | `COHERE_API_KEY` | — | Enables the Cohere engine (install the `agents` extra too; `CO_API_KEY` also works). |
@@ -281,201 +281,113 @@ wrong-token attempts from the same client are locked out for 15 minutes after
 
 ---
 
-## Self-serve signup & sessions (Day 21)
+## Supabase Auth — signup, login, sessions (Day 26-32)
 
-Alongside admin-provisioned accounts, users can now create their own account
-directly:
+**Days 21-25 shipped a fully hand-rolled auth system** (scrypt passwords,
+signed session cookies, CSRF double-submit, email verify/reset tokens, a
+hand-rolled Microsoft OIDC flow). **That system was retired and replaced with
+Supabase Auth** in Days 26-32: identity — signup, login, email verification,
+password reset, "Sign in with Microsoft" — is now Supabase's job, not this
+app's. `service/oidc.py` and `service/passwords.py` are deleted; the old
+`/auth/*` routes are gone. What this app still owns: the tenant/plan/quota/
+API-key entity (`accounts`, `usage`, `api_keys` — unchanged) and a thin
+`account_users` mapping from a Supabase user id to one of those accounts.
 
-```bash
-curl -c cookies.txt -X POST https://your-host/auth/signup \
-  -H "Content-Type: application/json" \
-  -d '{"email": "a@example.com", "password": "at least 8 characters", "name": "Ada"}'
-# -> {"user": {...}, "tenant": "u-...", "plan": "free", "api_key": "pbicompass_sk_..."}
+**Why:** a from-scratch, well-tested auth system is real engineering effort to
+keep maintaining (session fixation, CSRF, token rotation, SMTP deliverability,
+OIDC edge cases); Supabase's hosted product does all of that, with its own
+dashboard for browsing signed-up users, at no extra infrastructure cost for a
+small/medium deployment.
 
-curl -b cookies.txt -c cookies.txt -X POST https://your-host/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email": "a@example.com", "password": "at least 8 characters"}'
-
-curl -b cookies.txt -X POST https://your-host/auth/logout \
-  -H "X-CSRF-Token: <value of the pbicompass_csrf cookie>"
-```
-
-- Signup creates a **user**, a brand-new **account/tenant they own** (so
-  every self-serve user still rides the exact same tenant-isolated, quota-
-  enforced path an admin-created account already uses), and an **API key**
-  on that account — shown once in the response, same convention as an
-  admin-created account. It also logs them in immediately (auto-login UX).
-- **Passwords** are hashed with `hashlib.scrypt` (stdlib, no new
-  dependency) — not argon2/bcrypt as literally named in the roadmap,
-  a deliberate substitution to keep password hashing (not optional, once
-  auth is enabled) from requiring a new mandatory dependency, in a project
-  that otherwise keeps everything past the parsing core as a lazy-imported
-  extra. Same security class as bcrypt/argon2 for this purpose.
-- **Sessions** are a signed-for-you-by-the-server, `HttpOnly`, `Secure`,
-  `SameSite=Lax` cookie (`pbicompass_session`) — an opaque high-entropy
-  token verified by hash, the same reasoning as an API key. Default TTL 30
-  days (`PBICOMPASS_SESSION_TTL_SECONDS`).
-- **CSRF**: a second, non-`HttpOnly` cookie (`pbicompass_csrf`) is set
-  alongside the session. Any state-changing, session-authenticated request
-  (today: `POST /auth/logout`) must echo that cookie's value back as an
-  `X-CSRF-Token` header — the standard double-submit pattern. Bearer/API-key
-  requests never need this (there's no ambient browser credential for CSRF
-  to exploit on that path).
-- **Rate limiting & lockout**: `/auth/signup`/`/auth/login`/`/auth/logout`
-  share a per-IP rate limit (`PBICOMPASS_AUTH_RATE_LIMIT`/
-  `PBICOMPASS_AUTH_RATE_WINDOW_SECONDS`, default 10/60s) — a separate budget
-  from the upload limiter (Day 20). Repeated failed logins from the same IP
-  are locked out for 15 minutes after 8 failures, reusing `admin.py`'s
-  brute-force-lockout class (a separate instance from the admin panel's).
-- Only available once an accounts store is configured (`PBICOMPASS_REQUIRE_AUTH=1`
-  or `PBICOMPASS_ADMIN_TOKEN` set) — same precondition as the admin panel;
-  `/auth/*` returns 503 otherwise.
-
-**Scope note (honest, not hidden):** a session cookie is not yet accepted by
-`POST /jobs` itself — only the API key signup returns works there today. A
-signed-in browser session driving `/jobs` directly (and the accompanying
-question of how far the CSRF story extends to that route) is deferred to the
-account-dashboard/upload-UI work (Days 24-25), which is also where the
-"Sign in with Microsoft" OIDC option (Day 23) lands.
-
----
-
-## Email verification & password reset (Day 22)
-
-Signup now sends a verification email, and users can reset a forgotten
-password — all without a third-party auth provider.
-
-```bash
-# Verification: signup emails a link to GET /auth/verify?token=... — one click
-# marks the address verified (single-use, 24h token).
-
-# Password reset:
-curl -X POST https://your-host/auth/reset-request \
-  -H "Content-Type: application/json" -d '{"email": "a@example.com"}'
-# -> always 200 (never reveals whether the email is registered); if it is, a
-#    reset link to /auth/reset?token=... is emailed (single-use, 1h token).
-# The link opens a minimal form that POSTs {token, password} to /auth/reset,
-# which sets the new password AND invalidates every existing session.
-```
-
-**Email delivery — `PBICOMPASS_EMAIL_BACKEND`:**
-- `console` (default) — **logs** the verify/reset link instead of sending it.
-  The whole flow works end-to-end on a fresh self-host with no provider at
-  all: read the link out of the logs (`jq 'select(.logger=="pbicompass.service.email")'`).
-- `smtp` — sends for real through **any** transactional provider's SMTP
-  interface (Resend / Postmark / Amazon SES / …) using stdlib `smtplib` — no
-  vendor SDK, no new dependency. Configure `PBICOMPASS_SMTP_HOST`/`_PORT`/
-  `_USER`/`_PASSWORD`/`_FROM`/`_TLS` and `PBICOMPASS_PUBLIC_URL` (so the
-  emailed links are absolute). If `smtp` is selected but host/from aren't set,
-  it safely falls back to the console backend rather than crashing.
-
-**Emails are content-free w.r.t. report data by construction** — they only
-ever contain an auth link and the recipient's own address, never model
-metadata. A transient SMTP failure is logged (type name only) and swallowed,
-never failing the signup/reset request itself.
-
-**Gating unverified users — `PBICOMPASS_REQUIRE_EMAIL_VERIFICATION`:** off by
-default (so a self-host isn't locked out before email is configured). Set `1`
-for a hosted SaaS: an unverified user's login is refused with a 403 and a
-fresh verification link is automatically re-sent (so a user who lost the first
-email isn't dead-ended). The credentials are validated *before* this check, so
-it's not an email-enumeration vector.
-
-**Scope note:** the verify result page and the reset form are intentionally
-minimal, unstyled HTML — just enough to make the emailed links usable
-end-to-end. The real, branded account UI is Day 25.
-
----
-
-## "Sign in with Microsoft" — Entra ID SSO (Day 23)
-
-The audience is Power BI users, so signing in with a Microsoft (Entra ID /
-Azure AD) account is the lowest-friction path — and the stepping stone to
-full enterprise SSO later. Standard OIDC **authorization-code + PKCE** flow,
-implemented with **zero new dependencies** (stdlib `urllib` for the token
-exchange; the ID token's claims are read directly — see the security note
-below).
-
-**Setup (Azure portal):**
-1. **Entra ID → App registrations → New registration.**
-2. Add a **Web** redirect URI: `https://<your-host>/auth/oidc/callback`.
-3. **Certificates & secrets → New client secret** — copy the value.
-4. Set the env vars:
+**Setup:**
+1. Create a project at [supabase.com](https://supabase.com) (free tier is fine
+   to start). Note the **Project URL** and **anon/public key** (Project
+   Settings → API).
+2. Authentication → Providers: **Email** is on by default. To keep "Sign in
+   with Microsoft," enable the **Azure** provider using the same Entra app
+   registration client id/secret the old hand-rolled OIDC flow used (redirect
+   URI is now whatever Supabase's dashboard shows for that provider, not
+   `/auth/oidc/callback`).
+3. Authentication → Settings → **configure a custom SMTP sender** before real
+   users sign up — Supabase's free-tier built-in mailer is low-volume and will
+   silently queue/drop verification emails under real traffic. Reuse whatever
+   SMTP credentials you already have.
+4. (Recommended) Project Settings → Database → grab the **Postgres connection
+   string** and point `PBICOMPASS_DB` at it (see the managed-Postgres section
+   below) — this app's own tables and Supabase's `auth.*` tables then live in
+   one database, which is what makes admin user-search efficient later.
+5. Set the env vars:
    ```bash
-   PBICOMPASS_OIDC_CLIENT_ID=<application (client) id>
-   PBICOMPASS_OIDC_CLIENT_SECRET=<the secret value>
-   PBICOMPASS_OIDC_TENANT=<your tenant GUID, or "common" for multi-tenant>
-   PBICOMPASS_PUBLIC_URL=https://<your-host>     # so the redirect URI derives
+   SUPABASE_URL=https://<project-ref>.supabase.co
+   SUPABASE_ANON_KEY=<anon/public key>
+   SUPABASE_SERVICE_ROLE_KEY=<service role key>   # server-only, never exposed to the frontend
    ```
-5. A **"Sign in with Microsoft"** button just needs to link to
-   `GET /auth/oidc/login`, which 302s the user to Microsoft; they come back
-   to `/auth/oidc/callback` already signed in (a session cookie is set and
-   they're redirected to `/`).
+   `SUPABASE_JWT_SECRET` is only needed as a legacy HS256 fallback for an
+   older Supabase project still on a shared signing secret — a current
+   project verifies via JWKS automatically and needs nothing extra.
+6. `pip install "pbicompass[auth]"` (adds `PyJWT[crypto]`, the only new
+   dependency this migration introduces).
 
-**Account linking.** A Microsoft sign-in is matched to an existing account
-**by email** — so a user who signed up with email+password and later clicks
-"Sign in with Microsoft" (same address) lands in the *same* account, now with
-their email marked verified. A brand-new Microsoft user gets the same
-tenant/account/API-key setup as a password signup, with a random unusable
-password (they use SSO; they can set a password later via reset if they want
-one). This is the same account model enterprise SSO/SCIM will extend — no
-migration needed later.
+**How it works end-to-end:** the frontend (`static/index.html`/`static/app.html`)
+loads a vendored `supabase-js` (`static/vendor/supabase.js` — a real npm
+package build, not a CDN `<script>` tag, so a CDN outage can't block sign-in)
+and drives signup/login/OAuth/logout directly against Supabase. Every call
+back to this app's own API then carries `Authorization: Bearer <supabase
+access token>`. `resolve_tenant()` tells that token apart from a
+`pbicompass_sk_...` API key by shape (three dot-separated segments) and
+verifies it (`service/supabase_auth.py`, JWKS-based, cached, refetches once on
+an unrecognized `kid`). **A user's very first authenticated request
+JIT-provisions their account** — no Supabase webhook needed — via
+`AccountStore.get_or_create_account_for_supabase_user()`, the same tenant/
+plan/API-key setup self-serve signup always created.
 
-**Security note (honest, not hidden).** This flow reads the ID token's claims
-by base64url-decoding its payload; it does **not** verify the token's RS256
-signature against Entra's JWKS. That is sound *for this flow specifically*:
-OpenID Connect Core §3.1.3.7 permits a confidential client that obtains the ID
-token by **direct** server-to-server communication with the token endpoint
-(which this does — over TLS, authenticated with the client secret) to rely on
-that TLS channel in place of signature validation. We still validate the
-audience, expiry, anti-replay `nonce`, and issuer, and the `state` parameter
-(stored server-side, single-use) protects the redirect against CSRF. A
-deployment that additionally wants JWKS signature verification can add it
-behind a crypto extra without changing the flow. There is **no live-Entra
-smoke test in this repo** (no Entra tenant in the CI sandbox) — the flow is
-proven end-to-end against a crafted-token stand-in that exercises the real
-validation path; a one-time real sign-in should be done once against an
-actual app registration.
+```bash
+# Prove it end-to-end: sign up/log in through the Supabase JS SDK in a
+# browser (not curl -- there's no server-side signup endpoint anymore), grab
+# the access token from the browser's dev tools, then:
+curl https://your-host/app/api/me -H "Authorization: Bearer <supabase access token>"
+curl https://your-host/jobs/... -H "Authorization: Bearer <supabase access token>"
+```
 
----
+**Bearer auth needs no CSRF token** (of either kind — API key or Supabase
+JWT): unlike the retired session cookie, it's never an ambient browser
+credential a cross-site page can attach on your behalf.
 
-## Account dashboard — `/app` (Day 24)
+**The "Engine API Key" (BYOK) field is now hidden by default** on the hosted
+upload form (`PBICOMPASS_BYOK_UI=0`) — a signed-in visitor's job runs on
+whatever provider key *you* set server-side (`ANTHROPIC_API_KEY` etc.), never
+one they type in. Set `PBICOMPASS_BYOK_UI=1` to bring the field back for a
+self-host deployment that still wants per-job BYOK (the pre-Day-31 default).
 
-Once accounts are configured, signed-in users manage themselves at **`/app`**
-— **no admin token needed**. This is the replacement for the shared-admin-token
-flow for end users; the operator `/admin` panel remains for provisioning/support.
+**Migrating an existing deployment.** If you already had real users signed up
+under the old password system, their passwords cannot transfer to
+Supabase — send each one a Supabase "invite" or password-reset email so they
+set a Supabase password once. (If this deployment never had real self-serve
+signups yet, there's nothing to migrate.) The old `users`/`sessions`/
+`email_tokens`/`oidc_states`/`memberships` tables are simply no longer read or
+written by this app — they are **not** dropped automatically (no silent-data-
+loss migration runs on startup). To reclaim the space once you've confirmed
+you don't need them:
+```sql
+DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS sessions;
+DROP TABLE IF EXISTS email_tokens;
+DROP TABLE IF EXISTS oidc_states;
+DROP TABLE IF EXISTS memberships;
+```
 
-The dashboard (a single self-contained page — sign-in form when logged out,
-account view when logged in) shows:
-- **Plan + usage vs quota** — today's document count against the daily limit.
-- **API-key management** — list, **create** (the new key is shown once), and
-  **revoke** individual keys. A user can hold several keys (e.g. one per
-  machine/CI), each revocable independently; the original key minted at signup
-  appears as "Default". This is real revocation — `api_keys` is now the
-  authoritative key store that `verify()` consults, so a revoked key stops
-  working immediately.
-- **Job history** — recent jobs for the account, **status and timestamps
-  only** (the job record has never held report content — zero-retention is
-  preserved).
+**Account dashboard — `/app`.** Signed-in users still manage themselves here
+— plan/usage, **API-key management** (list/create/revoke, unchanged from Day
+24), and job history — now authenticated by a Supabase Bearer token instead
+of a session cookie; the operator `/admin` panel remains for provisioning/
+support (`GET /app`, `GET /app/api/config`, `GET /app/api/me`, `GET/POST
+/app/api/keys`, `DELETE /app/api/keys/{id}`, `GET /app/api/jobs`).
 
-Endpoints (all session-authenticated via the login cookie, not the admin
-token; state-changing ones require the double-submit `X-CSRF-Token`):
-`GET /app`, `GET /app/api/config` (public — tells the sign-in view whether to
-show the Microsoft button), `GET /app/api/me`, `GET/POST /app/api/keys`,
-`DELETE /app/api/keys/{id}`, `GET /app/api/jobs`.
-
-**Note on the key store change.** As of Day 24, API keys live in a dedicated
-`api_keys` table (multiple keys per account) rather than a single column on
-the account. Existing deployments need **no migration step** — on first
-startup after upgrade, each account's existing key is backfilled into
-`api_keys` automatically (idempotent), and the logical backup/restore
-(`pbicompass account backup/restore`) now includes keys too (snapshot
-`version` bumped to 2; older `version: 1` snapshots still restore, they just
-carry no extra keys).
-
-**Scope note:** the `/app` page is intentionally functional-but-plain
-(indigo/slate, no framework). The polished, brand-integrated signed-in
-product surface — including the upload page itself — is Day 25.
+**Self-host without Supabase.** Leave `SUPABASE_URL` unset entirely and
+nothing changes: the app stays on the API-key-only path exactly as it worked
+before Day 26 (`pbicompass account create`/the admin panel), zero new
+dependencies pulled in, `/app`'s sign-in form shows a "not configured" note
+instead of a login form.
 
 ---
 

@@ -1457,6 +1457,41 @@ The roadmap says "API-key management (create/revoke — logic already exists)", 
 
 ---
 
-## Sprint 6–7 (Days 26–38)
+## Sprint 6 — Supabase Auth migration (Days 26–32) ✅ Done (2026-07-10)
 
-Not started. See `PRODUCTION_ROADMAP.md` §14 for the full day-by-day breakdown.
+**Owner decision (2026-07-10), superseding this roadmap's original Sprint 6/§7:**
+fully migrate identity (signup/login/email-verify/password-reset/"Sign in
+with Microsoft") from the hand-rolled Days 21–25 system to **Supabase Auth**.
+Product data (tenant/plan/quota/API keys) stays owned by this app, re-keyed
+off the Supabase user id. Full plan: `docs/planning/GO_LIVE_PLAN.md` (go-live
+plan covering Supabase Auth + Stripe billing + full admin app; Sprint 6 here
+is that plan's first phase — billing/admin are Sprints 7–8, not yet started).
+
+| Day | Task | Status |
+|---|---|---|
+| 26 | Supabase project setup, `SUPABASE_*` env vars, `auth` extra (`PyJWT[crypto]`) | ✅ Done |
+| 27 | `service/supabase_auth.py` (JWKS verify, HS256 legacy fallback) + `tests/test_supabase_auth.py` | ✅ Done |
+| 28 | `accounts.py`: `account_users`/`admin_users`/`quota_override`, `get_or_create_account_for_supabase_user` (JIT provisioning) | ✅ Done |
+| 29 | `app.py`: `resolve_tenant()`/`_require_user()` rewired for Supabase JWT; old `/auth/*` routes removed | ✅ Done |
+| 30 | `static/app.html` rewritten onto vendored `supabase-js` | ✅ Done |
+| 31 | `static/index.html` Supabase wiring; "Engine API Key" hidden by default (`PBICOMPASS_BYOK_UI`) | ✅ Done |
+| 32 | `oidc.py`/`passwords.py` deleted; dead `accounts.py` methods/tables removed; `DEPLOYMENT.md` rewritten | ✅ Done |
+
+**What changed, concretely:**
+- **Identity is Supabase's job now.** `service/oidc.py` and `service/passwords.py` are deleted. `accounts.py` no longer has `users`/`sessions`/`email_tokens`/`oidc_states` tables, `User`/`SessionInfo` dataclasses, or any of `create_user`/`authenticate`/`create_session`/`verify_session`/`create_email_token`/`create_oidc_state`/`get_or_create_sso_user` — all retired. `app.py`'s `/auth/*` routes and their cookie/CSRF helpers (`_set_auth_cookies`, `_require_csrf`, `_auth_result_page`, etc.) are gone.
+- **New identity bridge:** `service/supabase_auth.py` verifies a Supabase-issued access token (JWKS via `jwt.PyJWKClient`, cached, refetches once on an unrecognized `kid`; HS256-secret fallback only for a legacy project). `AccountStore.get_or_create_account_for_supabase_user(sub, email)` JIT-provisions an account on a user's first authenticated request — no Supabase webhook needed.
+- **`resolve_tenant()`/`_require_user()`** now accept `Authorization: Bearer <value>` as either a `pbicompass_sk_...` API key (byte-identical to before) or a Supabase JWT, disambiguated by shape. A supplied-but-invalid credential of either kind never falls back to the other method or to a different identity — proven in `tests/test_supabase_upload_security.py`.
+- **No more CSRF machinery anywhere** — Bearer auth (of either kind) is never an ambient browser credential, so the double-submit cookie dance the old session model needed is gone entirely, not just unused.
+- **Frontend:** `static/app.html` (full rewrite) and `static/index.html` (account-strip + engine-key gating) now drive Supabase's own `signUp`/`signInWithPassword`/`signInWithOAuth('azure')`/`signOut` via a vendored `supabase-js` (`static/vendor/supabase.js`, a real npm package build served at `GET /vendor/supabase.js` — not a CDN `<script>` tag, so a CDN outage can't block sign-in) and attach the resulting access token as `Authorization: Bearer` on every call back to this app.
+- **"Engine API Key" (BYOK) is hidden by default** on the hosted upload form (`PBICOMPASS_BYOK_UI=0`) — a signed-in visitor's job now runs on whatever `ANTHROPIC_API_KEY`/etc. the operator sets server-side, never a key the visitor types in. Self-host deployments that still want per-job BYOK opt back in with `PBICOMPASS_BYOK_UI=1`.
+- **Self-host without Supabase is unaffected**: `SUPABASE_URL` unset ⇒ the app stays on the API-key-only path exactly as it worked before Day 26, zero new dependencies pulled in.
+
+**Testing:** `test_user_auth.py`/`test_oidc.py`/`test_session_upload_security.py` deleted (retired systems); `test_email_auth.py` trimmed to backend-mechanics-only as `test_email.py` (email.py is kept, currently unused, reserved for future billing notices); `test_dashboard.py` and the new `test_supabase_upload_security.py` rewritten onto a locally-generated-RSA-keypair mocked JWKS (no live Supabase project or network call anywhere in CI). `test_auth.py` (the API-key-path-unchanged guardrail) passes unmodified. Full suite: **606 passed, 2 skipped**, only the 2 pre-existing `test_render.py` failures remain (unchanged since Day 1, unrelated to this work).
+
+**Honest gaps:** no live Supabase project smoke test (no real project in this sandbox — the JWKS/JWT verification path is proven against a real RS256-signed token from a locally-generated keypair, which is the same class of gap already flagged for Entra ID on Day 23). No live Stripe/billing or admin-app work yet — that's Sprints 7–8 of the go-live plan, not started.
+
+---
+
+## Sprint 7–8 (Days 33–39) — Stripe billing + full admin app
+
+Not started. See the go-live plan (`docs/planning/GO_LIVE_PLAN.md`) for the day-by-day breakdown.

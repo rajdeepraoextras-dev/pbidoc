@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Account — PBICompass</title>
+<script src="/vendor/supabase.js"></script>
 <style>
   :root { --indigo:#4f46e5; --indigo-dark:#4338ca; --slate:#1e293b; --muted:#64748b;
           --line:#e2e8f0; --bg:#f8fafc; --card:#fff; --ok:#059669; --warn:#b45309; --err:#dc2626; }
@@ -46,6 +47,7 @@
   .keybox { background:#0f172a; color:#e2e8f0; padding:.6rem .75rem; border-radius:.45rem;
             font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.82rem; word-break:break-all; margin:.5rem 0; }
   .err { color:var(--err); font-size:.85rem; min-height:1.1rem; }
+  .info { color:var(--ok); font-size:.85rem; min-height:1.1rem; }
   .hidden { display:none; }
   .tabs { display:flex; gap:.5rem; margin-bottom:1rem; }
   .tabs button { background:transparent; color:var(--muted); border:1px solid var(--line); }
@@ -77,11 +79,12 @@
         <label>Name (optional)</label><input type="text" name="name">
         <label>Password (min 8 characters)</label><input type="password" name="password" required minlength="8">
         <div class="err" id="signup-err"></div>
+        <div class="info" id="signup-info"></div>
         <div class="row"><button type="submit">Create account</button></div>
       </form>
       <div id="ms-wrap" class="hidden" style="margin-top:1rem;text-align:center;">
         <div class="muted" style="margin:.5rem 0;">or</div>
-        <a href="/auth/oidc/login"><button type="button" class="ms">Sign in with Microsoft</button></a>
+        <button type="button" class="ms" id="ms-btn">Sign in with Microsoft</button>
       </div>
     </div>
   </section>
@@ -128,17 +131,15 @@
 
 <script>
 const $ = s => document.querySelector(s);
-function csrf() {
-  const m = document.cookie.match(/(?:^|;\s*)pbicompass_csrf=([^;]+)/);
-  return m ? decodeURIComponent(m[1]) : "";
-}
+let supa = null;      // the supabase-js client, created once /app/api/config resolves
+let accessToken = null;
+
 async function api(path, opts={}) {
-  opts.credentials = "same-origin";
   opts.headers = Object.assign({}, opts.headers);
-  if (opts.method && opts.method !== "GET") {
-    opts.headers["Content-Type"] = "application/json";
-    opts.headers["X-CSRF-Token"] = csrf();
-  }
+  if (accessToken) opts.headers["Authorization"] = "Bearer " + accessToken;
+  if (opts.method && opts.method !== "GET") opts.headers["Content-Type"] = "application/json";
+  // Bearer auth is never an ambient browser credential (unlike the retired
+  // session cookie), so no CSRF token is needed on state-changing calls here.
   return fetch(path, opts);
 }
 function fmtDate(ts) { return ts ? new Date(ts*1000).toLocaleString() : "—"; }
@@ -155,9 +156,10 @@ async function loadDashboard(me) {
   $("#dash").classList.remove("hidden");
   $("#hdr-right").innerHTML = '<button class="ghost" id="logout-btn">Sign out</button>';
   $("#logout-btn").onclick = async () => {
-    await api("/auth/logout", {method:"POST"}); location.reload();
+    await supa.auth.signOut();
+    location.reload();
   };
-  $("#d-email").textContent = me.email;
+  $("#d-email").textContent = me.email || "";
   $("#d-verify").innerHTML = me.email_verified
     ? '<span class="badge ok">Email verified</span>'
     : '<span class="badge no">Email not verified</span>';
@@ -213,34 +215,68 @@ async function loadJobs() {
 
 function escapeHtml(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
-async function showSignedOut() {
+async function showSignedOut(cfg) {
   $("#dash").classList.add("hidden");
   $("#auth").classList.remove("hidden");
-  const cfg = await api("/app/api/config").then(r=>r.json()).catch(()=>({}));
-  if (cfg.oidc_enabled) $("#ms-wrap").classList.remove("hidden");
+  if (cfg && cfg.supabase_enabled) $("#ms-wrap").classList.remove("hidden");
+}
+
+// Re-run on every Supabase auth state change (initial load, sign-in,
+// sign-out, and the redirect back from an OAuth provider like Microsoft),
+// rather than only once at page load -- this is the pattern supabase-js
+// itself expects callers to use, since a session can appear asynchronously
+// after an OAuth redirect.
+async function onAuthState(session) {
+  accessToken = session ? session.access_token : null;
+  if (!accessToken) { await showSignedOut(await api("/app/api/config").then(r=>r.json()).catch(()=>({}))); return; }
+  const r = await api("/app/api/me");
+  if (r.ok) loadDashboard(await r.json());
+  else await showSignedOut();
 }
 
 $("#login-form").addEventListener("submit", async e => {
   e.preventDefault();
   const f = e.target; $("#login-err").textContent = "";
-  const r = await api("/auth/login", {method:"POST",
-    body: JSON.stringify({email:f.email.value, password:f.password.value})});
-  if (r.ok) location.reload();
-  else { const j = await r.json().catch(()=>({})); $("#login-err").textContent = j.detail || "Sign-in failed."; }
+  const { error } = await supa.auth.signInWithPassword({email: f.email.value, password: f.password.value});
+  if (error) $("#login-err").textContent = error.message || "Sign-in failed.";
+  // On success, onAuthStateChange fires and drives the UI -- no manual reload needed.
 });
 $("#signup-form").addEventListener("submit", async e => {
   e.preventDefault();
-  const f = e.target; $("#signup-err").textContent = "";
-  const r = await api("/auth/signup", {method:"POST",
-    body: JSON.stringify({email:f.email.value, password:f.password.value, name:f.name.value})});
-  if (r.ok) location.reload();
-  else { const j = await r.json().catch(()=>({})); $("#signup-err").textContent = j.detail || "Could not create account."; }
+  const f = e.target; $("#signup-err").textContent = ""; $("#signup-info").textContent = "";
+  const { data, error } = await supa.auth.signUp({
+    email: f.email.value, password: f.password.value,
+    options: { data: { name: f.name.value || "" } },
+  });
+  if (error) { $("#signup-err").textContent = error.message || "Could not create account."; return; }
+  if (!data.session) {
+    // Email confirmation is required by the Supabase project's own
+    // settings before a session is issued -- there is nothing more for
+    // this page to do until the user clicks the emailed link.
+    $("#signup-info").textContent = "Check your email to confirm your account, then sign in.";
+  }
+  // If a session WAS issued immediately (confirmation off), onAuthStateChange drives the UI.
+});
+$("#ms-btn").addEventListener("click", async () => {
+  await supa.auth.signInWithOAuth({ provider: "azure", options: { redirectTo: location.origin + "/app" } });
 });
 
 (async function init(){
-  const r = await api("/app/api/me");
-  if (r.ok) loadDashboard(await r.json());
-  else showSignedOut();
+  const cfg = await api("/app/api/config").then(r=>r.json()).catch(()=>({}));
+  if (!cfg.supabase_enabled) {
+    // No Supabase project configured on this deployment -- self-host
+    // API-key-only mode. Nothing for this dashboard to sign in to.
+    $("#auth").classList.remove("hidden");
+    $("#login-form").classList.add("hidden");
+    $("#signup-form").classList.add("hidden");
+    $("#auth").querySelector(".card").insertAdjacentHTML("afterbegin",
+      '<p class="muted">Sign-in isn\'t configured on this deployment. Use an API key instead.</p>');
+    return;
+  }
+  supa = supabase.createClient(cfg.supabase_url, cfg.supabase_anon_key);
+  supa.auth.onAuthStateChange((_event, session) => onAuthState(session));
+  const { data: { session } } = await supa.auth.getSession();
+  await onAuthState(session);
 })();
 </script>
 </body>

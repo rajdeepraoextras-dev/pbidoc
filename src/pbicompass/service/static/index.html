@@ -13,6 +13,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Source+Serif+4:ital,opsz,wght@1,8..60,300;1,8..60,400;1,8..60,500&display=swap" rel="stylesheet">
+<!-- Vendored (not CDN-loaded), same as /app -- see static/vendor/supabase.js -->
+<script src="/vendor/supabase.js"></script>
 <style>
 /* ==============================================================
    PBICompass — liquid glass over motion
@@ -1848,31 +1850,37 @@ tabs.forEach(tab => {
 const apikey = $("apikey");
 apikey.value = localStorage.getItem("pbicompass_key") || "";
 apikey.addEventListener("change", () => localStorage.setItem("pbicompass_key", apikey.value.trim()));
-// Reads the (deliberately non-HttpOnly) CSRF cookie the server sets on
-// sign-in (Day 21/25) — same double-submit convention as /app's dashboard.
-// A signed-out visitor has no such cookie, so this is always safe to send.
-function csrfToken() {
-  const m = document.cookie.match(/(?:^|;\s*)pbicompass_csrf=([^;]+)/);
-  return m ? decodeURIComponent(m[1]) : "";
-}
+// Bearer auth for /jobs and friends (Day 31): either a typed Account API
+// Key (anonymous/programmatic use) or a Supabase access token once signed
+// in — a live Supabase session always wins so a stale pasted key can't
+// shadow it. Bearer auth (of either kind) is never an ambient browser
+// credential, so unlike the retired session-cookie model, no CSRF token
+// is needed on top of it.
+let supaAccessToken = null;
 const authHeaders = () => {
-  const k = (apikey.value || "").trim();
-  const headers = k ? { "Authorization": "Bearer " + k } : {};
-  const csrf = csrfToken();
-  if (csrf) headers["X-CSRF-Token"] = csrf;
-  return headers;
+  const k = supaAccessToken || (apikey.value || "").trim();
+  return k ? { "Authorization": "Bearer " + k } : {};
 };
 
-// Signed-in account state (Day 25, §7.6/§10) — reuses the same /app/api/*
-// session-authenticated endpoints the account dashboard (/app) already
-// exposes. A signed-out visitor gets a 401 from /app/api/me and the page
-// behaves exactly as it always has: no fetch failures are surfaced to them.
+// Signed-in account state (Day 25 -> Day 31, Supabase Auth) — reuses the
+// same /app/api/* endpoints the account dashboard (/app) already exposes,
+// now Bearer-token-authenticated instead of session-cookie-authenticated.
+// A signed-out visitor never has a token, so the strip stays hidden and
+// the page behaves exactly as it always has for anonymous/BYOK use.
 function fmtJobDate(ts) { return ts ? new Date(ts * 1000).toLocaleString() : "—"; }
+let byokEnabled = false;
+let supa = null;
+
 async function loadAccountStrip() {
   let res;
-  try { res = await fetch("/app/api/me", { credentials: "same-origin" }); }
+  try { res = await fetch("/app/api/me", { headers: authHeaders() }); }
   catch { return; }
-  if (!res.ok) return; // signed out (or accounts not configured) — nothing to show
+  if (!res.ok) {
+    $("account-strip").style.display = "none";
+    $("apikey-group").style.display = "";
+    $("apikey-signedin-note").style.display = "none";
+    return; // signed out (or accounts not configured) — nothing to show
+  }
   const me = await res.json();
 
   $("rp-account-btn").textContent = me.email;
@@ -1884,8 +1892,7 @@ async function loadAccountStrip() {
   $("apikey-signedin-note").style.display = "block";
 
   $("account-signout").addEventListener("click", async () => {
-    await fetch("/auth/logout", { method: "POST", credentials: "same-origin",
-      headers: { "X-CSRF-Token": csrfToken() } });
+    if (supa) await supa.auth.signOut();
     location.reload();
   });
 
@@ -1896,7 +1903,7 @@ async function loadAccountStrip() {
     if (showing) { jobsPanel.style.display = "none"; return; }
     if (!jobsLoaded) {
       try {
-        const jr = await fetch("/app/api/jobs", { credentials: "same-origin" });
+        const jr = await fetch("/app/api/jobs", { headers: authHeaders() });
         const { jobs } = await jr.json();
         jobsPanel.innerHTML = jobs.length
           ? jobs.slice(0, 8).map(j =>
@@ -1911,7 +1918,25 @@ async function loadAccountStrip() {
     jobsPanel.style.display = "block";
   });
 }
-loadAccountStrip();
+
+// Runs once at load: reads /app/api/config for the BYOK-UI flag (always)
+// and, when this deployment has Supabase configured, wires up the client
+// and re-checks the account strip on every auth-state change (sign-in,
+// sign-out, and the redirect back from an OAuth provider).
+(async function initAccount() {
+  const cfg = await fetch("/app/api/config").then(r => r.json()).catch(() => ({}));
+  byokEnabled = !!cfg.byok_enabled;
+  syncEffortVisibility();
+  if (!cfg.supabase_enabled) return; // self-host / API-key-only deployment
+  supa = supabase.createClient(cfg.supabase_url, cfg.supabase_anon_key);
+  supa.auth.onAuthStateChange((_event, session) => {
+    supaAccessToken = session ? session.access_token : null;
+    loadAccountStrip();
+  });
+  const { data: { session } } = await supa.auth.getSession();
+  supaAccessToken = session ? session.access_token : null;
+  loadAccountStrip();
+})();
 
 // Engine (Claude/Gemini) API key persistence — sent as a form field per job,
 // never as an auth header, never stored server-side.
@@ -1931,7 +1956,12 @@ const EFFORT_CAPABLE_PROVIDERS = ["anthropic", "gemini", "cohere", "meshapi"];
 function syncEffortVisibility() {
   const isOffline = $("provider").value === "none";
   $("effort-row").style.display = EFFORT_CAPABLE_PROVIDERS.includes($("provider").value) ? "" : "none";
-  $("provider-key-row").style.display = isOffline ? "none" : "";
+  // Day 31: the hosted default runs every job on the server's own provider
+  // key (PBICOMPASS_BYOK_UI unset/0) -- a visitor is never asked for their
+  // own Claude/Gemini/etc. key. Self-host deployments that still want
+  // per-job BYOK opt back in via that env var (byokEnabled, from
+  // /app/api/config, set by initAccount() above).
+  $("provider-key-row").style.display = (isOffline || !byokEnabled) ? "none" : "";
 }
 $("provider").addEventListener("change", syncEffortVisibility);
 syncEffortVisibility();
@@ -2066,7 +2096,7 @@ $("form").addEventListener("submit", async (e) => {
   fd.append("file", f);
   fd.append("provider", $("provider").value);
   if (EFFORT_CAPABLE_PROVIDERS.includes($("provider").value)) fd.append("effort", $("effort").value);
-  if ($("provider").value !== "none") {
+  if (byokEnabled && $("provider").value !== "none") {
     const engineKey = providerApikey.value.trim();
     if (engineKey) fd.append("provider_api_key", engineKey);
   }

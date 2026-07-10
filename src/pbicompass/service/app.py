@@ -4,8 +4,11 @@ Serves a single-page web UI at ``/`` and a small JSON API. All processing runs
 inside a per-job sandbox via :func:`process_job`; the app itself never persists
 uploads or extracted metadata.
 
-Multi-tenancy (Phase 5): when auth is enabled, requests must carry an API key
-(``Authorization: Bearer <key>`` or ``X-API-Key``). Jobs are tagged with the
+Multi-tenancy (Phase 5): when auth is enabled, requests must carry an
+``Authorization: Bearer <value>`` (or ``X-API-Key``) — either a
+``pbicompass_sk_...`` API key (the original programmatic path) or a
+Supabase-issued JWT (Day 29; identity/signup/login is handled by Supabase
+Auth, not this app — see ``supabase_auth.py``). Jobs are tagged with the
 caller's tenant and only that tenant can read/download them; per-plan daily
 quotas implement the freemium tier. With auth disabled (the local/self-hosted
 default) everything runs as the ``public`` tenant with no limits.
@@ -17,22 +20,17 @@ import concurrent.futures
 import logging
 import os
 import re
-import secrets
 import uuid
 from pathlib import Path
 
 from fastapi import (BackgroundTasks, FastAPI, File, Form, HTTPException, Query,
                      Request, UploadFile)
-from fastapi.responses import (HTMLResponse, JSONResponse, PlainTextResponse,
-                               RedirectResponse, Response)
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
 
-from . import oidc as oidc_mod
-from .accounts import (RESET_TOKEN_TTL_SECONDS, SESSION_TTL_SECONDS,
-                       VERIFY_TOKEN_TTL_SECONDS, AccountStore)
+from . import supabase_auth
+from .accounts import AccountStore
 from .admin import AdminGuard, verify_admin_token
-from .email import (EmailBackend, build_email_backend, password_reset_email,
-                    public_url, verification_email)
-from .oidc import OIDCConfig
+from .supabase_auth import SupabaseAuthConfig
 from .jobs import JobStatus, JobStore
 from .logging_config import configure_logging, job_id_var, request_id_var
 from .metrics import MetricsRegistry
@@ -54,8 +52,6 @@ _CONTENT_TYPES = {
     "yaml": "application/x-yaml; charset=utf-8",
 }
 _STATIC = Path(__file__).parent / "static"
-_SESSION_COOKIE = "pbicompass_session"
-_CSRF_COOKIE = "pbicompass_csrf"
 
 
 def _max_upload_bytes() -> int:
@@ -78,29 +74,12 @@ def _upload_rate_window_seconds() -> float:
     return float(os.environ.get("PBICOMPASS_UPLOAD_RATE_WINDOW_SECONDS", "60"))
 
 
-def _auth_rate_limit() -> int:
-    return int(os.environ.get("PBICOMPASS_AUTH_RATE_LIMIT", "10"))
-
-
-def _auth_rate_window_seconds() -> float:
-    return float(os.environ.get("PBICOMPASS_AUTH_RATE_WINDOW_SECONDS", "60"))
-
-
-def _session_ttl_seconds() -> int:
-    return int(os.environ.get("PBICOMPASS_SESSION_TTL_SECONDS", str(SESSION_TTL_SECONDS)))
-
-
-def _cookie_secure() -> bool:
-    # Default on (HTTPS-only cookies) — every deployment guide in this repo
-    # (DEPLOYMENT.md) puts TLS in front of the app. Only disable for a plain
-    # http local-dev session, never in production.
-    return os.environ.get("PBICOMPASS_COOKIE_SECURE", "1").strip().lower() not in ("0", "false", "no")
-
-
-def _require_email_verification() -> bool:
-    # Off by default so a fresh self-host isn't locked out of its own login
-    # before any email provider is configured. A hosted SaaS turns this on.
-    return os.environ.get("PBICOMPASS_REQUIRE_EMAIL_VERIFICATION", "").strip().lower() in ("1", "true", "yes")
+def _byok_ui_enabled() -> bool:
+    # Off by default (Day 31): the hosted product runs every job on the
+    # server's own provider key -- a visitor is never asked for their own
+    # Claude/Gemini/etc. key. A self-host deployment that still wants
+    # per-job BYOK (the pre-Day-31 default) opts back in explicitly.
+    return os.environ.get("PBICOMPASS_BYOK_UI", "").strip().lower() in ("1", "true", "yes")
 
 
 def _client_ip(request: Request) -> str:
@@ -120,58 +99,6 @@ def _api_key(request: Request) -> str | None:
     return request.headers.get("x-api-key")
 
 
-def _html_escape(text: str) -> str:
-    return (text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                .replace('"', "&quot;"))
-
-
-def _auth_result_page(title: str, message: str) -> str:
-    """A deliberately minimal, dependency-free result page for the one-click
-    verify link and the reset flow. Not the styled account UI (Day 25) — just
-    enough to give a human clicking an emailed link a clear outcome."""
-    return (
-        "<!doctype html><meta charset='utf-8'>"
-        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-        f"<title>{_html_escape(title)} — PBICompass</title>"
-        "<div style='max-width:34rem;margin:4rem auto;font-family:system-ui,sans-serif;"
-        "padding:0 1rem;color:#1e293b'>"
-        f"<h1 style='font-size:1.4rem'>{_html_escape(title)}</h1>"
-        f"<p style='color:#475569'>{_html_escape(message)}</p>"
-        "<p><a href='/' style='color:#4f46e5'>← Back to PBICompass</a></p></div>"
-    )
-
-
-def _reset_form_page(token: str) -> str:
-    safe_token = _html_escape(token)
-    return (
-        "<!doctype html><meta charset='utf-8'>"
-        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-        "<title>Reset your password — PBICompass</title>"
-        "<div style='max-width:34rem;margin:4rem auto;font-family:system-ui,sans-serif;"
-        "padding:0 1rem;color:#1e293b'>"
-        "<h1 style='font-size:1.4rem'>Choose a new password</h1>"
-        "<form method='post' action='/auth/reset' style='display:flex;flex-direction:column;gap:.75rem'>"
-        f"<input type='hidden' name='token' value='{safe_token}'>"
-        "<input type='password' name='password' required minlength='8' "
-        "placeholder='New password (min 8 characters)' "
-        "style='padding:.6rem;border:1px solid #cbd5e1;border-radius:.4rem'>"
-        "<button type='submit' style='padding:.6rem;background:#4f46e5;color:#fff;"
-        "border:0;border-radius:.4rem;cursor:pointer'>Update password</button>"
-        "</form></div>"
-    )
-
-
-async def _read_token_and_password(request: Request) -> tuple[str, str]:
-    """Accept the reset payload as either JSON (API clients) or a classic
-    form post (the /auth/reset landing page's own form)."""
-    ctype = request.headers.get("content-type", "")
-    if "application/json" in ctype:
-        body = await request.json()
-        return (body.get("token") or "").strip(), body.get("password") or ""
-    form = await request.form()
-    return (form.get("token") or "").strip(), form.get("password") or ""
-
-
 def create_app(
     store: JobStore | None = None,
     *,
@@ -180,8 +107,7 @@ def create_app(
     require_auth: bool | None = None,
     admin_token: str | None = None,
     admin_guard: AdminGuard | None = None,
-    email_backend: EmailBackend | None = None,
-    oidc_config: OIDCConfig | None = None,
+    supabase_config: SupabaseAuthConfig | None = None,
 ) -> FastAPI:
     configure_logging()
     if init_sentry():
@@ -193,20 +119,15 @@ def create_app(
     if admin_token is None:
         admin_token = os.environ.get("PBICOMPASS_ADMIN_TOKEN") or None
     admin_guard = admin_guard or AdminGuard()
-    # Snapshotted once at startup (like require_auth), not read per-request:
-    # a deployment sets it once, and this keeps it deterministic/injectable.
-    require_email_verification = _require_email_verification()
-    # Day 22: transactional email (verify/reset). Default = console backend
-    # (logs the link, needs no provider) so the flow works on a bare
-    # self-host; env selects SMTP for real delivery. Injectable for tests.
-    email_backend = email_backend or build_email_backend()
-    app.state.email_backend = email_backend
-    # Day 23: "Sign in with Microsoft" (Entra ID OIDC). None unless
-    # PBICOMPASS_OIDC_* is configured — the /auth/oidc/* routes are 404 when
-    # absent, so an install that never sets it sees no new surface at all.
-    if oidc_config is None:
-        oidc_config = OIDCConfig.from_env(public_url=public_url())
-    app.state.oidc_config = oidc_config
+    # Day 29: identity (signup/login/email-verify/password-reset/"Sign in
+    # with Microsoft") is handled by Supabase Auth, not this app -- None
+    # unless SUPABASE_URL is configured, in which case Authorization: Bearer
+    # accepts a Supabase-issued JWT alongside the original pbicompass_sk_...
+    # API key (see resolve_tenant). An install that never sets it stays on
+    # the API-key-only path with zero new dependencies pulled in.
+    if supabase_config is None:
+        supabase_config = SupabaseAuthConfig.from_env()
+    app.state.supabase_config = supabase_config
 
     # The account store backs both end-user auth (when require_auth is on)
     # and the admin panel (which needs it to mint/list/revoke accounts even
@@ -223,14 +144,6 @@ def create_app(
     metrics = MetricsRegistry()
     app.state.metrics = metrics
     upload_rate_limiter = RateLimiter(_upload_rate_limit(), _upload_rate_window_seconds())
-    # Day 21 (§7.5): "rate-limit all auth routes" — a separate limiter
-    # instance/budget from the upload one, since login/signup abuse and
-    # upload abuse are different threats with different acceptable volumes.
-    auth_rate_limiter = RateLimiter(_auth_rate_limit(), _auth_rate_window_seconds())
-    # Reuses admin.py's brute-force-lockout *pattern* (a distinct instance —
-    # a bad admin-token guess and a bad login attempt are unrelated events)
-    # per §7.5's explicit instruction.
-    login_guard = AdminGuard()
 
     # Persistent by default (A2-1): a file path (ideally on a mounted volume,
     # per DEPLOYMENT.md) so an in-flight/finished job survives a worker
@@ -254,6 +167,10 @@ def create_app(
     index_html = (_STATIC / "index.html").read_text(encoding="utf-8")
     admin_html = (_STATIC / "admin.html").read_text(encoding="utf-8")
     app_html = (_STATIC / "app.html").read_text(encoding="utf-8")
+    # Vendored (not CDN-loaded) supabase-js (Day 30, §2) -- a CDN outage
+    # shouldn't be able to block sign-in. Read once at startup, same
+    # in-memory-string pattern as the HTML pages above.
+    vendor_supabase_js = (_STATIC / "vendor" / "supabase.js").read_text(encoding="utf-8")
 
     if owns_account_store:
         @app.on_event("shutdown")
@@ -286,89 +203,63 @@ def create_app(
         response.headers["X-Request-Id"] = rid
         return response
 
-    def resolve_tenant(request: Request) -> tuple[str, str, bool]:
-        """Return ``(tenant, plan, via_session)``. Raises 401 when auth is
-        required and absent. Checks a Bearer/X-API-Key header first (the
-        programmatic/API path, unchanged); falls back to a signed-in
-        browser session cookie (Day 25, §7.6/§10) — the signed-in upload UI
-        has no API key of its own to send, only its session. ``via_session``
-        tells a state-changing caller (``POST /jobs``) whether it needs the
-        CSRF double-submit check: a Bearer/API-key header is never ambient
-        (a cross-site page can't attach a header it doesn't already have),
-        a session cookie is."""
+    def resolve_tenant(request: Request) -> tuple[str, str]:
+        """Return ``(tenant, plan)``. Raises 401 when auth is required and
+        absent. ``Authorization: Bearer <value>`` (or ``X-API-Key``) is
+        either a ``pbicompass_sk_...`` API key (the original programmatic
+        path, byte-for-byte unchanged) or a Supabase-issued JWT (Day 29,
+        identity now lives in Supabase, not this app) — disambiguated by
+        shape via :func:`supabase_auth.looks_like_jwt` before verification.
+        A *supplied* credential that fails to verify fails as itself; it
+        never falls through to try the other auth method or a different
+        identity. Bearer auth (of either kind) is never an ambient browser
+        credential, so unlike the retired session-cookie model, no CSRF
+        check is needed on top of it."""
         key = _api_key(request)
         if account_store and key:
-            acct = account_store.verify(key)
-            if acct:
-                return acct.tenant, acct.plan, False
-            # An explicitly supplied key that doesn't verify fails as
-            # itself — it must never silently fall back to an ambient
-            # session cookie that happens to be present on the same
-            # browser/client (e.g. a dashboard user testing a revoked key
-            # while still signed in). Session fallback is only for
-            # requests that sent no key at all.
-        elif account_store:
-            session_token = request.cookies.get(_SESSION_COOKIE)
-            if session_token:
-                info = account_store.verify_session(session_token)
-                if info:
-                    acct = account_store.account_for_user(info.user.id)
-                    if acct:
-                        return acct.tenant, acct.plan, True
+            if supabase_config and supabase_auth.looks_like_jwt(key):
+                try:
+                    claims = supabase_auth.verify_jwt(key, supabase_config)
+                except supabase_auth.SupabaseAuthError:
+                    claims = None
+                if claims is not None:
+                    acct = account_store.get_or_create_account_for_supabase_user(
+                        claims.sub, claims.email or ""
+                    )
+                    return acct.tenant, acct.plan
+            else:
+                acct = account_store.verify(key)
+                if acct:
+                    return acct.tenant, acct.plan
+            # Falls through to the require_auth/public floor below, same as
+            # an unrecognized API key always has — see the module docstring.
         if require_auth:
             raise HTTPException(
                 status_code=401,
                 detail="A valid API key or a signed-in session is required. Send "
-                       "'Authorization: Bearer <key>' or sign in at /app.",
+                       "'Authorization: Bearer <key>'.",
             )
-        return "public", "free", False
-
-    def _set_auth_cookies(response: Response, session_token: str, csrf_token: str) -> None:
-        max_age = _session_ttl_seconds()
-        secure = _cookie_secure()
-        # HttpOnly: never readable by page JS (the bearer credential itself).
-        response.set_cookie(_SESSION_COOKIE, session_token, httponly=True, secure=secure,
-                            samesite="lax", max_age=max_age, path="/")
-        # Deliberately NOT HttpOnly: the double-submit CSRF pattern requires
-        # same-site page JS to read this cookie and echo it back as a header
-        # on state-changing requests — its own security property depends on
-        # cross-site pages being unable to read another origin's cookies,
-        # not on this one being hidden from same-site JS.
-        response.set_cookie(_CSRF_COOKIE, csrf_token, httponly=False, secure=secure,
-                            samesite="lax", max_age=max_age, path="/")
-
-    def _clear_auth_cookies(response: Response) -> None:
-        response.delete_cookie(_SESSION_COOKIE, path="/")
-        response.delete_cookie(_CSRF_COOKIE, path="/")
-
-    def _require_csrf(request: Request) -> None:
-        """Double-submit CSRF check for a state-changing, session-cookie-
-        authenticated request (Bearer/API-key requests never need this — a
-        cross-site page can't make a browser attach an Authorization header
-        it doesn't already have, so there's no ambient credential for CSRF
-        to exploit there)."""
-        cookie_csrf = request.cookies.get(_CSRF_COOKIE)
-        header_csrf = request.headers.get("x-csrf-token")
-        if not cookie_csrf or not header_csrf or not secrets.compare_digest(cookie_csrf, header_csrf):
-            raise HTTPException(status_code=403, detail="Missing or invalid CSRF token.")
+        return "public", "free"
 
     def _require_user(request: Request):
-        """Resolve the signed-in user from the session cookie, or 401. This is
-        the account-dashboard's auth (Day 24) — session-based, no admin token
-        — returning ``(user, account)``. Distinct from ``resolve_tenant``
-        (API-key auth for programmatic /jobs)."""
+        """Resolve the signed-in caller from a Supabase JWT (Day 29), or
+        401. This is the account-dashboard's auth — returning
+        ``(claims, account)``. Distinct from ``resolve_tenant`` only in
+        that it also 401s when Supabase/accounts aren't configured at all,
+        rather than degrading to the public tenant."""
         if not account_store:
             raise HTTPException(status_code=503, detail="Accounts are not configured.")
-        token = request.cookies.get(_SESSION_COOKIE)
-        info = account_store.verify_session(token) if token else None
-        if not info:
+        if not supabase_config:
+            raise HTTPException(status_code=503, detail="Sign-in is not configured.")
+        token = _api_key(request)
+        if not token:
             raise HTTPException(status_code=401, detail="Not signed in.")
-        acct = account_store.account_for_user(info.user.id)
-        if not acct:
-            # A user with no account shouldn't happen (signup always makes
-            # one), but fail closed rather than hand back a half-state.
-            raise HTTPException(status_code=401, detail="Account not found for this session.")
-        return info.user, acct
+        try:
+            claims = supabase_auth.verify_jwt(token, supabase_config)
+        except supabase_auth.SupabaseAuthError as exc:
+            raise HTTPException(status_code=401, detail="Not signed in.") from exc
+        acct = account_store.get_or_create_account_for_supabase_user(claims.sub, claims.email or "")
+        return claims, acct
 
     def _require_admin(request: Request) -> None:
         """Gate an admin endpoint. 503 if the panel isn't configured at all,
@@ -386,6 +277,10 @@ def create_app(
             admin_guard.record_failure(client_id)
             raise HTTPException(status_code=401, detail="Invalid admin token.")
         admin_guard.record_success(client_id)
+
+    @app.get("/vendor/supabase.js")
+    def vendor_supabase_js_route() -> Response:
+        return Response(content=vendor_supabase_js, media_type="application/javascript")
 
     @app.get("/", response_class=HTMLResponse)
     def index() -> str:
@@ -517,271 +412,47 @@ def create_app(
 
     @app.get("/me")
     def me(request: Request) -> dict:
-        tenant, plan, _via_session = resolve_tenant(request)
+        tenant, plan = resolve_tenant(request)
         out = {"tenant": tenant, "plan": plan, "auth_required": require_auth}
         if account_store and tenant != "public":
             used, limit = account_store.usage_today(tenant), account_store.limit_for(plan)
             out.update(used_today=used, daily_limit=limit, remaining=max(0, limit - used))
         return out
 
-    def _user_payload(user) -> dict:
-        return {"id": user.id, "email": user.email, "email_verified": user.email_verified}
-
-    def _auth_link(path: str, token: str) -> str:
-        # Absolute when PBICOMPASS_PUBLIC_URL is set (prod), a bare path
-        # otherwise — still usable by an operator reading the console backend.
-        base = public_url()
-        return f"{base}{path}?token={token}" if base else f"{path}?token={token}"
-
-    def _send_verification_email(user) -> None:
-        token = account_store.create_email_token(user.id, "verify", VERIFY_TOKEN_TTL_SECONDS)
-        link = _auth_link("/auth/verify", token)
-        email_backend.send(verification_email(user.email, link))
-
-    @app.post("/auth/signup")
-    async def auth_signup(request: Request, response: Response) -> dict:
-        """Self-serve signup (Day 21, §7.1/§7.5): creates a user, a new
-        account/tenant they own, and an API key on it — then logs them in
-        (session + CSRF cookies), matching the common "auto-login after
-        signup" UX, and sends an email-verification link (Day 22). Session-
-        based ``/jobs`` access is still deferred to the account-dashboard/
-        upload-UI work in Days 24-25 (which is also where a session's CSRF
-        story for state-changing, non-auth routes gets decided) — today,
-        the API-key returned here is this user's path to `/jobs` until then.
-        """
-        if not account_store:
-            raise HTTPException(status_code=503, detail="Accounts are not configured.")
-        if not auth_rate_limiter.allow(_client_ip(request)):
-            metrics.record_rate_limited()
-            raise HTTPException(status_code=429, detail="Too many requests. Try again shortly.")
-        body = await request.json()
-        email = (body.get("email") or "").strip()
-        password = body.get("password") or ""
-        name = (body.get("name") or "").strip()
-        try:
-            user, acct, api_key = account_store.create_user(email, password, name=name)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        _send_verification_email(user)
-        raw_session, csrf_token = account_store.create_session(user.id, ttl_seconds=_session_ttl_seconds())
-        _set_auth_cookies(response, raw_session, csrf_token)
-        return {
-            "user": _user_payload(user),
-            "tenant": acct.tenant, "plan": acct.plan,
-            "api_key": api_key,  # shown once, same convention as an admin-created account
-            "verification_email_sent": True,
-        }
-
-    @app.post("/auth/login")
-    async def auth_login(request: Request, response: Response) -> dict:
-        if not account_store:
-            raise HTTPException(status_code=503, detail="Accounts are not configured.")
-        if not auth_rate_limiter.allow(_client_ip(request)):
-            metrics.record_rate_limited()
-            raise HTTPException(status_code=429, detail="Too many requests. Try again shortly.")
-        client_id = _client_ip(request)
-        if login_guard.is_locked(client_id):
-            raise HTTPException(status_code=429, detail="Too many failed login attempts. Try again later.")
-        body = await request.json()
-        email = (body.get("email") or "").strip()
-        password = body.get("password") or ""
-        user = account_store.authenticate(email, password)
-        if not user:
-            login_guard.record_failure(client_id)
-            # Deliberately identical for "no such user" and "wrong password"
-            # (AccountStore.authenticate already collapses this) so a failed
-            # attempt can't be used to enumerate registered emails.
-            raise HTTPException(status_code=401, detail="Invalid email or password.")
-        login_guard.record_success(client_id)
-        # Day 22 gate: when email verification is required, an unverified
-        # user can't complete login — and we (re)send a fresh verification
-        # link so a user who lost the first one can still get in, rather than
-        # dead-ending them. The credentials were already correct at this
-        # point, so this is not an enumeration vector.
-        if require_email_verification and not user.email_verified:
-            _send_verification_email(user)
-            raise HTTPException(
-                status_code=403,
-                detail="Please verify your email address. We've sent you a new verification link.",
-            )
-        acct = account_store.account_for_user(user.id)
-        raw_session, csrf_token = account_store.create_session(user.id, ttl_seconds=_session_ttl_seconds())
-        _set_auth_cookies(response, raw_session, csrf_token)
-        return {
-            "user": _user_payload(user),
-            "tenant": acct.tenant if acct else None,
-            "plan": acct.plan if acct else None,
-        }
-
-    @app.post("/auth/logout")
-    def auth_logout(request: Request, response: Response) -> dict:
-        if not account_store:
-            raise HTTPException(status_code=503, detail="Accounts are not configured.")
-        session_token = request.cookies.get(_SESSION_COOKIE)
-        if not session_token:
-            raise HTTPException(status_code=401, detail="Not logged in.")
-        _require_csrf(request)
-        account_store.delete_session(session_token)
-        _clear_auth_cookies(response)
-        return {"ok": True}
-
-    @app.get("/auth/verify", response_class=HTMLResponse)
-    def auth_verify(request: Request, token: str = Query(...)) -> HTMLResponse:
-        """One-click email verification (a human opens this from their
-        inbox), so it returns a small HTML page, not JSON. Single-use token;
-        rate-limited like the rest of /auth/*."""
-        if not account_store:
-            raise HTTPException(status_code=503, detail="Accounts are not configured.")
-        if not auth_rate_limiter.allow(_client_ip(request)):
-            metrics.record_rate_limited()
-            raise HTTPException(status_code=429, detail="Too many requests. Try again shortly.")
-        user_id = account_store.consume_email_token(token, "verify")
-        if not user_id:
-            return HTMLResponse(_auth_result_page(
-                "Verification link invalid or expired",
-                "This link has already been used or has expired. Log in and request a new one.",
-            ), status_code=400)
-        account_store.mark_email_verified(user_id)
-        return HTMLResponse(_auth_result_page(
-            "Email verified",
-            "Thanks — your email address is confirmed. You can close this tab and sign in.",
-        ))
-
-    @app.post("/auth/reset-request")
-    async def auth_reset_request(request: Request) -> dict:
-        """Start a password reset. **Always returns 200** whether or not the
-        email is registered, so it can't be used to enumerate accounts — the
-        email is only actually sent if a matching user exists."""
-        if not account_store:
-            raise HTTPException(status_code=503, detail="Accounts are not configured.")
-        if not auth_rate_limiter.allow(_client_ip(request)):
-            metrics.record_rate_limited()
-            raise HTTPException(status_code=429, detail="Too many requests. Try again shortly.")
-        body = await request.json()
-        email = (body.get("email") or "").strip()
-        user = account_store.get_user_by_email(email)
-        if user:
-            token = account_store.create_email_token(user.id, "reset", RESET_TOKEN_TTL_SECONDS)
-            link = _auth_link("/auth/reset", token)
-            email_backend.send(password_reset_email(user.email, link))
-        return {"ok": True, "message": "If that email is registered, a reset link is on its way."}
-
-    @app.get("/auth/reset", response_class=HTMLResponse)
-    def auth_reset_form(token: str = Query(...)) -> HTMLResponse:
-        """Minimal landing page for the emailed reset link — a form that
-        POSTs the new password back to /auth/reset. Intentionally tiny: the
-        real, styled account UI is Day 25; this is the least that makes the
-        emailed link actually usable end-to-end today."""
-        return HTMLResponse(_reset_form_page(token))
-
-    @app.post("/auth/reset")
-    async def auth_reset(request: Request) -> dict:
-        """Complete a reset: consume the token, set the new password, and
-        invalidate every existing session for that user (done inside
-        AccountStore.set_password)."""
-        if not account_store:
-            raise HTTPException(status_code=503, detail="Accounts are not configured.")
-        if not auth_rate_limiter.allow(_client_ip(request)):
-            metrics.record_rate_limited()
-            raise HTTPException(status_code=429, detail="Too many requests. Try again shortly.")
-        # Accept either JSON (API callers) or a form post (the /auth/reset
-        # landing page above).
-        token, password = await _read_token_and_password(request)
-        user_id = account_store.consume_email_token(token, "reset")
-        if not user_id:
-            raise HTTPException(status_code=400, detail="Reset link invalid or expired. Request a new one.")
-        try:
-            account_store.set_password(user_id, password)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return {"ok": True, "message": "Password updated. You can now sign in with your new password."}
-
-    @app.get("/auth/oidc/login")
-    def auth_oidc_login(request: Request) -> RedirectResponse:
-        """Start the "Sign in with Microsoft" flow (Day 23, §7.3): mint a
-        state+nonce+PKCE pair, stash them server-side, and 302 the browser to
-        Entra's authorize endpoint. 404 when OIDC isn't configured, so an
-        install that never sets PBICOMPASS_OIDC_* exposes no such surface."""
-        if not account_store or not oidc_config:
-            raise HTTPException(status_code=404, detail="Microsoft sign-in is not enabled.")
-        if not auth_rate_limiter.allow(_client_ip(request)):
-            metrics.record_rate_limited()
-            raise HTTPException(status_code=429, detail="Too many requests. Try again shortly.")
-        nonce = secrets.token_urlsafe(24)
-        verifier, challenge = oidc_mod.generate_pkce()
-        state = account_store.create_oidc_state(nonce, verifier, oidc_mod.STATE_TTL_SECONDS)
-        url = oidc_mod.build_authorize_url(oidc_config, state, nonce, challenge)
-        return RedirectResponse(url, status_code=302)
-
-    @app.get("/auth/oidc/callback")
-    def auth_oidc_callback(request: Request, code: str | None = Query(None),
-                           state: str | None = Query(None),
-                           error: str | None = Query(None)) -> Response:
-        """Entra redirects here with ?code&state. Validate state (CSRF),
-        exchange the code for tokens over TLS, validate the id_token's
-        claims, find-or-create the user, open a session, and 302 home."""
-        if not account_store or not oidc_config:
-            raise HTTPException(status_code=404, detail="Microsoft sign-in is not enabled.")
-        if not auth_rate_limiter.allow(_client_ip(request)):
-            metrics.record_rate_limited()
-            raise HTTPException(status_code=429, detail="Too many requests. Try again shortly.")
-        if error:
-            # The user cancelled, or Entra returned an error — show a calm
-            # page rather than a stack trace. (content-free: Entra's error
-            # slug only, never anything about our own state.)
-            return HTMLResponse(_auth_result_page(
-                "Sign-in didn't complete",
-                "Microsoft sign-in was cancelled or failed. You can try again.",
-            ), status_code=400)
-        if not code or not state:
-            raise HTTPException(status_code=400, detail="Missing authorization code or state.")
-        stashed = account_store.consume_oidc_state(state)
-        if not stashed:
-            raise HTTPException(status_code=400, detail="Sign-in session expired or invalid. Please try again.")
-        nonce, verifier = stashed
-        try:
-            tokens = oidc_mod.exchange_code(oidc_config, code, verifier)
-            claims = oidc_mod.decode_id_token_claims(tokens["id_token"])
-            oidc_mod.validate_claims(claims, oidc_config, nonce)
-        except oidc_mod.OIDCError as exc:
-            log.warning("oidc callback rejected: %s", type(exc).__name__)
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        email = oidc_mod.email_from_claims(claims)
-        if not email:
-            raise HTTPException(status_code=400, detail="Microsoft didn't return an email address for this account.")
-        user, _acct = account_store.get_or_create_sso_user(email, name=oidc_mod.name_from_claims(claims))
-        raw_session, csrf_token = account_store.create_session(user.id, ttl_seconds=_session_ttl_seconds())
-        response = RedirectResponse("/", status_code=302)
-        _set_auth_cookies(response, raw_session, csrf_token)
-        return response
-
-    # -- Account dashboard API (Day 24, §7.6) — session-authenticated -------
+    # -- Account dashboard API (Day 24, §7.6; Day 29 -- Supabase-JWT-authenticated) -------
     @app.get("/app/api/config")
     def app_config() -> dict:
-        """Public (unauthenticated) — lets the dashboard's sign-in view know
-        whether to show the "Sign in with Microsoft" button before anyone is
-        logged in."""
-        return {"oidc_enabled": bool(oidc_config), "accounts_enabled": bool(account_store)}
+        """Public (unauthenticated) — lets the frontend construct a
+        ``supabase-js`` client (Day 30/31) before anyone is signed in.
+        ``supabase_anon_key`` is safe to expose (it's the public/browser
+        key by design — Supabase's row-level security, not secrecy, is
+        what protects data behind it)."""
+        return {
+            "accounts_enabled": bool(account_store),
+            "supabase_enabled": bool(supabase_config),
+            "supabase_url": supabase_config.url if supabase_config else None,
+            "supabase_anon_key": supabase_config.anon_key if supabase_config else None,
+            "byok_enabled": _byok_ui_enabled(),
+        }
 
     @app.get("/app/api/me")
     def app_me(request: Request) -> dict:
-        user, acct = _require_user(request)
+        claims, acct = _require_user(request)
         used = account_store.usage_today(acct.tenant)
-        limit = account_store.limit_for(acct.plan)
+        limit = account_store.limit_for(acct.plan, acct.quota_override)
         return {
-            "email": user.email,
-            "email_verified": user.email_verified,
+            "email": claims.email,
+            "email_verified": claims.email_verified,
             "tenant": acct.tenant,
             "plan": acct.plan,
             "used_today": used,
             "daily_limit": limit,
             "remaining": max(0, limit - used),
-            "oidc_enabled": bool(oidc_config),
         }
 
     @app.get("/app/api/keys")
     def app_list_keys(request: Request) -> dict:
-        _user, acct = _require_user(request)
+        _claims, acct = _require_user(request)
         return {"keys": [
             {"id": k.id, "name": k.name, "created_at": k.created_at, "is_primary": k.is_primary}
             for k in account_store.list_api_keys(acct.id)
@@ -789,8 +460,7 @@ def create_app(
 
     @app.post("/app/api/keys")
     async def app_create_key(request: Request) -> dict:
-        _user, acct = _require_user(request)
-        _require_csrf(request)
+        _claims, acct = _require_user(request)
         try:
             body = await request.json()
         except Exception:
@@ -805,15 +475,14 @@ def create_app(
 
     @app.delete("/app/api/keys/{key_id}")
     def app_revoke_key(key_id: str, request: Request) -> dict:
-        _user, acct = _require_user(request)
-        _require_csrf(request)
+        _claims, acct = _require_user(request)
         if not account_store.revoke_api_key(acct.id, key_id):
             raise HTTPException(status_code=404, detail="API key not found.")
         return {"ok": True}
 
     @app.get("/app/api/jobs")
     def app_jobs(request: Request) -> dict:
-        _user, acct = _require_user(request)
+        _claims, acct = _require_user(request)
         # Status/timestamps only — the Job record never holds report content
         # (zero-retention preserved). Reuses the store's own public() shape.
         jobs = app.state.store.list_for_tenant(acct.tenant, limit=50)
@@ -860,13 +529,7 @@ def create_app(
                 detail="Too many upload requests from this address. Try again shortly.",
             )
 
-        tenant, plan, via_session = resolve_tenant(request)
-        if via_session:
-            # A signed-in browser session (Day 25) is an ambient credential
-            # (unlike a Bearer/API-key header) — require the double-submit
-            # CSRF check on this state-changing upload, same as the
-            # dashboard's key-management routes.
-            _require_csrf(request)
+        tenant, plan = resolve_tenant(request)
         suffix = Path(file.filename or "").suffix.lower()
         if suffix not in _ALLOWED_SUFFIXES:
             raise HTTPException(
@@ -975,7 +638,7 @@ def create_app(
 
     @app.get("/jobs/{job_id}")
     def job_status(job_id: str, request: Request) -> JSONResponse:
-        tenant, _plan, _via_session = resolve_tenant(request)
+        tenant, _plan = resolve_tenant(request)
         job = app.state.store.get(job_id)
         if job is None or job.tenant != tenant:
             raise HTTPException(status_code=404, detail="Job not found or expired.")
@@ -983,7 +646,7 @@ def create_app(
 
     @app.get("/jobs/{job_id}/download")
     def download(job_id: str, request: Request, format: str = Query(...)) -> Response:
-        tenant, _plan, _via_session = resolve_tenant(request)
+        tenant, _plan = resolve_tenant(request)
         job = app.state.store.get(job_id)
         if job is None or job.tenant != tenant:
             raise HTTPException(status_code=404, detail="Job not found or expired.")

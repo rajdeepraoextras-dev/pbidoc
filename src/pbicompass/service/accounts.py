@@ -19,6 +19,16 @@ default). Every method below is written once against the shared
 :class:`_Connection` wrapper, so the SQL and row-access code is identical for
 both backends — only placeholder style (``?`` vs ``%s``) and how a script of
 several statements is executed actually differ between them.
+
+Identity (Day 29+) is Supabase Auth's problem, not this module's: there is no
+password hash, session, email-verification token, or OIDC state here anymore
+— ``account_users`` just maps a Supabase user id to the tenant/plan/quota
+entity this module has always owned. A pre-Day-29 database still has the
+retired ``users``/``sessions``/``email_tokens``/``oidc_states``/``memberships``
+tables sitting on disk; they're simply no longer read or written, and a
+DEPLOYMENT.md-documented ``DROP TABLE`` is the intentional, explicit way to
+reclaim them (never done automatically here, to avoid a silent-data-loss
+migration on startup).
 """
 
 from __future__ import annotations
@@ -33,14 +43,9 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Optional
 
-from .passwords import hash_password, verify_password
-
 # Daily document quota per plan (jobs accepted per UTC day).
 PLAN_LIMITS = {"free": 10, "pro": 200, "enterprise": 100_000}
 KEY_PREFIX = "pbicompass_sk_"
-SESSION_TTL_SECONDS = 60 * 60 * 24 * 30  # 30 days
-VERIFY_TOKEN_TTL_SECONDS = 60 * 60 * 24   # 24h — email verification link
-RESET_TOKEN_TTL_SECONDS = 60 * 60         # 1h  — password-reset link (shorter on purpose)
 MAX_API_KEYS_PER_ACCOUNT = 20             # soft cap so a dashboard user can't mint keys unbounded
 
 
@@ -100,6 +105,9 @@ class _Connection:
     def commit(self) -> None:
         self._conn.commit()
 
+    def rollback(self) -> None:
+        self._conn.rollback()
+
     def close(self) -> None:
         self._conn.close()
 
@@ -111,20 +119,7 @@ class Account:
     name: str
     plan: str
     created_at: float
-
-
-@dataclass
-class User:
-    id: str
-    email: str
-    email_verified: bool
-    created_at: float
-
-
-@dataclass
-class SessionInfo:
-    user: User
-    csrf_token: str
+    quota_override: Optional[int] = None  # admin manual override (Day 28); None = use PLAN_LIMITS[plan]
 
 
 @dataclass
@@ -170,41 +165,6 @@ class AccountStore:
                     count INTEGER NOT NULL DEFAULT 0,
                     PRIMARY KEY (tenant, day)
                 );
-                CREATE TABLE IF NOT EXISTS users (
-                    id TEXT PRIMARY KEY,
-                    email TEXT NOT NULL UNIQUE,
-                    password_hash TEXT NOT NULL,
-                    email_verified INTEGER NOT NULL DEFAULT 0,
-                    created_at REAL NOT NULL
-                );
-                CREATE TABLE IF NOT EXISTS memberships (
-                    user_id TEXT NOT NULL,
-                    account_id TEXT NOT NULL,
-                    role TEXT NOT NULL DEFAULT 'owner',
-                    created_at REAL NOT NULL,
-                    PRIMARY KEY (user_id, account_id)
-                );
-                CREATE TABLE IF NOT EXISTS sessions (
-                    token_hash TEXT PRIMARY KEY,
-                    user_id TEXT NOT NULL,
-                    csrf_token TEXT NOT NULL,
-                    created_at REAL NOT NULL,
-                    expires_at REAL NOT NULL
-                );
-                CREATE TABLE IF NOT EXISTS email_tokens (
-                    token_hash TEXT PRIMARY KEY,
-                    user_id TEXT NOT NULL,
-                    purpose TEXT NOT NULL,
-                    created_at REAL NOT NULL,
-                    expires_at REAL NOT NULL
-                );
-                CREATE TABLE IF NOT EXISTS oidc_states (
-                    state_hash TEXT PRIMARY KEY,
-                    nonce TEXT NOT NULL,
-                    code_verifier TEXT NOT NULL,
-                    created_at REAL NOT NULL,
-                    expires_at REAL NOT NULL
-                );
                 CREATE TABLE IF NOT EXISTS api_keys (
                     id TEXT PRIMARY KEY,
                     account_id TEXT NOT NULL,
@@ -212,8 +172,22 @@ class AccountStore:
                     name TEXT NOT NULL DEFAULT '',
                     created_at REAL NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS account_users (
+                    user_id TEXT NOT NULL,
+                    account_id TEXT NOT NULL,
+                    role TEXT NOT NULL DEFAULT 'owner',
+                    created_at REAL NOT NULL,
+                    PRIMARY KEY (user_id, account_id)
+                );
+                CREATE TABLE IF NOT EXISTS admin_users (
+                    user_id TEXT PRIMARY KEY,
+                    granted_at REAL NOT NULL
+                );
                 """
             )
+            # Day 28: accounts.quota_override, added to a table that may
+            # already have rows -- an idempotent ALTER (see _ensure_column).
+            self._ensure_column("accounts", "quota_override", "INTEGER")
             # Day 24: ``api_keys`` is the single source of truth for
             # ``verify()``, enabling per-key create/revoke from the account
             # dashboard. Backfill every existing account's primary key into
@@ -231,6 +205,23 @@ class AccountStore:
                     (uuid.uuid4().hex, row["id"], row["key_hash"], "Default", row["created_at"]),
                 )
             self._conn.commit()
+
+    def _ensure_column(self, table: str, column: str, ddl: str) -> None:
+        """Idempotently add a column that didn't exist in an earlier schema
+        version. Attempts the ALTER and swallows only a duplicate-column
+        error (sqlite3 and psycopg raise different exception types for it,
+        so this checks the message rather than the type) — any other
+        failure still propagates. A failed ALTER poisons a Postgres
+        transaction until rolled back, so that happens unconditionally
+        before deciding whether to re-raise."""
+        try:
+            self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+            self._conn.commit()
+        except Exception as exc:
+            self._conn.rollback()
+            message = str(exc).lower()
+            if "duplicate column" not in message and "already exists" not in message:
+                raise
 
     # -- accounts -----------------------------------------------------------
     def create_account(self, tenant: str, name: str = "", plan: str = "free") -> tuple[Account, str]:
@@ -337,10 +328,76 @@ class AccountStore:
     @staticmethod
     def _row_to_account(row) -> Account:
         return Account(id=row["id"], tenant=row["tenant"], name=row["name"],
-                       plan=row["plan"], created_at=row["created_at"])
+                       plan=row["plan"], created_at=row["created_at"],
+                       quota_override=row["quota_override"] if "quota_override" in row.keys() else None)
+
+    # -- accounts for Supabase-authenticated callers (Day 28) ---------------
+    def get_or_create_account_for_supabase_user(self, user_id: str, email: str,
+                                                 name: str = "") -> Account:
+        """JIT-provision an account for a Supabase-authenticated caller on
+        their first request — no Supabase webhook needed. ``user_id`` is the
+        Supabase ``sub`` claim (a UUID string); ``account_users`` maps it to
+        the tenant/account/quota entity this app has always used. A user's
+        very first authenticated request creates their account (plan
+        ``"free"``, its own tenant, and a "Default" API key for programmatic
+        access), the same way self-serve signup used to."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT a.* FROM accounts a JOIN account_users m ON m.account_id = a.id "
+                "WHERE m.user_id = ? ORDER BY m.created_at LIMIT 1",
+                (user_id,),
+            ).fetchone()
+        if row is not None:
+            return self._row_to_account(row)
+        acct, _raw_key = self.create_account(
+            tenant="u-" + secrets.token_hex(8), name=name or email, plan="free"
+        )
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO account_users (user_id, account_id, role, created_at) VALUES (?,?,?,?)",
+                (user_id, acct.id, "owner", time.time()),
+            )
+            self._conn.commit()
+        return acct
+
+    # -- admin roles (Day 28, wired up by service/admin_users.py) -----------
+    def is_admin(self, user_id: str) -> bool:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT 1 FROM admin_users WHERE user_id = ?", (user_id,)
+            ).fetchone()
+        return row is not None
+
+    def grant_admin(self, user_id: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO admin_users (user_id, granted_at) VALUES (?,?) "
+                "ON CONFLICT(user_id) DO NOTHING",
+                (user_id, time.time()),
+            )
+            self._conn.commit()
+
+    def revoke_admin(self, user_id: str) -> bool:
+        with self._lock:
+            cur = self._conn.execute("DELETE FROM admin_users WHERE user_id = ?", (user_id,))
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    def set_quota_override(self, account_id: str, limit: Optional[int]) -> bool:
+        """Admin manual override of an account's quota (``None`` clears it,
+        reverting to ``PLAN_LIMITS[plan]``). Returns True if the account
+        existed."""
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE accounts SET quota_override = ? WHERE id = ?", (limit, account_id)
+            )
+            self._conn.commit()
+            return cur.rowcount > 0
 
     # -- quotas -------------------------------------------------------------
-    def limit_for(self, plan: str) -> int:
+    def limit_for(self, plan: str, override: Optional[int] = None) -> int:
+        if override is not None:
+            return override
         return PLAN_LIMITS.get(plan, PLAN_LIMITS["free"])
 
     def usage_today(self, tenant: str) -> int:
@@ -351,13 +408,14 @@ class AccountStore:
             ).fetchone()
         return row["count"] if row else 0
 
-    def try_consume(self, tenant: str, plan: str) -> tuple[bool, int, int]:
+    def try_consume(self, tenant: str, plan: str, override: Optional[int] = None) -> tuple[bool, int, int]:
         """Atomically check and increment today's usage.
 
         Returns (allowed, used_after, limit). When not allowed, ``used_after``
-        is the unchanged current count.
+        is the unchanged current count. ``override`` is an account's
+        ``quota_override`` (Day 28, admin manual override) if it has one.
         """
-        limit = self.limit_for(plan)
+        limit = self.limit_for(plan, override)
         day = date.today().isoformat()
         with self._lock:
             row = self._conn.execute(
@@ -374,274 +432,6 @@ class AccountStore:
             self._conn.commit()
             return True, current + 1, limit
 
-    # -- users / sessions (Day 21, §7.1/§7.2) --------------------------------
-    def create_user(self, email: str, password: str, name: str = "",
-                    plan: str = "free") -> tuple[User, Account, str]:
-        """Self-serve signup: create a user, a brand-new account/tenant for
-        them (they're its ``owner``), and mint an API key on it too (the
-        same "one auth method among several" account every admin-created
-        account already has — a signed-up user can use either the session
-        this creates or that key for programmatic access). Returns
-        ``(user, account, raw_api_key)``.
-
-        Raises ``ValueError`` for an invalid email, a too-short password, or
-        an email already registered — checked explicitly (a pre-check
-        SELECT, not a caught UNIQUE-violation exception) so the error
-        message and behavior are identical on both the SQLite and Postgres
-        backends, which raise different exception types for a constraint
-        violation.
-        """
-        email = email.strip().lower()
-        if "@" not in email or email.startswith("@") or email.endswith("@"):
-            raise ValueError("Enter a valid email address.")
-        if len(password) < 8:
-            raise ValueError("Password must be at least 8 characters.")
-        with self._lock:
-            existing = self._conn.execute(
-                "SELECT id FROM users WHERE email = ?", (email,)
-            ).fetchone()
-        if existing:
-            raise ValueError("An account with this email already exists.")
-
-        acct, raw_key = self.create_account(
-            tenant="u-" + secrets.token_hex(8), name=name or email, plan=plan
-        )
-        user = User(id=uuid.uuid4().hex, email=email, email_verified=False, created_at=time.time())
-        with self._lock:
-            self._conn.execute(
-                "INSERT INTO users (id, email, password_hash, email_verified, created_at) "
-                "VALUES (?,?,?,?,?)",
-                (user.id, user.email, hash_password(password), 0, user.created_at),
-            )
-            self._conn.execute(
-                "INSERT INTO memberships (user_id, account_id, role, created_at) VALUES (?,?,?,?)",
-                (user.id, acct.id, "owner", time.time()),
-            )
-            self._conn.commit()
-        return user, acct, raw_key
-
-    def get_user_by_email(self, email: str) -> Optional[User]:
-        with self._lock:
-            row = self._conn.execute(
-                "SELECT * FROM users WHERE email = ?", (email.strip().lower(),)
-            ).fetchone()
-        return self._row_to_user(row) if row else None
-
-    def authenticate(self, email: str, password: str) -> Optional[User]:
-        """Verify email + password. Returns ``None`` on any mismatch
-        (unknown email or wrong password) without distinguishing which, so
-        a failed attempt can't be used to enumerate registered emails."""
-        with self._lock:
-            row = self._conn.execute(
-                "SELECT * FROM users WHERE email = ?", (email.strip().lower(),)
-            ).fetchone()
-        if row is None:
-            return None
-        if not verify_password(password, row["password_hash"]):
-            return None
-        return self._row_to_user(row)
-
-    def account_for_user(self, user_id: str) -> Optional[Account]:
-        """The account a user belongs to — their own, self-serve-created
-        one today; ``memberships`` already supports more than one per user
-        for the teams/orgs work in §8, so this returns the oldest
-        membership (a user's "home" account) rather than assuming exactly
-        one row."""
-        with self._lock:
-            row = self._conn.execute(
-                "SELECT a.* FROM accounts a JOIN memberships m ON m.account_id = a.id "
-                "WHERE m.user_id = ? ORDER BY m.created_at LIMIT 1",
-                (user_id,),
-            ).fetchone()
-        return self._row_to_account(row) if row else None
-
-    def create_session(self, user_id: str, ttl_seconds: int = SESSION_TTL_SECONDS) -> tuple[str, str]:
-        """Returns ``(raw_session_token, csrf_token)``. The session token is
-        shown once as a cookie value and verified by hash, the same
-        high-entropy-token-so-a-fast-hash-is-fine reasoning as an API key
-        (``_hash_key``'s own docstring). The CSRF token is a separate random
-        value returned alongside it (not itself a bearer credential — its
-        security property relies on same-site JS being able to read it back
-        out of its own, non-HttpOnly cookie), for the double-submit check on
-        state-changing session-authenticated requests.
-        """
-        raw_token = secrets.token_urlsafe(32)
-        csrf_token = secrets.token_urlsafe(24)
-        now = time.time()
-        with self._lock:
-            self._conn.execute(
-                "INSERT INTO sessions (token_hash, user_id, csrf_token, created_at, expires_at) "
-                "VALUES (?,?,?,?,?)",
-                (_hash_key(raw_token), user_id, csrf_token, now, now + ttl_seconds),
-            )
-            self._conn.commit()
-        return raw_token, csrf_token
-
-    def verify_session(self, raw_token: str) -> Optional[SessionInfo]:
-        if not raw_token:
-            return None
-        now = time.time()
-        with self._lock:
-            # Lazy sweep of expired sessions on read, the same pattern
-            # JobStore.sweep() already established -- no separate background
-            # task needed for what is, at this stage, a low-write-volume table.
-            self._conn.execute("DELETE FROM sessions WHERE expires_at < ?", (now,))
-            row = self._conn.execute(
-                "SELECT s.csrf_token AS csrf_token, u.* FROM sessions s "
-                "JOIN users u ON u.id = s.user_id "
-                "WHERE s.token_hash = ? AND s.expires_at >= ?",
-                (_hash_key(raw_token), now),
-            ).fetchone()
-            self._conn.commit()
-        if row is None:
-            return None
-        return SessionInfo(user=self._row_to_user(row), csrf_token=row["csrf_token"])
-
-    def delete_session(self, raw_token: str) -> None:
-        with self._lock:
-            self._conn.execute("DELETE FROM sessions WHERE token_hash = ?", (_hash_key(raw_token),))
-            self._conn.commit()
-
-    def _delete_sessions_for_user(self, user_id: str) -> None:
-        """Invalidate every live session a user has — called on password
-        reset so a stolen-password attacker's existing session dies the
-        moment the real owner resets (defense in depth: the reset already
-        changes the password, this also boots any session opened with the
-        old one)."""
-        self._conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
-
-    def get_user(self, user_id: str) -> Optional[User]:
-        with self._lock:
-            row = self._conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
-        return self._row_to_user(row) if row else None
-
-    @staticmethod
-    def _row_to_user(row) -> User:
-        return User(id=row["id"], email=row["email"], email_verified=bool(row["email_verified"]),
-                   created_at=row["created_at"])
-
-    # -- email verification / password reset tokens (Day 22, §7.4/§7.5) ------
-    def create_email_token(self, user_id: str, purpose: str, ttl_seconds: int) -> str:
-        """Mint a single-use, hashed, expiring token for ``verify`` or
-        ``reset``. The raw token goes out in the email link; only its hash
-        is stored (same reasoning as an API key / session token). Any older
-        unused token of the same purpose for this user is dropped first, so
-        requesting a fresh link invalidates the previous one."""
-        if purpose not in ("verify", "reset"):
-            raise ValueError(f"Unknown email-token purpose '{purpose}'.")
-        raw_token = secrets.token_urlsafe(32)
-        now = time.time()
-        with self._lock:
-            self._conn.execute(
-                "DELETE FROM email_tokens WHERE user_id = ? AND purpose = ?", (user_id, purpose)
-            )
-            self._conn.execute(
-                "INSERT INTO email_tokens (token_hash, user_id, purpose, created_at, expires_at) "
-                "VALUES (?,?,?,?,?)",
-                (_hash_key(raw_token), user_id, purpose, now, now + ttl_seconds),
-            )
-            self._conn.commit()
-        return raw_token
-
-    def consume_email_token(self, raw_token: str, purpose: str) -> Optional[str]:
-        """Verify + burn a token. Returns the ``user_id`` on success (and
-        deletes the row, so a link works exactly once), ``None`` for an
-        unknown/expired/wrong-purpose token. Expired rows are swept lazily
-        on read, same pattern as sessions."""
-        if not raw_token:
-            return None
-        now = time.time()
-        with self._lock:
-            self._conn.execute("DELETE FROM email_tokens WHERE expires_at < ?", (now,))
-            row = self._conn.execute(
-                "SELECT user_id FROM email_tokens WHERE token_hash = ? AND purpose = ? AND expires_at >= ?",
-                (_hash_key(raw_token), purpose, now),
-            ).fetchone()
-            if row is None:
-                self._conn.commit()
-                return None
-            self._conn.execute("DELETE FROM email_tokens WHERE token_hash = ?", (_hash_key(raw_token),))
-            self._conn.commit()
-        return row["user_id"]
-
-    def mark_email_verified(self, user_id: str) -> None:
-        with self._lock:
-            self._conn.execute("UPDATE users SET email_verified = 1 WHERE id = ?", (user_id,))
-            self._conn.commit()
-
-    def set_password(self, user_id: str, new_password: str) -> None:
-        """Set a new password (used by the reset flow) and invalidate every
-        existing session for that user in the same transaction."""
-        if len(new_password) < 8:
-            raise ValueError("Password must be at least 8 characters.")
-        with self._lock:
-            self._conn.execute(
-                "UPDATE users SET password_hash = ? WHERE id = ?",
-                (hash_password(new_password), user_id),
-            )
-            self._delete_sessions_for_user(user_id)
-            self._conn.commit()
-
-    # -- OIDC / SSO (Day 23, §7.3) ------------------------------------------
-    def create_oidc_state(self, nonce: str, code_verifier: str, ttl_seconds: int) -> str:
-        """Persist the per-flow ``nonce``/``code_verifier`` server-side keyed
-        by a fresh random ``state`` (hashed at rest, like every other token
-        here), and return the raw ``state`` to put in the authorize URL. The
-        callback looks it up to (a) reject a forged/replayed redirect [CSRF]
-        and (b) recover the PKCE verifier + expected nonce."""
-        state = secrets.token_urlsafe(24)
-        now = time.time()
-        with self._lock:
-            self._conn.execute(
-                "INSERT INTO oidc_states (state_hash, nonce, code_verifier, created_at, expires_at) "
-                "VALUES (?,?,?,?,?)",
-                (_hash_key(state), nonce, code_verifier, now, now + ttl_seconds),
-            )
-            self._conn.commit()
-        return state
-
-    def consume_oidc_state(self, state: str) -> Optional[tuple[str, str]]:
-        """Single-use lookup: returns ``(nonce, code_verifier)`` and deletes
-        the row, or ``None`` for an unknown/expired state. Expired rows swept
-        lazily on read, same pattern as sessions/email tokens."""
-        if not state:
-            return None
-        now = time.time()
-        with self._lock:
-            self._conn.execute("DELETE FROM oidc_states WHERE expires_at < ?", (now,))
-            row = self._conn.execute(
-                "SELECT nonce, code_verifier FROM oidc_states WHERE state_hash = ? AND expires_at >= ?",
-                (_hash_key(state), now),
-            ).fetchone()
-            if row is None:
-                self._conn.commit()
-                return None
-            self._conn.execute("DELETE FROM oidc_states WHERE state_hash = ?", (_hash_key(state),))
-            self._conn.commit()
-        return row["nonce"], row["code_verifier"]
-
-    def get_or_create_sso_user(self, email: str, name: str = "") -> tuple[User, Account]:
-        """Find-or-create a user from a verified SSO identity (Microsoft). An
-        existing account (whether it was created by password signup or a
-        prior SSO login) is **linked by email** and returned; a new one gets
-        the same tenant/account/API-key setup as a password signup, but with
-        a random unusable password (SSO users don't have one — they can set
-        one later via password reset if they ever want it) and
-        ``email_verified`` already true, since the identity provider verified
-        it."""
-        email = email.strip().lower()
-        existing = self.get_user_by_email(email)
-        if existing:
-            if not existing.email_verified:
-                self.mark_email_verified(existing.id)
-            acct = self.account_for_user(existing.id)
-            return self.get_user(existing.id), acct
-        # A password the user never learns — password login stays closed for
-        # an SSO-only account until/unless they run a reset.
-        user, acct, _key = self.create_user(email, secrets.token_urlsafe(32), name=name)
-        self.mark_email_verified(user.id)
-        return self.get_user(user.id), acct
-
     # -- backup / restore drill (Day 20, §9/§12) -----------------------------
     def dump(self) -> dict:
         """Logical snapshot of every row this store owns — a portable
@@ -655,7 +445,7 @@ class AccountStore:
         counts, never report data."""
         with self._lock:
             accounts = [dict(r) for r in self._conn.execute(
-                "SELECT id, tenant, name, key_hash, plan, created_at FROM accounts"
+                "SELECT id, tenant, name, key_hash, plan, created_at, quota_override FROM accounts"
             ).fetchall()]
             usage = [dict(r) for r in self._conn.execute(
                 "SELECT tenant, day, count FROM usage"
@@ -665,7 +455,18 @@ class AccountStore:
             api_keys = [dict(r) for r in self._conn.execute(
                 "SELECT id, account_id, key_hash, name, created_at FROM api_keys"
             ).fetchall()]
-        return {"version": 2, "accounts": accounts, "usage": usage, "api_keys": api_keys}
+            # account_users/admin_users (Day 28) — Supabase-user-id mappings;
+            # a restore without them would lose ownership/admin links.
+            account_users = [dict(r) for r in self._conn.execute(
+                "SELECT user_id, account_id, role, created_at FROM account_users"
+            ).fetchall()]
+            admin_users = [dict(r) for r in self._conn.execute(
+                "SELECT user_id, granted_at FROM admin_users"
+            ).fetchall()]
+        return {
+            "version": 3, "accounts": accounts, "usage": usage, "api_keys": api_keys,
+            "account_users": account_users, "admin_users": admin_users,
+        }
 
     def restore(self, snapshot: dict) -> None:
         """Restore rows from :meth:`dump`'s output into an **empty** store
@@ -676,11 +477,13 @@ class AccountStore:
         with self._lock:
             for a in snapshot.get("accounts", []):
                 self._conn.execute(
-                    "INSERT INTO accounts (id, tenant, name, key_hash, plan, created_at) "
-                    "VALUES (?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
+                    "INSERT INTO accounts (id, tenant, name, key_hash, plan, created_at, quota_override) "
+                    "VALUES (?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
                     "tenant=excluded.tenant, name=excluded.name, key_hash=excluded.key_hash, "
-                    "plan=excluded.plan, created_at=excluded.created_at",
-                    (a["id"], a["tenant"], a["name"], a["key_hash"], a["plan"], a["created_at"]),
+                    "plan=excluded.plan, created_at=excluded.created_at, "
+                    "quota_override=excluded.quota_override",
+                    (a["id"], a["tenant"], a["name"], a["key_hash"], a["plan"], a["created_at"],
+                     a.get("quota_override")),
                 )
             for u in snapshot.get("usage", []):
                 self._conn.execute(
@@ -695,5 +498,20 @@ class AccountStore:
                     "account_id=excluded.account_id, key_hash=excluded.key_hash, "
                     "name=excluded.name, created_at=excluded.created_at",
                     (k["id"], k["account_id"], k["key_hash"], k["name"], k["created_at"]),
+                )
+            # account_users/admin_users are new in v3 -- absent entirely from
+            # an older snapshot, so .get(..., []) is a correct no-op restore.
+            for m in snapshot.get("account_users", []):
+                self._conn.execute(
+                    "INSERT INTO account_users (user_id, account_id, role, created_at) "
+                    "VALUES (?,?,?,?) ON CONFLICT(user_id, account_id) DO UPDATE SET "
+                    "role=excluded.role, created_at=excluded.created_at",
+                    (m["user_id"], m["account_id"], m["role"], m["created_at"]),
+                )
+            for adm in snapshot.get("admin_users", []):
+                self._conn.execute(
+                    "INSERT INTO admin_users (user_id, granted_at) VALUES (?,?) "
+                    "ON CONFLICT(user_id) DO UPDATE SET granted_at=excluded.granted_at",
+                    (adm["user_id"], adm["granted_at"]),
                 )
             self._conn.commit()

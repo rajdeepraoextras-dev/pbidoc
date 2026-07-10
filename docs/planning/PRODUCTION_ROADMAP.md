@@ -473,6 +473,16 @@ The infrastructure that makes it a real service. **Prerequisite for all auth/bil
 
 ## Sprint 6 — Billing (Aug 12–14 · Days 26–28)
 
+> **Superseded (2026-07-10).** The owner decided to migrate identity to
+> Supabase Auth first, which reassigns "Days 26–28" to that migration
+> instead of billing (billing/admin now follow as Sprints 7–8). See the
+> go-live plan `docs/planning/GO_LIVE_PLAN.md` and
+> `ROADMAP_PROGRESS.md`'s "Sprint 6 — Supabase Auth migration" entry for
+> what actually shipped under this day range. This section's original
+> Stripe-on-hand-rolled-auth content is left below for historical reference
+> only — its assumptions (session-cookie auth, `create_account`'s bare
+> `plan` field with no Supabase layer) are stale.
+
 **Day 26 (Aug 12) — Stripe products + Checkout.** Prices for free/pro/enterprise; Checkout session from the plan picker; customer created on signup. _Done-when:_ a test purchase upgrades the account's `plan`.
 
 **Day 27 (Aug 13) — Webhooks + portal.** Handle `checkout.session.completed`, `customer.subscription.updated/deleted`, payment failure → downgrade; Stripe customer portal for self-serve plan/cancel; tie to existing quota enforcement. _Done-when:_ subscription changes sync to `plan`; §10.4 webhook tests green.
