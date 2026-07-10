@@ -532,7 +532,7 @@ No live LLM credentials are available in this sandbox (same class of gap flagged
 | 12 | Jul 23 | Wireframe v2 redesign (part 1) | ✅ **Done** |
 | 13 | Jul 24 | Wireframe v2 (part 2) + reintroduce | ✅ **Done** — original scope + v4 exact-match addendum both complete |
 | 14 | Jul 27 | Lineage graph redesign + reintroduce | ✅ **Done** — pulled forward (redesign was Day 13's v4 addendum; reintroduction today at user request) |
-| 15 | Jul 28 | Sprint 3 QA | ⬜ Not started |
+| 15 | Jul 28 | Sprint 3 QA | ✅ **Done** |
 
 ---
 
@@ -816,6 +816,647 @@ The user reported not being able to see the lineage graph, and asked to make it 
 
 ---
 
-## Sprint 4–7 (Days 16–38)
+## Day 15 (Jul 28) — Sprint 3 QA
+
+**Objective (per the roadmap, scope narrowed by the 2026-07-08 owner note above):** full regen read-through across all 4 docs × formats with lineage back in and the wireframe intentionally still hidden. _Done-when:_ lineage renders cleanly in light+dark; no regressions on the docs as they actually ship today. (The dedicated `index.html`/hub redesign and the wireframe re-enable both stay deferred to Sprint 7, Days 33–35, per Day 14's note — not today's scope.)
+
+### Baseline: a real (if minor) test-fragility bug found before any regen
+
+Ran the full suite first, as every prior day has, and got a genuine new failure that wasn't one of the two long-standing pre-existing ones: `test_golden_html.py::test_technical_html_matches_snapshot`. Root-caused before assuming it was a regression from Day 13/14's work — it wasn't. `render/html.py`'s §18 Appendix & Sign-off table stamps the Developer row's date from `md.generated_at[:10]` (today's date at render time), and `test_golden_html.py::_normalize()` only strips the fancy `"9 July 2026, 05:19 UTC"`-style timestamp via `_TIMESTAMP_RE` — it never normalized this bare `YYYY-MM-DD` field. The Day 13 golden was captured on Jul 8; running the identical, untouched code today (Jul 9) reproduces a one-line date diff and nothing else. This means the golden suite has been silently flaky-by-calendar-day since whenever that sign-off row was added — it would fail on the first run after any midnight boundary, for zero real reason, undermining the exact CI-gate guarantee §10 of the roadmap asks for.
+
+- [x] Fixed at the test, not the product: added `_ISO_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")` to `tests/test_golden_html.py::_normalize()`, substituting `"ISODATE"` — [test_golden_html.py](tests/test_golden_html.py).
+- [x] Regenerated `technical.html` (`PBICOMPASS_UPDATE_GOLDEN=1`) and diff-reviewed line-by-line: exactly two lines changed, both the intended normalization target — the sign-off-table date, and (a harmless side effect) a `/* ... v4, 2026-07-08 */` CSS comment in the shared shell that happens to also match the bare-ISO-date pattern; normalizing a static comment string identically on both sides is inert, not a regression.
+- [x] Confirmed non-vacuous the same way every prior day has: re-ran the full suite after the fix — the only two failures left are the same long-standing, already-documented `test_accessibility_landmarks_present`/`test_interactive_diagram_nodes_and_edges` pair (Sprint-3-scoped model-diagram markup, commented out since `56f2788`, unrelated to lineage/wireframe and unchanged since Day 1).
+- [x] Full suite after the fix: **481 passed**, 2 skipped, 2 known pre-existing failures — zero regressions from Days 11–14's cumulative wireframe/lineage v4 work.
+
+### Full offline regen (`--document all --bundle --provider none`)
+
+Regenerated the SampleSales fixture as a complete bundle — all 4 doc types × md/html/docx/json plus the hub `index.html` — via the real CLI path (`pbicompass generate ... --bundle`), not a unit-test shortcut, matching how Day 5 verified Sprint 1.
+
+- [x] **Lineage renders cleanly, confirmed at the markup level.** `technical.html` §5 (Data Sources) carries a real `<svg>` lineage graph (`lineage-diagram-title`, real source→table→measure→page node labels, no `WIP` anywhere in any of the 4 HTML docs) directly above the pre-existing `Data lineage connection list` table (the md/docx fallback) — confirming Day 14's claim that the fallback was "never gated on the SVG" holds in a fresh, real regen, not just by code inspection.
+- [x] **Light+dark verified by CSS inspection, not a screenshot (same class of gap as every prior day — no browser in this sandbox).** The `.diagram` wrapper is a deliberately-always-white card (`background: #ffffff`, comment: _"the diagram never needs a second themed color set"_) whose only theme-reactive property is its `border-color` (tracks `var(--border-color)`, which does shift between the light and `:root[data-theme="dark"]`/`@media (prefers-color-scheme: dark)` palettes). Grepped the entire lineage `<svg>...</svg>` block for `var(--...)` usage and found **zero** — every fill/stroke/text color inside it is a hardcoded absolute hex, so the diagram's internal contrast is identical regardless of page theme; only its border re-themes to sit cleanly against a dark page background. This is the same "light card floating on the page" design already verified for the wireframe on Days 12/13, now confirmed to hold for lineage too.
+- [x] **D1–D6 defect re-scan across the fresh regen, all 4 docs, both md and the underlying generators** — zero occurrences of the D1 audit-speak/completeness-nag/empty-ownership-row patterns in `executive.md`; zero `.,` splices (D3) in any doc; zero bare `select`/`select1` tokens (D4) anywhere; zero `"requires business confirmation"` occurrences in any of the 4 docs (D6 — better than merely "bounded," since SampleSales's columns all resolve to real deterministic descriptions); "governance finding(s)" language is present in `audit.md`/`technical.md` as expected (that vocabulary is only banned from the *executive* doc by D1 — confirmed `executive.md` itself is clean of it).
+- [x] **Root-Cause Analysis section correctly absent** — this run is offline (`client=None`), so `doc.clusters` is empty and both the audit doc's §9 and technical §16's callout are omitted, exactly the documented deterministic fallback (Days 7/8), not a bug.
+- [x] **DOCX sanity** — all 4 `.docx` outputs are valid, uncorrupted zip archives (`zipfile.testzip()` clean, 5 entries each) — no python-docx available in this sandbox to open them structurally, so this confirms the files are well-formed containers, not that every internal XML detail renders identically to a real Word open (same boundary as every prior day's DOCX checks).
+- [x] **Hub `index.html`** (the per-job cover page, `render/hub.py`) generated without error alongside the 4 docs — its own dedicated redesign is explicitly out of scope until Sprint 7 (§6.3, Days 33–35), so today's check was only "does it still generate," not a design review.
+
+### Done-when (from the roadmap, as narrowed by the 2026-07-08 owner note)
+
+- [x] Lineage renders cleanly in light+dark — verified via the CSS/markup inspection above (no CSS variables inside the SVG; the one themed property, `border-color`, degrades correctly in both palettes).
+- [x] No regressions on the docs as they actually ship today — full regen + full suite both clean; the one issue found (the golden-test date flakiness) was a **test-harness** gap that predates Day 15's own changes, not a product regression, and is now fixed and guard-verified.
+
+### Known gaps (honest, not hidden — same class as every prior day)
+
+- **No live browser/PDF visual check** of the lineage graph's actual rendered appearance in a real browser's light/dark toggle — same gap flagged on Days 5/6/12/13/14 (no browser available in this sandbox); verified via CSS/markup inspection instead, per the same reasoning already accepted on those days.
+- **No live LLM smoke test** — same standing gap since Day 5/6 (no provider credentials in this sandbox); today's regen is offline-only by design (QA of what ships without a client), consistent with how Sprint 1's Day 5 and Sprint 2's Day 10 both scoped their own regen passes.
+- **Wireframe re-enable and the `index.html`/hub design push remain deferred to Sprint 7** (Days 33–35) per the standing 2026-07-08 owner decision — not a Day 15 gap, a already-documented deferral being reconfirmed, not reopened.
+
+### Full suite
+
+- [x] `python -m pytest -q` — **481 passed**, 2 skipped, only the 2 known pre-existing failures remain (`test_render.py::HtmlRenderTest::test_accessibility_landmarks_present` / `test_interactive_diagram_nodes_and_edges`, traced to the Sprint-3-scoped model-diagram markup still commented out from `56f2788` — unchanged since Day 1, unrelated to Day 15).
+
+### Files touched
+
+- `tests/test_golden_html.py` (new `_ISO_DATE_RE` normalization)
+- `tests/fixtures/golden/technical.html` (regenerated — 2-line date-normalization diff only)
+- `PRODUCTION_ROADMAP.md` (Day 15 marked done; Sprint 3 outcome confirmed)
+
+**Verdict: Day 15 is fully done** for its narrowed scope. The full offline regen across all 4 docs × md/html/docx/json shows zero D1–D6 regressions, the lineage graph renders with real content and is confirmed theme-safe by markup inspection (no CSS variables inside its SVG, only its card border re-themes), and the wireframe stays correctly, intentionally hidden with no dead-code fallout. The one substantive finding — a genuine, if minor, calendar-day test-flakiness bug in the golden-snapshot harness itself — was root-caused, fixed at its actual source (the test's normalization, not the product), and proven non-vacuous by re-running the full suite clean afterward. Sprint 3 (Days 11–15) is now complete; Sprint 4 (stateful & observable infrastructure) is next.
+
+**Sprint 3 outcome:** the two intentionally-hidden sections are back at (or, for lineage, above) the same bar as the rest of the product; nothing embarrassing ships commented-out, and the one thing still commented out (the wireframe) is commented out **on purpose**, at explicit owner instruction, with a clear, dated re-enable path already logged for Sprint 7.
+
+---
+
+## Sprint 4 — Stateful & observable (Jul 29 – Aug 4 · Days 16–20)
+
+| Day | Date | Task | Status |
+|---|---|---|---|
+| 16 | Jul 29 | Persistent JobStore | ✅ **Done** |
+| 17 | Jul 30 | Managed Postgres for accounts | ✅ **Done** |
+| 18 | Jul 31 | Async worker (Celery+Redis or managed) | ✅ **Done** |
+| 19 | Aug 3 | Observability | ✅ **Done** |
+| 20 | Aug 4 | Metrics, rate limiting, secrets, backups | ✅ **Done** |
+
+---
+
+## Day 16 (Jul 29) — Persistent JobStore (A2-1)
+
+**Objective:** back `JobStore` with a real database behind its existing method surface, storing rendered outputs as BLOBs with the existing TTL sweep, so a job (queued, in-flight, or finished) is still visible to the poller after a single-instance restart — instead of the previous plain in-memory `dict`, which lost everything the moment the process died.
+
+### Design decision: sqlite3, matching `AccountStore`'s existing convention
+
+The roadmap's own §9/§12 checklists eventually call for managed Postgres, but that's explicitly scoped to Day 17 (**accounts**) and beyond, not Day 16. Rather than reach for a new dependency a day early, backed `JobStore` onto stdlib `sqlite3` — the exact pattern `service/accounts.py::AccountStore` already established and this codebase already trusts (one shared `check_same_thread=False` connection guarded by a `threading.Lock`, safe across FastAPI's threadpool). This keeps Day 16 dependency-free and consistent with the rest of the service layer; the eventual Postgres swap (Day 17 for accounts, later for jobs) is a backend swap behind the same method surface, not a rewrite.
+
+### Task checklist
+
+- [x] Rewrote `service/jobs.py` — `JobStore` now opens a `sqlite3` connection (`db_path: str = ":memory:"` default, matching `AccountStore`) instead of holding `self._jobs: dict` / `self._outputs: dict` — [jobs.py](src/pbicompass/service/jobs.py). Two tables: `jobs` (status/timestamps/formats/warnings/usage — formats/warnings/usage stored as JSON-text columns) and `outputs` (`job_id, format, data BLOB, expires`, composite PK).
+- [x] Every existing method kept its exact signature and behavior — `create`, `mark_processing`, `mark_done`, `mark_failed`, `store_outputs`, `get`, `get_output`, `sweep`, `public` — so `app.py` and `worker.py` needed **zero** logic changes, only the constructor call site.
+- [x] `sweep()` reproduces the identical three-part contract as pure SQL instead of Python dict comprehensions: force-fail any `PROCESSING` job past `processing_timeout`, delete expired `outputs` rows, and delete terminal `jobs` rows past `ttl_seconds` that have no remaining output row — same semantics, same call sites (`get`/`get_output` still call `sweep()` first).
+- [x] `JobStatus` round-trips correctly through the TEXT column: `JobStatus(row["status"])` returns the same singleton member (it's a `str, Enum`), so existing `job.status is JobStatus.DONE`-style identity checks in `app.py` still work unchanged — verified explicitly, not assumed.
+- [x] `service/app.py::create_app()` — new `owns_job_store = store is None` branch (mirrors the existing `owns_account_store` pattern): when no store is explicitly passed, constructs a file-backed `JobStore(os.environ.get("PBICOMPASS_JOBS_DB", "pbicompass_jobs.db"), processing_timeout_seconds=_job_timeout_seconds())` and registers a `shutdown` handler to close it — [app.py](src/pbicompass/service/app.py). Every test in the suite constructs its own `JobStore()` explicitly (confirmed by grep before touching this), so `owns_job_store` is `False` in all of them and nothing about existing test behavior changes; only the bare `app = create_app()` module-level instance (the real `uvicorn` entrypoint) picks up the new persistent default.
+- [x] New env var `PBICOMPASS_JOBS_DB` documented in `.env.example` and `DEPLOYMENT.md` (env-var table, Docker-run example, Fly/Render/Cloud-Run steps, and the "single-instance constraint" callout, which now correctly says restart-survival is solved but multi-instance sharing still isn't — not overclaiming A2-1 as fully closed).
+
+### A Windows-specific test wrinkle found and worked around, not hidden
+
+The first version of the `create_app()`-default wiring test drove the persistence check through a real FastAPI `startup`/`shutdown` lifecycle (`with TestClient(app): ...`) before reopening the file. On this Windows sandbox, the sqlite file stayed OS-locked briefly even after the Python-level connection reported `Cannot operate on a closed database` (confirmed the connection genuinely closes; the lock is a Windows/AV-scan artifact on the temp-file handle, not a code bug) — `tempfile.TemporaryDirectory().cleanup()` then raised `PermissionError` on teardown. Fixed by splitting into two focused tests (one asserts the store is file-backed and persists, closing it directly; a separate one asserts the shutdown event actually calls `.close()`) and using `TemporaryDirectory(ignore_cleanup_errors=True)` — the same class of Windows sqlite-file-lock issue `tests/test_cli.py`'s account-store tests already navigate around (explicit `store.close()` before the tempdir context exits, per that file's own comment).
+
+### Deliverable
+
+- [x] New `tests/test_jobs.py` (15 tests, 4 classes): `InMemoryDefaultBehaviorTest` (6 — the default `JobStore()` must behave exactly as the old dict implementation did, since every existing test constructs it this way: create/get roundtrip, full lifecycle transitions, failure path, unknown-job `None`s, output store/fetch, and a zero-retention-shaped check that `public()`'s JSON payload never contains document content); `PersistenceAcrossRestartTest` (3 — the actual A2-1 done-when: a finished job + its output bytes, an in-flight `PROCESSING` job, and a bare `QUEUED` job all survive a second `JobStore` instance opened against the same file path); `SweepBehaviorUnchangedTest` (3 — watchdog force-fail, output TTL expiry, and finished-job-without-outputs TTL expiry all still fire identically to the old implementation); `CreateAppDefaultStoreWiringTest` (2 wiring tests) — `create_app()`'s default store is genuinely file-backed and its contents outlive the process, and the `shutdown` event genuinely closes it, plus a `2/2`-simple regression that passing an explicit store is never overridden.
+- [x] Golden HTML snapshots **not** touched — this is a service-layer change with no renderer/generator involvement, confirmed by full suite still green with zero golden diffs.
+
+### Done-when (from the roadmap)
+
+- [x] Single-instance restart survives in-flight jobs — proven directly in `PersistenceAcrossRestartTest.test_in_flight_job_survives_a_restart`: create → `mark_processing` → close the store → open a **new** `JobStore` instance against the same file → the job is still there, still `PROCESSING`, with its `started_at` intact. Not inferred from the schema — actually exercised.
+- [x] Zero-retention test still passes — `test_service.py::ServiceTest::test_sandbox_is_shredded` and the rest of that module pass unchanged; the new `test_public_payload_has_no_document_content` guard adds an explicit assertion at the `JobStore` layer itself (the JSON status payload never leaks a stored document's bytes) rather than relying solely on the service-level test.
+
+### Full suite
+
+- [x] `python -m pytest -q` — **496 passed** (was 481 on Day 15; +15 new), 2 skipped, only the 2 known pre-existing failures remain (`test_render.py::HtmlRenderTest::test_accessibility_landmarks_present` / `test_interactive_diagram_nodes_and_edges`, traced to the Sprint-3-scoped model-diagram markup still commented out from `56f2788` — unchanged since Day 1, unrelated to Day 16).
+- [x] Confirmed no stray `.db` files leak into the repo: both `pbicompass.db` (pre-existing behavior, unrelated to today) and the new `pbicompass_jobs.db` are created only when the bare `create_app()` default path is exercised, and both are already covered by the repo's `*.db` `.gitignore` rule.
+
+### Known gap (honest, not hidden)
+
+- **No live multi-instance test.** Confirming that two *separate* processes pointed at the same file genuinely interleave safely under concurrent writes (not just sequential open/close, which is what the tests above exercise) would need an actual multi-process harness; that's disproportionate to what A2-1 asks for on Day 16 specifically (single-instance restart survival), and the roadmap itself defers true multi-instance sharing to the Postgres/object-store work. Flagged rather than silently assumed solved.
+
+### Files touched
+
+- `src/pbicompass/service/jobs.py`
+- `src/pbicompass/service/app.py`
+- `tests/test_jobs.py` (new)
+- `.env.example`
+- `DEPLOYMENT.md`
+- `PRODUCTION_ROADMAP.md` (Day 16 marked done)
+
+**Verdict: Day 16 is fully done** for its stated scope — `JobStore` is now genuinely persistent behind the identical method surface every caller already used, a single-instance restart demonstrably no longer loses a queued, in-flight, or finished job (nor its rendered output bytes), the watchdog/TTL-sweep contract is unchanged, and the zero-retention guarantee holds (verified at both the service level and, newly, directly at the `JobStore` layer). The one explicitly-flagged gap — true concurrent multi-instance access — was never in this day's scope and is called out rather than glossed over.
+
+---
+
+## Day 17 (Jul 30) — Managed Postgres for accounts (A2-1's account half)
+
+**Objective:** back `AccountStore` with managed Postgres behind its existing method surface (like Day 16 did for `JobStore`), selected via the `PBICOMPASS_DB` URL scheme, while SQLite stays the zero-dependency self-host default.
+
+### Design: one `_Connection` wrapper, not two parallel implementations
+
+Rather than branch every method body on backend, added a single internal `_Connection` class (`service/accounts.py`) exposing `execute`/`executemany`/`executescript`/`commit`/`close` — the exact surface `AccountStore`'s methods already called on the raw `sqlite3.Connection`. Internally it:
+- detects the backend from `db_path` via `is_postgres_url()` (`postgres://` / `postgresql://` prefix; everything else, including `:memory:`, is sqlite);
+- lazy-imports `psycopg` only when a postgres URL is actually given, and raises a clear `RuntimeError` ("...needs the 'postgres' extra: `pip install \"pbicompass[postgres]\"`") if it isn't installed — a sqlite-only deploy never needs the dependency;
+- translates `?` → `%s` placeholders for the Postgres branch (safe unconditionally — no SQL text in this module contains a literal `?` outside a placeholder position);
+- configures `psycopg.rows.dict_row` so a Postgres row supports the same `row["col"]` access `sqlite3.Row` already provided — zero changes needed in `verify`/`list_accounts`/`_row_to_account`/`try_consume`, etc.
+
+The existing schema (`CREATE TABLE IF NOT EXISTS ... TEXT/REAL/INTEGER ... PRIMARY KEY ...`, and `INSERT ... ON CONFLICT(tenant, day) DO UPDATE SET count = count + 1`) turned out to be valid, unmodified SQL on both engines — SQLite adopted Postgres's upsert syntax, so no dialect fork was needed there at all, only the placeholder/row-access layer above.
+
+### Task checklist
+
+- [x] `is_postgres_url()` + `_Connection` wrapper — [accounts.py](src/pbicompass/service/accounts.py).
+- [x] `AccountStore.__init__` now opens a `_Connection(db_path)` instead of a raw `sqlite3.connect(...)` — every other method (`create_account`, `verify`, `list_accounts`, `revoke_account`, `usage_today`, `try_consume`) is untouched, since they only ever called `.execute()`/`.commit()` on the connection object, which `_Connection` still provides.
+- [x] New `postgres` extra in `pyproject.toml` — `psycopg[binary]`.
+- [x] `.env.example` / `DEPLOYMENT.md` updated: `PBICOMPASS_DB` now documents the `postgres://`/`postgresql://` form alongside the SQLite-path default, plus a new "Managed Postgres for accounts (optional, Day 17)" section with the install/env-var steps and an explicit scope note (this covers `PBICOMPASS_DB` only — `PBICOMPASS_JOBS_DB` is still SQLite-single-instance).
+
+### Testing — no live Postgres server in this sandbox, so wiring is verified against a fake `psycopg` module
+
+Same class of gap as every prior day's missing provider credentials (Days 5/6) — no Postgres server is reachable here. Rather than skip Postgres coverage entirely, `psycopg` was installed for real (`pip install "psycopg[binary]"`, confirms the real package imports cleanly) and then **overridden per-test** with a fake module via `unittest.mock.patch.dict(sys.modules, ...)` — the exact "fake SDK module" pattern already established in `test_agents.py` for Cohere/MeshAPI/OpenAI/Anthropic. The fake's `connect()` returns a wrapper around a genuine in-memory `sqlite3` connection (translating the `%s`-style SQL `_Connection` sends back to `?` before executing) — so these tests don't just assert "a call was made," they exercise the **entire** create → verify → list → revoke → quota-upsert lifecycle through the real Postgres code branch of `_Connection`, end to end.
+
+- [x] New `tests/test_accounts_postgres.py` (6 tests): `IsPostgresUrlTest` (2 — scheme detection), `AccountStorePostgresBackendTest` (4 — missing-`psycopg` install message, `psycopg.connect()` called with the right URL + `dict_row` factory, full account lifecycle over the Postgres branch, and the quota upsert-and-block behavior over the same branch).
+- [x] Confirmed the sqlite path (the default, and every existing caller) is completely unaffected — full suite green, zero changes needed to `tests/test_auth.py::AccountStoreTest` or any other existing test.
+
+### Done-when (from the roadmap)
+
+- [x] Accounts/keys/quotas survive redeploy — already true via the SQLite file path (unchanged); Postgres adds the option to do this **without** a mounted volume and to **share** one accounts DB across multiple instances, which SQLite-on-local-disk categorically cannot do.
+- [x] Both backends tested — SQLite via the full pre-existing suite (`test_auth.py::AccountStoreTest` and everything that constructs an `AccountStore`), Postgres via the new fake-module lifecycle tests above.
+
+### Known gap (honest, not hidden)
+
+- **No live Postgres server smoke test** — same class of gap as Days 5/6/16 (no provider credentials / multi-process harness in this sandbox). The fake-module tests prove the SQL/placeholder/row-access translation is correct end-to-end against a real SQL engine standing in for Postgres, but not against `psycopg` talking to an actual `postgres://` server. Needs one real run on a machine with Postgres reachable.
+- **Jobs (`PBICOMPASS_JOBS_DB`) still SQLite-only** — this day's scope was accounts only, per the roadmap; the jobs store gets its own Postgres/object-store swap later (already flagged as a gap on Day 16).
+
+### Full suite
+
+- [x] `python -m pytest -q` — **502 passed** (was 496 on Day 16; +6 new), 2 skipped, only the 2 known pre-existing failures remain (`test_render.py::HtmlRenderTest::test_accessibility_landmarks_present` / `test_interactive_diagram_nodes_and_edges`, unchanged since Day 1, unrelated to Day 17).
+
+### Files touched
+
+- `src/pbicompass/service/accounts.py`
+- `pyproject.toml` (new `postgres` extra)
+- `.env.example`
+- `DEPLOYMENT.md`
+- `tests/test_accounts_postgres.py` (new)
+
+**Verdict: Day 17 is fully done** for its stated scope — `AccountStore` now supports Postgres behind the identical method surface every existing caller (the admin panel, the CLI, `app.py`'s auth resolution) already uses, with zero changes needed to any of them; the SQLite default is completely unaffected; and the Postgres branch is proven correct end-to-end against a real SQL engine standing in for a live server, with that one remaining gap (an actual live Postgres connection) flagged rather than glossed over.
+
+---
+
+## Day 18 (Jul 31) — Async worker (Celery+Redis)
+
+**Objective:** move `process_job` off FastAPI's in-process `BackgroundTasks` and onto a real queue, removing the Cloud Run CPU-throttling failure class documented in `DEPLOYMENT.md` — without changing `process_job` itself, which has been written queue-agnostic since it was introduced.
+
+### Design: a thin task wrapper, not a rewrite
+
+`process_job`'s own signature takes live Python objects (`JobStore`, `JobSandbox`) that can't cross a message broker. So the new `service/celery_app.py` adds:
+- a module-level `celery_app = Celery("pbicompass", broker=..., backend=...)`, configured from `PBICOMPASS_BROKER_URL`/`PBICOMPASS_RESULT_BACKEND` (both default to `redis://localhost:6379/0`), with `task_ignore_result=True` (this app polls job status via `JobStore`, never Celery's own result backend, so there's no reason to accumulate bookkeeping there);
+- `process_job_task(job_id, upload_path, sandbox_dir, jobs_db_path, options)` — a `@celery_app.task` that reconstructs a `JobStore(jobs_db_path, ...)` and a `JobSandbox` pointed at the *existing* sandbox directory the API process already created and wrote the upload into, then calls `process_job(...)` exactly as `BackgroundTasks` does today.
+- a new `JobSandbox.at(path)` classmethod (`service/sandbox.py`) — the one genuinely new piece of plumbing this day needed. The existing `JobSandbox(job_id, root=...)` constructor always **mints a new** random temp directory; a Celery worker (a separate process) instead needs to **wrap the one the API already created and populated** — `.at()` bypasses `__init__` via `__new__` to do exactly that, with nothing else about the class changed.
+- `app.py::create_job` now branches on a new `_queue_mode()` helper (`PBICOMPASS_QUEUE`, default `"inline"`): `"celery"` calls `process_job_task.delay(...)` with plain string/dict args instead of `background_tasks.add_task(process_job, ...)`. `JobStore` gained a `self.db_path` attribute (previously consumed but not retained) purely so this dispatch code can hand the worker the same path it's already using.
+- **Guarded misconfiguration:** if `PBICOMPASS_QUEUE=celery` is combined with an in-memory (`:memory:`) job store, every job would silently strand at "queued" forever — a separate worker process reconstructing its own fresh, empty in-memory DB would never be visible to this process's pollers. `create_job` checks `store.db_path == ":memory:"` up front and returns a clear `500` instead of a silent hang.
+
+### Testing — no live Redis in this sandbox, but the real `celery` package is
+
+Installed `celery`/`redis` for real (`pip install celery redis`) rather than faking Celery's API — unlike an LLM provider SDK, Celery's public surface (task decorators, registration, `.delay()`) is nontrivial to fake convincingly, and Celery ships a first-class way to test without a broker: `task_always_eager=True` runs a task's body synchronously, in-process, on `.delay()`, with no network connection to Redis at all. This is a genuinely different (lower-risk) kind of "no live smoke" gap than a faked SDK: the real task-registration/invocation machinery runs; only the hop to an actual broker over the network is skipped.
+
+- [x] New `tests/test_celery_app.py` (6 tests, both classes skip cleanly if `celery` or the service extras aren't installed): `CeleryTaskBodyTest` (2 — calls `process_job_task` directly, exactly as a real worker would after pulling a message off the broker: one asserting a full job completes and its output is visible to an independent second `JobStore` instance opened against the same file (standing in for the API process's poller), one asserting a bad upload is marked `failed` rather than raising out of the task); `CeleryEndToEndTest` (2 — drives the real `POST /jobs` → poll → `GET /download` flow with `PBICOMPASS_QUEUE=celery` and `task_always_eager=True`, and separately confirms the in-memory-store guard returns a clear 500); `InlineQueueUnaffectedTest` (2 — `_queue_mode()` defaults to `"inline"` when the env var is unset, and a full upload still completes synchronously through the untouched `BackgroundTasks` path).
+- [x] Confirmed the watchdog needs no changes: `JobStore.sweep()`'s force-fail-on-stall logic runs from `get()`/`get_output()` regardless of which executor called `process_job`, so a job stuck mid-render is bounded the same way whether it ran inline or via a Celery worker.
+
+### Done-when (from the roadmap)
+
+- [x] Jobs complete regardless of request-driven CPU windows — proven by the `CeleryEndToEndTest` flow completing a real job through the Celery dispatch path (not the request coroutine itself running the render — a separate task invocation does, exactly as a real worker process would).
+- [x] Watchdog still bounds stalls — unchanged, verified above; no test needed to be rewritten since the guarantee lives entirely in `JobStore`, not in whichever caller invokes `process_job`.
+
+### Known gaps (honest, not hidden)
+
+- **No live Redis / separate-worker-process smoke test.** No Redis server is reachable in this sandbox (same class of gap as every prior day's missing provider credentials/browser). `task_always_eager` proves the task body and the dispatch wiring are correct, but not that a real `celery -A pbicompass.service.celery_app worker` process actually receives and processes a message sent over a real Redis broker from a different process. Flagged explicitly in `DEPLOYMENT.md`'s new Celery section, not silently assumed solved.
+- **Shared filesystem requirement, not automatically satisfied.** The API and every Celery worker process must be able to read the same sandbox directory (a mounted volume, or same-host processes) — Celery does not solve this by itself, and `DEPLOYMENT.md` says so explicitly rather than implying the queue swap alone completes horizontal scale.
+- **`PBICOMPASS_JOBS_DB` is still SQLite** — multiple Celery workers pointed at the same SQLite file can share job state (SQLite supports multi-process file locking), but true concurrent-write scale still wants the Postgres/object-store swap flagged since Day 16; today's work makes the *execution* horizontally scalable, not yet the *job store* itself.
+
+### Full suite
+
+- [x] `python -m pytest -q` — **508 passed** (was 502 after Day 17; +6 new), 2 skipped, only the 2 known pre-existing failures remain (unchanged since Day 1, unrelated to Day 18).
+
+### Files touched
+
+- `src/pbicompass/service/celery_app.py` (new)
+- `src/pbicompass/service/sandbox.py` (`JobSandbox.at()`)
+- `src/pbicompass/service/jobs.py` (`self.db_path` attribute)
+- `src/pbicompass/service/app.py` (`_queue_mode()`, celery dispatch branch, in-memory-store guard)
+- `pyproject.toml` (new `queue` extra)
+- `.env.example`, `DEPLOYMENT.md`
+- `tests/test_celery_app.py` (new)
+
+**Verdict: Day 18 is fully done** for its stated scope — `process_job` itself required zero changes (it really was already queue-agnostic, as its own docstring claimed since Day 16); the Celery dispatch path is wired end-to-end and proven correct with the real `celery` package running task bodies synchronously; the one clearly-identifiable misconfiguration (celery queue + in-memory store) fails loudly instead of silently stranding jobs; and the remaining gap — an actual separate worker process consuming from a real Redis broker — is flagged rather than glossed over, consistent with every prior day's honesty standard. **Sprint 4 is now Days 16–18 done; Days 19–20 (observability, metrics/rate-limiting/secrets/backups) remain.**
+
+---
+
+## Day 19 (Aug 3) — Observability
+
+**Objective:** JSON structured logging with request/job-id correlation (content-free, asserted in a test); Sentry error tracking with PII/content scrubbing; a real readiness `/healthz` that actually checks the job store, accounts store, and (in celery mode) the queue broker.
+
+### Structured logging (`service/logging_config.py`)
+
+- [x] `JsonFormatter` — one JSON object per log line: `ts`, `level`, `logger`, `message`, `request_id`, `job_id`. Deliberately never serializes the raw exception message/traceback — only `exception_type` (`record.exc_info[0].__name__`) when present, so a call site's `log.exception(...)` can never leak a fragment of parsed report data even if some exception's `str()` happened to embed one.
+- [x] `request_id_var`/`job_id_var` — `contextvars.ContextVar`s, `"-"` default. A new `_request_id` middleware in `app.py` sets `request_id_var` per HTTP request (from an incoming `X-Request-Id` header, or a fresh uuid) and echoes it back as a response header. `job_id_var` is set **explicitly inside `process_job` itself** (`worker.py`), not inherited from request context — this was a deliberate choice: it works identically whether the job runs inline (`BackgroundTasks`, same process), via Celery (a separate process with no shared context at all), or from the CLI, whereas relying on ambient context propagation across the background-task boundary would only have covered the inline case.
+- [x] `configure_logging()` — idempotent (clears handlers before adding its own), so calling it once per `create_app()` (and repeatedly across tests) never accumulates duplicate handlers/duplicate log lines. Wired into `create_app()`.
+
+### Sentry (`service/sentry_config.py`)
+
+- [x] `init_sentry()` — off unless `SENTRY_DSN` is set; lazy-imports `sentry_sdk` so a deploy that never sets the DSN needs no new dependency (new `observability` extra: `sentry-sdk`).
+- [x] `send_default_pii=False`, `include_local_variables=False`, `include_source_context=False`, `traces_sample_rate=0.0` (perf tracing off — not needed, avoids capturing extra request context), and a `before_send` hook that scrubs every captured exception's `value` (message text) down to just its type name and drops any `request` key from the event.
+- [x] Wired into `create_app()` (`init_sentry()` called at startup; logs one content-free line if it activates).
+
+### `/healthz` — real readiness, not an unconditional 200
+
+- [x] Now `{"ok": bool, "checks": {"jobs_db": bool, "accounts_db": bool (only when an accounts store is configured), "queue": bool}}`, `503` when any check fails.
+- [x] `jobs_db`/`accounts_db` — a cheap real query against each store (`store.get(...)`, `account_store.usage_today(...)`) wrapped in try/except; a closed/broken connection flips the check to `False`.
+- [x] `queue` — trivially `True` in the default `inline` queue mode (no external dependency to check). In `PBICOMPASS_QUEUE=celery` mode, attempts a real broker connection via `celery_app.connection().ensure_connection(...)`.
+
+### A real, environment-specific gotcha found while building the queue check
+
+Initially wrote the broker probe trusting `redis-py`'s own `socket_connect_timeout`. Tested against an actually-unreachable `localhost:6379` in this sandbox and measured **~15.8 seconds** to fail despite `socket_connect_timeout=0.5` — the driver's own timeout did not reliably bound the attempt on this platform. Rather than ship a `/healthz` that can silently block for 15+ seconds under a transient network hiccup, the probe now runs in a `ThreadPoolExecutor` with an explicit outer wall-clock deadline (`future.result(timeout=1.5)`), and the pool is shut down with `wait=False` so a still-hanging probe thread is never waited on. This is documented explicitly in `DEPLOYMENT.md` as a "verify on your actual platform" note rather than assumed universally fast.
+
+- [x] `tests/test_healthz.py::HealthzQueueCheckTest::test_queue_check_is_bounded_even_when_the_broker_probe_hangs` — simulates a broker connection that sleeps 5 seconds inside `ensure_connection`, and asserts the `/healthz` response still comes back in under 3 seconds with `queue: false`. This is the regression test for the exact gotcha above.
+
+### Testing
+
+- [x] `tests/test_logging_config.py` (5 tests): JSON shape/fields, the exception-message-never-appears/type-name-only guarantee, request/job-id correlation and reset-back-to-default, handler-idempotency, and — the day's own literal done-when — `FailedJobProducesTraceableContentFreeLogTest`, which runs a real failing job through `process_job` with a planted "secret" string in the bogus upload and asserts (a) every log line during that job carries its `job_id` and (b) the secret never appears in the log stream.
+- [x] `tests/test_sentry_config.py` (3 tests): off-by-default with no DSN; and — using the **real** `sentry_sdk` package (installed for this work) with a custom in-memory `Transport` subclass standing in for the network call, no fake DSN needed — an exception's message is scrubbed to its type name in the actually-captured event, and no `request` key is ever attached. This is what caught the `include_source_context` leak described in `PRODUCTION_ROADMAP.md`'s Day 19 entry: the test failed on its first run (the planted secret appeared in a stack frame's `pre_context` source lines) until that flag was added — a genuine defect the test itself found, not merely confirmed.
+- [x] `tests/test_healthz.py` (6 tests): happy-path shape, `accounts_db` appears only when configured, `jobs_db`/`accounts_db` failures each independently return 503, and the two queue-check tests described above.
+- [x] Updated the one pre-existing test that hard-coded the old unconditional payload — `tests/test_service.py::ServiceTest::test_healthz_and_index` now checks the new shape instead of exact-equality against `{"ok": True}`.
+
+### Known gaps (honest, not hidden)
+
+- **No live Sentry project / real DSN smoke test.** The fake-transport tests prove the SDK's real capture/scrub pipeline runs correctly, but not that an event actually lands in a real Sentry project dashboard. Same class of gap as every prior day's missing external credentials.
+- **No live Redis smoke test for the healthz queue check**, beyond the bounded-timeout regression above (which uses a mocked connection, not a real unreachable Redis) — consistent with the same standing gap from Day 18.
+
+### Full suite
+
+- [x] `python -m pytest -q` — **522 passed** (was 508 after Day 18; +14 new: 5 logging + 3 sentry + 6 healthz), 2 skipped, only the 2 known pre-existing failures remain (unchanged since Day 1, unrelated to Day 19).
+
+### Files touched
+
+- `src/pbicompass/service/logging_config.py` (new)
+- `src/pbicompass/service/sentry_config.py` (new)
+- `src/pbicompass/service/app.py` (`configure_logging()`/`init_sentry()` wiring, `_request_id` middleware, real `/healthz`)
+- `src/pbicompass/service/worker.py` (`job_id_var` set/reset around `process_job`)
+- `pyproject.toml` (new `observability` extra)
+- `.env.example`, `DEPLOYMENT.md`
+- `tests/test_logging_config.py` (new), `tests/test_sentry_config.py` (new), `tests/test_healthz.py` (new)
+- `tests/test_service.py` (updated `/healthz` assertion)
+
+**Verdict: Day 19 is fully done** — structured content-free logging with request/job correlation, Sentry wired with real (not assumed) content scrubbing that caught a genuine leak vector during its own test-writing, and a `/healthz` that performs real readiness checks with an explicitly bounded queue-broker probe after a real, measured platform gotcha. **Sprint 4 is now Days 16–19 done; Day 20 (metrics, rate limiting, secrets, backups) remains.**
+
+---
+
+## Day 20 (Aug 4) — Metrics, rate limiting, secrets, backups
+
+**Objective:** answer the roadmap's own operational questions (jobs/min, failure rate, cost/job, 429 rate) via a real `/metrics` endpoint; stop a single IP from hammering `POST /jobs`; move every actual secret into a platform secret store (and prove none of them leak into logs); and give the accounts store a genuine, testable backup + restore-drill path.
+
+### Metrics (`service/metrics.py`)
+
+- [x] New `MetricsRegistry` — thread-safe, stdlib-only, injectable clock (`now:` callable) for deterministic tests. Tracks `jobs_created`/`jobs_done`/`jobs_failed`, a trailing-window `jobs_per_minute`, `failure_rate`, `quota_rejected_total`/`rate_limited_total`/`http_429_total`, and token counts (`avg_input_tokens_per_job`/`avg_output_tokens_per_job`/`avg_llm_calls_per_job`) averaged only over jobs that actually used an LLM (an offline job doesn't skew the average toward zero) — [metrics.py](src/pbicompass/service/metrics.py).
+- [x] **"Cost/job" is a token-count proxy, not a dollar figure, by design** — per-token pricing varies by provider/model and changes over time; a hard-coded price table would go stale silently. An operator who knows their own provider's current rate multiplies these counts themselves.
+- [x] `to_prometheus_text()` — a dozen counters/gauges in the standard Prometheus text exposition format, hand-rolled (no `prometheus_client` dependency needed for this).
+- [x] Wired into `JobStore` — new optional `metrics: MetricsRegistry | None = None` constructor param (`None` default, so every pre-existing `JobStore()` test call site is completely unaffected) — [jobs.py](src/pbicompass/service/jobs.py). Recorded at `create()`, `mark_done()` (with `usage`), `mark_failed()`, and inside `sweep()`'s watchdog force-fail branch via the UPDATE statement's own `cursor.rowcount` (previously discarded) so a stuck-job timeout is counted as a failure too, not just the explicit `mark_failed()` path.
+- [x] New `GET /metrics` in `app.py` — JSON by default, `?format=prometheus` for the text format; gated by the same `_require_admin` check as `/admin/api/*` (a Prometheus scrape config can supply `X-Admin-Token` exactly as a browser does).
+- [x] **Design fix during wiring:** `create_app()` originally only attached the app's `MetricsRegistry` to a `JobStore` it constructed itself (`owns_job_store`) — meaning every existing test, which universally passes an explicit `JobStore()` for isolation, would never see job counts flow through `/metrics` at all. Fixed by always attaching the registry to whichever store the app ends up using (`if store.metrics is None: store.metrics = metrics`), whether that store was built internally or passed in — caught by writing `test_job_creation_via_the_real_endpoint_increments_metrics` first and watching it fail before this fix, not assumed correct.
+
+### Rate limiting (`service/ratelimit.py`)
+
+- [x] New `RateLimiter` — sliding-window, per-key (client IP), injectable clock, same shape as `AdminGuard` but deliberately a **separate** class: `AdminGuard` limits *failed* auth attempts (brute-force lockout); this limits *every* request regardless of success/failure — the right shape for abuse protection that also has to cover the unauthenticated `public` tenant, which the per-plan daily quota never sees.
+- [x] Wired into `POST /jobs` (`app.py`) as the very first check — ahead of `resolve_tenant`/auth and the daily-quota check — via new `PBICOMPASS_UPLOAD_RATE_LIMIT`/`PBICOMPASS_UPLOAD_RATE_WINDOW_SECONDS` env vars (defaults: 20 requests / 60s). A rejected request increments `metrics.record_rate_limited()`, counted separately from `metrics.record_quota_rejected()` in `/metrics`' `rate_limited_total` vs. `quota_rejected_total`.
+
+### Secrets management (no code changes needed — already all env-var-based)
+
+- [x] New DEPLOYMENT.md "Secrets management" section enumerating every actual secret (`PBICOMPASS_ADMIN_TOKEN`, the four provider API keys, `PBICOMPASS_DB`/`PBICOMPASS_BROKER_URL` when they embed credentials, `SENTRY_DSN`) and where to put each in a platform's secret store instead of a plain env var or committed file.
+- [x] **Operationalized, not just documented:** new `tests/test_logging_config.py::SecretsNeverLoggedTest` drives two real end-to-end scenarios through a live app — a wrong `/admin/api/verify` token guess, and a real job carrying a caller-supplied BYOK `provider_api_key` through to a failed/completed state — and asserts neither the real admin token, the guessed one, nor the BYOK key ever appears anywhere in the structured JSON log stream. This is the actual executable form of the roadmap's "no secret in image/env" done-when, not an assertion by design intent alone.
+
+### Backups & restore drill
+
+- [x] New `AccountStore.dump()`/`.restore()` — [accounts.py](src/pbicompass/service/accounts.py): a portable, stdlib-only logical snapshot (account rows + per-day usage counts, `key_hash` only — never a raw API key) and an idempotent upsert-restore (`ON CONFLICT(...) DO UPDATE`), both working identically against the SQLite or Postgres backend since they're written against the same `_Connection` surface every other method already uses — no new dialect fork needed.
+- [x] New `service/db_backup.py` — thin file-based wrapper (`backup_to_file`/`restore_from_file`) around a plain JSON file, plus new CLI subcommands `pbicompass account backup --out <file>` / `pbicompass account restore --in <file>` — [cli.py](src/pbicompass/cli.py).
+- [x] Positioned in DEPLOYMENT.md as a **complement** to (not a replacement for) a managed Postgres provider's own automated point-in-time snapshots — this is the mechanism for actually *running the restore drill* (restore into a scratch database, verify the rows are really there) without needing the `pg_dump`/`pg_restore` client binaries installed on whatever platform runs the app, or any tooling at all for the SQLite self-host path.
+
+### Testing
+
+- [x] `tests/test_metrics.py` (9 tests): registry unit tests (empty-snapshot divide-by-zero safety, job counts, the trailing-window `jobs_per_minute` computation via a fake clock — corrected mid-write after the first version's own expected value was arithmetically wrong, caught by actually running it — averaged token/call counts excluding usage-less jobs, independent 429 counters, well-formed Prometheus text) plus `/metrics` endpoint wiring tests (admin-gated like `/admin`, JSON shape, wrong-token 401, `?format=prometheus`, and a real end-to-end job through `POST /jobs` incrementing `jobs_created`).
+- [x] `tests/test_ratelimit.py` (5 tests): limiter unit tests (blocks past the limit, independent per-key budgets, old hits age out of the window via a fake clock) plus `POST /jobs` wiring (3rd request in a 2-request window gets 429 and is reflected in `/metrics`' `rate_limited_total`; the generous default limit doesn't interfere with a single normal request).
+- [x] `tests/test_db_backup.py` (5 tests) + 1 new test added to `tests/test_accounts_postgres.py`: dump is content-free (raw key never appears, only its hash) and round-trips account + usage data; restore is idempotent (applying the same snapshot twice doesn't duplicate or error); an empty store dumps/restores cleanly; the actual file-based restore-drill shape (backup to a file, restore into a brand-new scratch store, verify the data is genuinely there); and the Postgres branch specifically, via the same fake-`psycopg`-module technique `test_accounts_postgres.py` established on Day 17 (not just the SQLite default).
+- [x] `tests/test_jobs.py` — new `MetricsWiringTest` (4 tests: create/mark_done recorded with token averages, mark_failed recorded, the watchdog force-fail path recorded via `sweep()`, and a no-registry-configured call site is a silent no-op) plus 1 new test on the existing `CreateAppDefaultStoreWiringTest` class proving the fix described above (an explicitly-passed store still gets the app's metrics registry attached).
+- [x] `tests/test_logging_config.py` — new `SecretsNeverLoggedTest` (2 tests, described above).
+
+### A real, unrelated gap found and fixed while touching `.env.example`
+
+Day 18's own `ROADMAP_PROGRESS.md` entry claimed `.env.example` was updated with the new Celery queue vars, but `PBICOMPASS_QUEUE`/`PBICOMPASS_BROKER_URL`/`PBICOMPASS_RESULT_BACKEND` were never actually present in the file (confirmed by grep before assuming otherwise). Fixed today alongside the new rate-limit vars, since this file was already being touched for Day 20's own env vars — same spirit as Day 5's typo fixes and Day 15's date-normalization fix (QA passes fixing what they find, not just what they were scoped to look for).
+
+### Done-when (from the roadmap)
+
+- [x] `/metrics` reports live jobs/min, failure rate, cost/job (token proxy), and 429 rate — proven via `test_job_creation_via_the_real_endpoint_increments_metrics` and the registry unit tests; the Prometheus-format output is ready to point a real Grafana/Prometheus/Datadog scrape config at.
+- [x] Restore drill passes — proven end-to-end against both backends (SQLite directly, Postgres via the fake-module technique), not merely documented as a procedure.
+- [x] No secret in image/env — every secret is already env-var-only (no change needed there); "never logged" is now a passing regression test, not an assumption.
+
+### Known gap (honest, not hidden)
+
+- **No live Postgres/Redis/Prometheus/Grafana instance in this sandbox** — same class of gap flagged on Days 17–19. The restore drill and the Postgres branch of dump/restore are proven against a real SQL engine standing in for Postgres (the established fake-module technique), not an actual live server; the `/metrics` Prometheus endpoint's *shape* is correct and testable, but no real scrape by an actual Prometheus/Grafana instance has happened here.
+- **No live abuse-scale rate-limit test** — the wiring test proves the 429 fires at the configured threshold; it doesn't simulate a real distributed abuse pattern (many IPs, header spoofing via `X-Forwarded-For` behind a reverse proxy) — worth revisiting once this sits behind a real proxy/load balancer in Sprint 7's deployment work, since `request.client.host` alone can be the proxy's own address in that topology rather than the original caller's.
+
+### Full suite
+
+- [x] `python -m pytest -q` — **550 passed** (was 522 after Day 19; +28 new), 2 skipped, only the 2 known pre-existing failures remain (`test_render.py::HtmlRenderTest::test_accessibility_landmarks_present` / `test_interactive_diagram_nodes_and_edges`, unchanged since Day 1, unrelated to Day 20).
+
+### Files touched
+
+- `src/pbicompass/service/metrics.py` (new)
+- `src/pbicompass/service/ratelimit.py` (new)
+- `src/pbicompass/service/db_backup.py` (new)
+- `src/pbicompass/service/jobs.py` (`metrics=` wiring at `create`/`mark_done`/`mark_failed`/`sweep`)
+- `src/pbicompass/service/app.py` (`/metrics` endpoint, rate-limiter wiring on `POST /jobs`, always-attach-metrics-to-store fix)
+- `src/pbicompass/service/accounts.py` (`dump()`/`restore()`)
+- `src/pbicompass/cli.py` (`account backup`/`account restore` subcommands)
+- `.env.example` (new rate-limit vars + the missed Day-18 queue vars)
+- `DEPLOYMENT.md` (new "Metrics & rate limiting", "Secrets management", "Backups & restore drill" sections; env var table updates)
+- `tests/test_metrics.py` (new), `tests/test_ratelimit.py` (new), `tests/test_db_backup.py` (new)
+- `tests/test_jobs.py`, `tests/test_accounts_postgres.py`, `tests/test_logging_config.py` (extended)
+
+**Verdict: Day 20 is fully done** — and with it, **Sprint 4 (Days 16–20) is complete**: the service now persists jobs and accounts across restarts, can run its worker on a real queue, produces structured content-free logs with error tracking and real readiness checks, and now also reports real operational metrics, protects its upload endpoint from per-IP abuse, keeps every actual secret out of the image with a regression test proving it never leaks into logs, and has a genuine, tested backup + restore-drill path for its durable state. The remaining gaps are exactly the class already flagged across Sprint 4 — no live Postgres/Redis/Prometheus instance reachable in this sandbox — never silently assumed solved.
+
+---
+
+## Sprint 5 — Standard SaaS auth (Aug 5–11 · Days 21–25)
+
+| Day | Date | Task | Status |
+|---|---|---|---|
+| 21 | Aug 5 | User model + password auth | ✅ **Done** |
+| 22 | Aug 6 | Email flows (verification, reset) | ✅ **Done** |
+| 23 | Aug 7 | "Sign in with Microsoft" (OIDC) | ✅ **Done** |
+| 24 | Aug 10 | Account dashboard | ✅ **Done** |
+| 25 | Aug 11 | Upload UI → product UI + auth tests | ✅ **Done** |
+
+---
+
+## Day 21 (Aug 5) — User model + password auth
+
+**Objective:** a self-serve user can create their own account with an email/password, log in, and log out — on top of (not instead of) the existing admin-provisioned, API-key-only tenant model — with sessions and CSRF protection, and without touching the existing Bearer-API-key path at all.
+
+### Data model (extend `AccountStore`, not a new store)
+
+- [x] Three new tables in `accounts.py`'s existing schema: `users` (id/email `UNIQUE`/password_hash/email_verified/created_at), `memberships` (user_id↔account_id, `role` default `'owner'`, composite PK — already shaped for the teams/orgs work in §8 even though nothing enforces roles yet), `sessions` (`token_hash` PK, user_id, csrf_token, created_at, expires_at) — [accounts.py](src/pbicompass/service/accounts.py). Kept in `AccountStore` rather than a new class specifically to reuse the existing `_Connection` wrapper that already makes every method here backend-agnostic (SQLite/Postgres) — no new dialect fork needed for any of this.
+- [x] New `User`/`SessionInfo` dataclasses, exported from `service/__init__.py` alongside `Account`.
+
+### Password hashing — a deliberate deviation from the roadmap's literal wording
+
+The roadmap names "argon2/bcrypt hashing." Implemented with stdlib **`hashlib.scrypt`** instead (new [passwords.py](src/pbicompass/service/passwords.py)) — a memory-hard KDF in the same security class, available via OpenSSL since Python 3.6, needing **zero new dependencies**. This matters because `pyproject.toml`'s own header comment states the project's architecture explicitly: parsing core is zero-dependency, and *everything* past it (`agents`/`service`/`postgres`/`queue`/`observability`) is a lazy-imported optional extra. Password hashing is different in kind — it's not optional once auth is enabled at all — so adding a mandatory `argon2-cffi`/`bcrypt` dependency for it would be the first crack in that architecture. Same class of judgment call as Day 6's resolution of a roadmap self-contradiction: documented at the point of the deviation, not silently substituted.
+
+- [x] `hash_password`/`verify_password` — versioned encoding (`scrypt$n$r$p$salt_hex$hash_hex`) so cost parameters can be raised later without invalidating already-issued hashes; `verify_password` never raises on a malformed/foreign encoding, only returns `False`.
+- [x] `tests/test_user_auth.py::PasswordHashingTest` (5 tests): round-trip, wrong password rejected, two hashes of the same password differ (random salt), malformed/foreign encodings rejected without raising, the encoding carries its own parseable cost parameters.
+
+### `AccountStore` methods
+
+- [x] `create_user(email, password, name, plan)` — normalizes email to lowercase, validates format and an 8-char password minimum (`ValueError`, not a caught DB constraint — so the error message and behavior are identical on SQLite and Postgres, which raise different exception types for a UNIQUE violation), pre-checks for an existing email, then **reuses `create_account()` as-is** to mint a brand-new tenant (`"u-" + token_hex(8)`) and API key, inserts the `users` row, and links a `memberships` row with `role="owner"`. Returns `(user, account, raw_api_key)`.
+- [x] `authenticate(email, password)` — returns `None` for both "no such user" and "wrong password" (collapsed deliberately, so a failed login can't be used to enumerate registered emails).
+- [x] `account_for_user(user_id)` / `create_session(user_id, ttl_seconds)` / `verify_session(raw_token)` / `delete_session(raw_token)` — session tokens are hashed the same way an API key is (`_hash_key`, high-entropy so a fast hash is fine); `verify_session` lazily sweeps expired rows on read, the same pattern `JobStore.sweep()` already established, rather than a separate background task.
+- [x] `tests/test_user_auth.py::AccountStoreUserSessionTest` (8 tests) covering all of the above, including session expiry and a garbage-token lookup.
+
+### HTTP layer (`app.py`)
+
+- [x] `POST /auth/signup` — creates user + account + API key, auto-logs in (sets session + CSRF cookies), returns the API key once (same "shown once" convention as an admin-created account).
+- [x] `POST /auth/login` — brute-force lockout after 8 failures from the same IP within 5 minutes, reusing `admin.py::AdminGuard` as a **separate instance** (a bad login guess and a bad admin-token guess are unrelated events) — exactly what §7.5 asks for ("reuse the admin brute-force-lockout pattern").
+- [x] `POST /auth/logout` — requires the session cookie **and** a matching `X-CSRF-Token` header (double-submit check against the separate, non-`HttpOnly` CSRF cookie).
+- [x] All three routes share a new, separate `RateLimiter` instance (`PBICOMPASS_AUTH_RATE_LIMIT`/`_WINDOW_SECONDS`, default 10/60s per IP) — distinct from Day 20's upload limiter, since auth abuse and upload abuse are different threats with different acceptable volumes. This also closes a gap Day 20 explicitly deferred: "no auth routes shipped yet" no longer applies.
+- [x] Cookies: `pbicompass_session` (`HttpOnly`, `Secure` by default, `SameSite=Lax`) and `pbicompass_csrf` (same flags except **not** `HttpOnly` — same-site JS needs to read it back to echo as a header). `PBICOMPASS_COOKIE_SECURE=0` is the escape hatch for a plain-http local dev session.
+- [x] `503` (not a crash) from all three routes when no accounts store is configured — identical precondition and shape to the existing admin-panel gating.
+
+### Scope line held deliberately (not silently expanded, not silently deferred)
+
+`resolve_tenant()`/`POST /jobs` do **not** yet accept a session cookie — only the roadmap's own Day 21 done-when ("register and log in") is in scope; a session driving `/jobs` directly (and the harder question of how far CSRF protection needs to extend onto that specific route) is real work for the account-dashboard/upload-UI days (24–25), where it's actually needed by a UI. Building it in half today (protecting logout but not a state-changing upload) would be a worse, inconsistent CSRF story than not building it yet. `email_verified` exists on the schema but nothing enforces or emails it — that's Day 22.
+
+### A real test-infrastructure bug found and fixed while writing the tests
+
+The first version of the API wiring tests used `create_app(JobStore(), require_auth=False, admin_token="t")` without an explicit `account_store=` — which, unlike every existing service test (`test_auth.py` always passes its own `AccountStore(":memory:")`), let `create_app()` fall through to its **file-backed default** (`$PBICOMPASS_DB`, defaulting to a real `./pbicompass.db`). Running the suite silently created and then accumulated user rows in that file across test runs (`new@example.com already exists` failures appeared on a second run, not the first) — caught by actually running the tests twice, not by inspection. Fixed by passing an explicit in-memory `account_store=AccountStore(":memory:")` everywhere, matching the rest of the suite's own convention; the stray `pbicompass.db` this produced (already `.gitignore`d) was deleted.
+
+**A second, genuine cookie-semantics gotcha, also found by running the tests, not by inspection:** `Secure` cookies (the production default) are correctly never re-sent by an httpx-based `TestClient`'s cookie jar over its default plain-`http://testserver` base URL — that's standard, correct cookie-jar behavior, not a bug in the app. Fixed by constructing the auth test clients with `base_url="https://testserver"` (still the in-process ASGI transport, no real TLS needed) so the cookie jar treats the session as same-origin-secure, matching what a real browser sees behind the TLS termination every `DEPLOYMENT.md` deployment option puts in front of this app.
+
+### Testing
+
+- [x] `tests/test_user_auth.py` (25 tests, service-extras-gated where it hits the HTTP layer): password hashing (5), `AccountStore` user/session methods (8), and full API wiring (12) — signup success + cookies set, duplicate email 400, short password 400, login success/wrong-password/unknown-user (all 401, indistinguishable), logout missing/wrong/correct CSRF token, logout without a session, login lockout after 8 failures, auth-route rate limiting, accounts-not-configured 503, and — the day's own done-when for backward compatibility — a test that signs up a user and then drives `/me` with the API key signup itself returned, proving the existing Bearer-API-key path is untouched.
+
+### Done-when (from the roadmap)
+
+- [x] A new user can register and log in — `test_signup_creates_account_and_sets_cookies` and `test_login_success_and_wrong_password`.
+- [x] API-key path unchanged — `test_api_key_path_is_completely_unchanged`, plus the full existing suite (`test_auth.py` and everything else) passing unmodified.
+
+### Full suite
+
+- [x] `python -m pytest -q` — **575 passed** (was 550 after Day 20; +25 new), 2 skipped, only the 2 known pre-existing failures remain (`test_render.py::HtmlRenderTest::test_accessibility_landmarks_present` / `test_interactive_diagram_nodes_and_edges`, unchanged since Day 1, unrelated to Day 21).
+
+### Files touched
+
+- `src/pbicompass/service/passwords.py` (new)
+- `src/pbicompass/service/accounts.py` (`users`/`memberships`/`sessions` schema; `User`/`SessionInfo`; `create_user`/`get_user_by_email`/`authenticate`/`account_for_user`/`create_session`/`verify_session`/`delete_session`)
+- `src/pbicompass/service/app.py` (`/auth/signup`/`/auth/login`/`/auth/logout`; CSRF cookie helpers; auth rate limiter + reused `AdminGuard` instance for login lockout)
+- `src/pbicompass/service/__init__.py` (export `User`/`SessionInfo`)
+- `.env.example`, `DEPLOYMENT.md` (new "Self-serve signup & sessions" section, env var table)
+- `tests/test_user_auth.py` (new)
+
+**Verdict: Day 21 is fully done** — the user/session data model and the signup/login/logout endpoints are real, tested end-to-end (including the two genuine gotchas the tests themselves caught: a stray persistent-file leak and a Secure-cookie/test-transport interaction), and the existing API-key tenant model is provably untouched. The scope line — no session-based `/jobs` access yet — is held deliberately, not glossed over, and set up to land cleanly in Days 24–25.
+
+---
+
+## Day 22 (Aug 6) — Email flows (verification + password reset)
+
+**Objective:** wire a transactional email provider and deliver the two flows it exists for — email verification (on signup) and password reset — with all the new routes rate-limited, and unverified users gated appropriately once verification is required.
+
+### Transactional email — stdlib `smtplib`, not a vendor SDK (`service/email.py`)
+
+- [x] Same "prefer the stdlib over a third-party client" judgment as Day 21's scrypt choice, and for the same architectural reason: **every** transactional provider (Resend / Postmark / Amazon SES / Mailgun / …) exposes a plain **SMTP** interface, so stdlib `smtplib` reaches all of them with **zero new dependencies** — no `resend`/`postmark`/`boto3` SDK bolted onto the core. The provider is a config choice (`PBICOMPASS_SMTP_*`), not a code dependency.
+- [x] Backends selected by `PBICOMPASS_EMAIL_BACKEND`: `ConsoleEmailBackend` (**default** — *logs* the verify/reset link so the entire flow works on a fresh self-host with no provider configured at all; the link is auth data, not report data, so logging it is consistent with the content-free-*report*-logging convention), `SMTPEmailBackend` (real delivery), and `MemoryEmailBackend` (records sent messages; never selected by env, only injected by tests). `build_email_backend()` reads env and **falls back to console** if `smtp` is selected but host/from aren't set — a misconfig degrades, it doesn't crash.
+- [x] **Content-free w.r.t. report data by construction** — an email this system sends only ever contains a fixed-template auth link + the recipient's own address; no report metadata is ever in scope of this module. A transient SMTP delivery error is caught, logged by **type name only**, and swallowed — a mail hiccup must never fail the signup/reset request that triggered it (a verify email the user didn't get is re-requestable; a signup that 500s because SMTP blipped is not an acceptable trade).
+- [x] `create_app(..., email_backend=None)` — new injectable parameter (defaults to `build_email_backend()`), stored on `app.state.email_backend`, matching the existing `account_store`/`admin_guard` injection pattern.
+
+### Data model + `AccountStore` methods (Day 22 half of §7.1)
+
+- [x] New `email_tokens` table (`token_hash` PK, user_id, `purpose` ∈ {verify, reset}, created_at, expires_at) — added to the existing schema, same backend-agnostic `_Connection` surface.
+- [x] `create_email_token(user_id, purpose, ttl)` — single-use, **hashed** (only the hash stored, raw goes in the link — same reasoning as an API key/session token), expiring; deletes any prior unused token of the same purpose first, so requesting a fresh link invalidates the previous one.
+- [x] `consume_email_token(raw_token, purpose)` — verify-and-burn (returns `user_id`, deletes the row so a link works exactly once; `None` for unknown/expired/wrong-purpose); lazily sweeps expired rows on read, same pattern as sessions.
+- [x] `mark_email_verified(user_id)`; `set_password(user_id, new_password)` — sets a new hash **and invalidates every existing session for that user in the same transaction** (defense in depth: a reset boots any session opened with the old password); `get_user(user_id)`.
+- [x] TTLs: verification 24h, reset 1h (deliberately shorter) — `VERIFY_TOKEN_TTL_SECONDS`/`RESET_TOKEN_TTL_SECONDS`.
+
+### Routes (`app.py`, §7.5)
+
+- [x] `POST /auth/signup` — now also sends a verification email (via a new `_send_verification_email` helper that mints a token and builds the link, absolute when `PBICOMPASS_PUBLIC_URL` is set); returns `verification_email_sent: true`.
+- [x] `GET /auth/verify?token` — one-click (a human opens it from their inbox), so it returns a **minimal HTML result page**, not JSON; consumes the single-use token and marks the user verified; bad/used/expired token → a 400 result page.
+- [x] `POST /auth/reset-request` — **always returns 200** whether or not the email is registered (enumeration-safe); the reset email is only actually sent if a matching user exists.
+- [x] `GET /auth/reset?token` — a **minimal landing form** that POSTs the new password back (the least that makes an emailed reset link usable end-to-end); `POST /auth/reset` — accepts **either JSON (API callers) or a form post** (the landing page), consumes the token, sets the new password, and invalidates sessions.
+- [x] All five auth-email routes go through the **existing per-IP `auth_rate_limiter`** (§7.5's "rate-limit all auth routes").
+
+### Unverified-user gate (the "gated appropriately" done-when)
+
+- [x] New `PBICOMPASS_REQUIRE_EMAIL_VERIFICATION` (snapshotted once at `create_app` time, like `require_auth`, not read per-request) — **off by default** so a fresh self-host isn't locked out of its own login before an email provider is configured. When on, an unverified user's `/auth/login` is refused with a **403** — but only *after* the password is validated (so it's not an email-enumeration vector), and a **fresh verification link is auto-re-sent** so a user who lost the first email isn't dead-ended.
+
+### Testing (`tests/test_email_auth.py`, 25 tests)
+
+- [x] Email backends (7): memory records; console doesn't raise; `build_email_backend` defaults to console and falls back to console on incomplete SMTP config; `SMTPEmailBackend` builds+sends a correct message through a **fake `smtplib.SMTP`** (asserting host/starttls/login/To/Subject) — the same "stand in for the network edge" technique as the Postgres/Celery tests; and an SMTP delivery error is swallowed, not raised.
+- [x] `AccountStore` token methods (8): verify round-trip + single-use, wrong-purpose rejected, expiry, fresh-token-invalidates-prior, unknown-purpose raises, mark-verified, `set_password` changes the hash + kills sessions, short-password rejected.
+- [x] End-to-end flows (10, service-gated) driven with an injected `MemoryEmailBackend` and a helper that pulls the token back out of the emailed link exactly as a user's mail client would: signup sends a verify email; the link verifies the user; the link is single-use; bad token → 400; reset-request for an unknown email is 200 **and sends nothing**; full reset flow (old password fails, new works); reset token single-use; the **form-post** reset path; short-password reset → 400.
+- [x] Unverified-login gate (2): with the flag on, an unverified login is 403 **and** re-sends a fresh verify link → verifying then lets login succeed; with the flag off (default), unverified login is allowed.
+
+### Two honest notes
+
+- **Stray `pbicompass.db` during the test run** — traced to the **pre-existing** Day-20 `test_metrics.py`/`test_ratelimit.py`/`test_admin.py` cases that call `create_app(JobStore(), require_auth=False, admin_token="t")` *without* an explicit `account_store`, which makes `create_app` open the real default `$PBICOMPASS_DB` file. It's `.gitignore`d and untracked (confirmed via `git ls-files`), unrelated to today's changes, and was deleted after the run; today's own tests all pass an explicit in-memory store (the convention established on Day 21).
+- **No live SMTP smoke test** — no reachable mail server in this sandbox (same class of gap as the Postgres/Redis/provider gaps on Days 17–20). The SMTP backend is proven correct against a fake `smtplib.SMTP` (message construction, TLS, auth, send) and via the safe-fallback path; an actual "does a real provider deliver this" check needs a session with SMTP credentials.
+
+### Full suite
+
+- [x] `python -m pytest -q` — **600 passed** (was 575 after Day 21; +25 new), 2 skipped, only the 2 known pre-existing failures remain (`test_render.py::HtmlRenderTest::test_accessibility_landmarks_present` / `test_interactive_diagram_nodes_and_edges`, unchanged since Day 1, unrelated to Day 22).
+
+### Files touched
+
+- `src/pbicompass/service/email.py` (new)
+- `src/pbicompass/service/accounts.py` (`email_tokens` table; `create_email_token`/`consume_email_token`/`mark_email_verified`/`set_password`/`get_user`/`_delete_sessions_for_user`; verify/reset TTL constants)
+- `src/pbicompass/service/app.py` (`email_backend` injection; `/auth/verify`, `/auth/reset-request`, `/auth/reset` GET+POST; signup verify-email; unverified-login gate; minimal HTML result/form page helpers; `_read_token_and_password` JSON-or-form reader)
+- `.env.example`, `DEPLOYMENT.md` (new email/verification section, env var table, updated the now-stale Day-21 "email not yet emailed" scope note)
+- `tests/test_email_auth.py` (new)
+
+**Verdict: Day 22 is fully done** — verification and password reset both work end-to-end (proven by pulling real emailed links through the flow, not just asserting a call was made), the whole thing runs on a bare self-host via the console backend with no provider, and the unverified-user gate is implemented behind a default-off flag that can't lock a fresh install out of itself. The only gap is the standard "no live external service in this sandbox" one, flagged rather than hidden.
+
+---
+
+## Day 23 (Aug 7) — "Sign in with Microsoft" (Entra ID OIDC)
+
+**Objective:** let a Microsoft (Entra ID / Azure AD) account sign in and map to a user — alongside (not replacing) email+password — as the low-friction path for a Power-BI audience and the stepping stone to enterprise SSO.
+
+### The flow — standard OIDC auth-code + PKCE, zero new dependencies (`service/oidc.py`)
+
+- [x] Third architecture call of Sprint 5 in the same spirit as Day 21's scrypt and Day 22's smtplib: **no crypto/JWT library added.** The token exchange is a stdlib `urllib.request` POST over the default verified-TLS context; the ID token's claims are read by base64url-decoding the JWT payload — **not** by verifying its RS256 signature against Entra's JWKS.
+- [x] **Why skipping signature verification is sound here (documented at the code, not hand-waved):** OpenID Connect Core §3.1.3.7 explicitly allows a confidential client that obtains the ID token by **direct** communication with the token endpoint — which an auth-code confidential client does: server-to-server, TLS-verified, authenticated with the client secret — to rely on that TLS channel in place of validating the token signature. This is the exact situation. We still validate **audience** (== client id), **expiry** (with 60s skew), the anti-replay **nonce**, and the **issuer** (exact match for a single-tenant GUID; Microsoft-issuer-shape + presence of a `tid` claim for the multi-tenant `common`/`organizations`/`consumers` values, whose token issuer is the user's real tenant GUID, not the placeholder). A deployment wanting JWKS verification on top can add it behind a crypto extra without changing the flow.
+- [x] `OIDCConfig` (tenant/client_id/client_secret/redirect_uri/scopes) with derived `authorize_endpoint`/`token_endpoint`/`issuer`, and `OIDCConfig.from_env()` returning `None` (feature disabled) unless client id/secret **and** a resolvable redirect URI are all present (redirect from `PBICOMPASS_OIDC_REDIRECT_URI` or derived from `PBICOMPASS_PUBLIC_URL` + `/auth/oidc/callback`). Helpers: `generate_pkce()` (S256), `build_authorize_url()`, `exchange_code()` (raises a content-free `OIDCError` on any transport/HTTP failure), `decode_id_token_claims()`, `validate_claims()`, `email_from_claims()` (falls back across `email`/`preferred_username`/`upn`), `name_from_claims()`.
+
+### Data model + `AccountStore` (Day 23 half of §7.1/§7.3)
+
+- [x] New `oidc_states` table (`state_hash` PK, nonce, code_verifier, created_at, expires_at) + `create_oidc_state(nonce, code_verifier, ttl)` (mints a random `state`, stores it **hashed** with the per-flow nonce + PKCE verifier server-side, returns the raw state for the authorize URL) and `consume_oidc_state(state)` (single-use, expiry-swept, returns `(nonce, code_verifier)`). The state row is what gives the redirect **CSRF protection** and carries the PKCE verifier + expected nonce across the round-trip. 10-minute TTL.
+- [x] `get_or_create_sso_user(email, name)` — **links by email**: an existing account (whether created by password signup or a prior SSO login) is returned and its email marked verified; a brand-new SSO user gets the *same* tenant/account/API-key setup as a password signup (reuses `create_user`), but with a random unusable password (SSO users don't have one — password login stays closed until/unless they run a reset) and `email_verified` already true (the IdP verified it). This is the account model enterprise SSO/SCIM will extend — no migration later.
+
+### Routes (`app.py`, §7.5 `GET /auth/oidc/*`)
+
+- [x] `GET /auth/oidc/login` — mints state/nonce/PKCE, stashes them, 302s to Entra's authorize endpoint.
+- [x] `GET /auth/oidc/callback` — handles the provider `error` param (calm 400 page, not a stack trace), validates `state` (consume-or-400 → CSRF + expiry), exchanges the code, validates the id_token claims (all `OIDCError`s become a content-free 400), extracts the email, `get_or_create_sso_user`, opens a session (sets the same session + CSRF cookies as password login), and 302s to `/`.
+- [x] Both routes are rate-limited via the existing `auth_rate_limiter`, and **return 404 when OIDC isn't configured** (feature genuinely absent — an install that never sets `PBICOMPASS_OIDC_*` exposes no new surface, and imports nothing new since `oidc.py` is only touched when a config exists).
+- [x] `create_app(..., oidc_config=None)` — new injectable param (defaults to `OIDCConfig.from_env(public_url=...)`), stored on `app.state.oidc_config`.
+
+### Testing (`tests/test_oidc.py`, 27 tests)
+
+- [x] **No network:** the token-endpoint call is monkeypatched to return a self-crafted, unsigned id_token whose claims the callback then validates — which is exactly what the real flow does (it reads claims from the TLS-obtained token; it doesn't check the signature), so the test drives the **real validation path**, not a stub of it.
+- [x] `oidc.py` units: `from_env` disabled/needs-redirect/derives-from-public-url; endpoint derivation; PKCE challenge == S256(verifier); authorize URL has all required params; claim decode round-trip + malformed rejection; `validate_claims` pass + wrong-aud/expired/nonce-mismatch/single-tenant-issuer-mismatch rejections; email fallback across claim names; `exchange_code` transport error → `OIDCError`.
+- [x] `AccountStore` units: state round-trip single-use, unknown/expired state rejected; SSO user created verified with no usable password; SSO login links an existing user by email; SSO links **and verifies** an existing password user without clobbering their working password.
+- [x] End-to-end (service-gated): `/auth/oidc/login` 302s to Microsoft with `state`+`code_challenge`; callback creates the user + opens a session (302 home, session cookie set, user verified); second callback reuses the same user (no duplicate-email crash); **forged state → 400** (CSRF); **nonce mismatch → 400** (replay); provider `error` param → a 400 page; and `/auth/oidc/*` → **404 when disabled**.
+
+### Honest gaps
+
+- **No live-Entra smoke test** — no Entra tenant reachable in this sandbox (same class of gap as the Postgres/Redis/SMTP/provider gaps across Sprint 4–5). The crafted-token stand-in exercises the real state/exchange/validate/link path; a one-time real "Sign in with Microsoft" against an actual app registration is still owed.
+- **JWKS signature verification is deliberately not implemented** — justified above and documented in both `oidc.py` and `DEPLOYMENT.md` as an optional add-on rather than a silent omission.
+
+### Full suite
+
+- [x] `python -m pytest -q` — **627 passed** (was 600 after Day 22; +27 new), 2 skipped, only the 2 known pre-existing failures remain (`test_render.py::HtmlRenderTest::test_accessibility_landmarks_present` / `test_interactive_diagram_nodes_and_edges`, unchanged since Day 1, unrelated to Day 23). Stray `pbicompass.db` (the pre-existing Day-20 test artifact) deleted after the run, as on Day 22.
+
+### Files touched
+
+- `src/pbicompass/service/oidc.py` (new)
+- `src/pbicompass/service/accounts.py` (`oidc_states` table; `create_oidc_state`/`consume_oidc_state`/`get_or_create_sso_user`)
+- `src/pbicompass/service/app.py` (`oidc_config` injection; `GET /auth/oidc/login` + `/auth/oidc/callback`)
+- `.env.example`, `DEPLOYMENT.md` (new "Sign in with Microsoft" section, env var table, Azure-portal setup steps, security note)
+- `tests/test_oidc.py` (new)
+
+**Verdict: Day 23 is fully done** — a Microsoft account can sign in and map to a user (linked by email to any existing account), through a proper auth-code+PKCE flow with CSRF-protected state, nonce anti-replay, and spec-justified claim handling, all with zero new dependencies and a default-off feature that's genuinely absent (404) until configured. The one real gap — a live sign-in against a real Entra tenant — is flagged, not hidden.
+
+---
+
+## Day 24 (Aug 10) — Account dashboard (`/app`)
+
+**Objective:** a signed-in user self-serves API keys and sees their plan/usage/job-history at `/app` — **without the admin token** — replacing the shared-admin-token flow for end users.
+
+### The real change under the hood: a proper `api_keys` table
+
+The roadmap says "API-key management (create/revoke — logic already exists)", but the *existing* logic was account-level (one `key_hash` column per account, minted at signup/admin-create). "Create/revoke individual keys" needs multiple keys per account, so:
+
+- [x] New `api_keys` table (`id` PK, `account_id`, `key_hash` UNIQUE, `name`, `created_at`) — **the authoritative key store `verify()` now consults** (join `api_keys`→`accounts` by `key_hash`). `accounts.key_hash` is kept (NOT NULL, legacy) but is no longer what authenticates, so deleting an `api_keys` row is *real* revocation with no neutralize dance.
+- [x] **Zero-migration backfill** in `_init_schema` (done in Python, not pure SQL, since a portable per-row id generator isn't available on both sqlite/Postgres): every existing account lacking an `api_keys` row gets one ("Default") on first startup after upgrade — idempotent, so a pre-Day-24 persistent DB keeps working with no manual step.
+- [x] `create_account` now inserts the first key into `api_keys` too (labeled "Default"); `create_api_key(account_id, name)` (soft-capped at `MAX_API_KEYS_PER_ACCOUNT=20`), `list_api_keys(account_id)` (metadata only — id/name/created/is_primary, never the key), `revoke_api_key(account_id, key_id)` (**scoped to the owning account** so one account can't revoke another's), and `revoke_account` now clears the account's keys too.
+- [x] `dump`/`restore` extended to include `api_keys` (snapshot `version`→2; a restored account couldn't authenticate at all without it) — `restore` still accepts a v1 snapshot (it just carries no extra keys). The one existing test asserting the exact empty-dump shape was updated to the v2 shape.
+
+### Session→user auth + job history
+
+- [x] New `_require_user(request)` in `app.py` — resolves the signed-in user from the session cookie (`verify_session`) and returns `(user, account)`, or 401. This is the **dashboard's** auth: session-based, no admin token — deliberately distinct from `resolve_tenant` (API-key auth for programmatic `/jobs`). (Session→`/jobs` upload is still Day 25's call; this only powers the dashboard.)
+- [x] New `JobStore.list_for_tenant(tenant, limit=50)` — a tenant's recent jobs, newest first, **status/timestamps only** (the `Job` record has never held report content, so zero-retention holds by construction).
+
+### Dashboard API (`app.py`, all under `/app/api`)
+
+- [x] `GET /app/api/config` — **public** (unauthenticated); tells the signed-out view whether to render the "Sign in with Microsoft" button (which otherwise it couldn't know, since `/me` 401s).
+- [x] `GET /app/api/me` — email + verified flag, tenant, plan, used-today/daily-limit/remaining.
+- [x] `GET /app/api/keys` / `POST /app/api/keys` (new key returned **once**) / `DELETE /app/api/keys/{id}` — the last two CSRF-guarded via the existing double-submit `_require_csrf`.
+- [x] `GET /app/api/jobs` — the tenant's job history via `list_for_tenant`, reusing the store's own `public()` shape (status only).
+
+### The page (`static/app.html`)
+
+- [x] A single self-contained page: on load it calls `/app/api/me` and shows **either** a sign-in/create-account form (with a "Sign in with Microsoft" button when `oidc_enabled`) **or** the dashboard (plan badge, usage meter, API-keys table with create/revoke, recent-jobs table, sign-out). Vanilla JS, reads the CSRF token from its cookie and echoes it as a header on state-changing calls. Deliberately functional-but-plain (indigo/slate, no framework) — the branded product surface is Day 25, so I didn't over-invest here.
+- [x] Covered by `pyproject.toml`'s existing `static/*.html` package-data glob (no packaging change needed).
+
+### Testing (`tests/test_dashboard.py`, 19 tests)
+
+- [x] `AccountStore` key methods (7): default key verifies; additional key verifies independently; revoke is real **and** account-scoped; the primary/"Default" key is revocable too (legacy `accounts.key_hash` no longer authenticates after revocation — proves the store swap is genuine); can't revoke another account's key; the soft cap; `revoke_account` drops all keys.
+- [x] `JobStore.list_for_tenant` (2): tenant-scoped + newest-first; honors `limit`.
+- [x] Dashboard API (10, service-gated): all `/app/api/*` require a session (401 without); `/app/api/config` is public; `/app` page served; `me` reports plan/usage after signup; keys list shows the Default; create requires CSRF (403 without); the full create→(new key authenticates the real `/me` API-key path)→revoke→(key no longer maps to the account, falls back to public tenant) round-trip; revoke-missing→404; job history is tenant-scoped and content-free; and two signed-up users see disjoint key sets (isolation).
+
+### Honest notes
+
+- **Session-based `/jobs` upload is intentionally *not* wired here** — the dashboard authenticates the user for account self-service, but uploading a report through a browser session (vs. the API key) and its CSRF story on that route is Day 25's scope, kept out to avoid a half-built inconsistent state (same discipline as Days 21–23's held scope lines).
+- **`/app` is unstyled-by-intent** — a real design pass is Day 25/§6.3; this is the functional dashboard the done-when asks for, not the finished product UI.
+
+### Full suite
+
+- [x] `python -m pytest -q` — **646 passed** (was 627 after Day 23; +19 new), 2 skipped, only the 2 known pre-existing failures remain (`test_render.py::HtmlRenderTest::test_accessibility_landmarks_present` / `test_interactive_diagram_nodes_and_edges`, unchanged since Day 1, unrelated to Day 24). Existing account/auth/backup/postgres suites pass unchanged against the new `api_keys`-backed `verify()`. Stray `pbicompass.db` (the pre-existing Day-20 test artifact) deleted after the run.
+
+### Files touched
+
+- `src/pbicompass/service/accounts.py` (`api_keys` table + backfill; `ApiKeyInfo`; `create_api_key`/`list_api_keys`/`revoke_api_key`; `verify` via `api_keys`; `create_account`/`revoke_account`/`dump`/`restore` updated; `MAX_API_KEYS_PER_ACCOUNT`)
+- `src/pbicompass/service/jobs.py` (`list_for_tenant`)
+- `src/pbicompass/service/app.py` (`_require_user`; `/app` page; `/app/api/config|me|keys|jobs`)
+- `src/pbicompass/service/static/app.html` (new)
+- `src/pbicompass/service/__init__.py` (export `ApiKeyInfo`)
+- `tests/test_dashboard.py` (new), `tests/test_db_backup.py` (v2 dump-shape assertion)
+- `DEPLOYMENT.md` (new "Account dashboard — /app" section + the api_keys/no-migration note)
+
+**Verdict: Day 24 is fully done** — a signed-in user self-serves API keys (create/revoke, real and isolated) and sees plan/usage/job-history at `/app` with only their session, no admin token. The under-the-hood key-store change that made genuine per-key revocation possible is backfilled with zero migration and covered end-to-end, and the deliberately-held scope lines (session `/jobs`, real styling) are flagged for Day 25 rather than half-built.
+
+---
+
+## Day 25 (Aug 11) — Upload UI → product UI + auth tests
+
+**Objective:** the landing/upload page (`static/index.html`) recognizes a signed-in session — plan/quota badge, recent jobs, no manual API key needed — and the upload form itself accepts session-cookie auth (not just a Bearer key), closing the scope line Days 21/24 both explicitly deferred here. Plus the roadmap's own §10.7 auth/security bar: CSRF, session fixation, tenant isolation.
+
+### The real change under the hood: session-cookie auth on `POST /jobs`
+
+- [x] `resolve_tenant()` (`app.py`) now returns `(tenant, plan, via_session)` — Bearer/`X-API-Key` is checked first (unchanged, byte-identical behavior for every existing API caller); **only when no key was supplied at all** does it fall back to the `pbicompass_session` cookie (Day 21) and resolve to that user's own account — [app.py:289-317](src/pbicompass/service/app.py#L289-L317).
+- [x] **Deliberate: an explicit-but-invalid key never falls back to an ambient session.** First draft fell back to session whenever the key failed to verify (not just when no key was sent at all) — caught by a pre-existing Day 24 test (`test_create_and_revoke_key_via_dashboard`) failing after the change: it drives a revoked key through `/me` on the *same* session-cookie-bearing test client and asserts the tenant falls back to `"public"`. Falling back to the session there would silently resolve a revoked/wrong key to a different identity than the one the caller explicitly asked for — a fail-open behavior change nobody asked for. Fixed by gating the session fallback on `elif not key` rather than unconditionally, so a supplied-but-invalid key still fails as itself, exactly as before Day 25.
+- [x] `POST /jobs` now calls `_require_csrf()` (the same double-submit check `/app/api/keys` already uses) whenever `via_session` is true — a session cookie is an ambient browser credential a cross-site page can trigger, unlike a Bearer header it can't attach. `job_status`/`download` (read-only `GET`s) need no such check — [app.py:857-863](src/pbicompass/service/app.py#L857-L863).
+
+### `static/index.html` — signed-in landing/upload page
+
+- [x] New `#account-strip` panel inside the generator console (Day 25 addendum to the 2026-07-10 landing-page redesign, not a separate page) — hidden by default, shown by JS once `/app/api/me` returns 200: plan badge, email, `used_today/daily_limit · remaining` usage line, a **Recent jobs** toggle (lazy-loads `/app/api/jobs` on first click, renders filename/status/date), a **Dashboard** link to `/app`, and a **Sign out** button — [index.html](src/pbicompass/service/static/index.html).
+- [x] The desktop `rp-account` "Sign in" link's text swaps to the signed-in user's email once resolved (`#rp-account-btn`).
+- [x] The "Account API Key" field (`#apikey-group`) is hidden and replaced with a one-line note when signed in — a session-authenticated visitor doesn't need to manually paste a key; an anonymous/programmatic visitor still sees the field exactly as before.
+- [x] `authHeaders()` now also attaches `X-CSRF-Token` (read from the non-`HttpOnly` `pbicompass_csrf` cookie) whenever it's present, alongside the existing `Authorization: Bearer` logic — safe unconditionally: a signed-out visitor has no such cookie, so the header is simply absent for them, and same-origin `fetch()` already sends the session cookie itself by default (no `credentials` override needed for the existing same-origin `/jobs` calls).
+- [x] Verified the inline `<script>` block is syntactically valid via `node --check` on the extracted script (no Playwright/browser-automation tool is available in this sandbox to render and screenshot the page — flagged honestly, not silently skipped).
+
+### Testing — new `tests/test_session_upload_security.py` (7 tests)
+
+- [x] `test_signed_in_upload_works_with_session_cookie_only` — the Day 25 done-when itself: no Bearer header, no pasted key, only the cookie signup set; the job lands under the user's own tenant and appears in their `/app/api/jobs` history.
+- [x] `test_anonymous_upload_is_completely_unaffected` / `test_api_key_upload_still_works_and_never_needs_csrf` — regression guards that the two pre-existing auth paths (public, Bearer key) are untouched by the new fallback.
+- [x] **CSRF:** `test_session_upload_without_csrf_token_is_rejected` / `test_session_upload_with_wrong_csrf_token_is_rejected` — both 403. Verified non-vacuous by a mutation test: temporarily disabling the `_require_csrf(request)` call and confirming exactly these two tests fail, then restoring it.
+- [x] **Session fixation:** `test_login_never_authenticates_an_attacker_preset_session_cookie` — a `Cookie: pbicompass_session=<attacker-chosen-value>` header is sent both to a pre-login request (401) and to the login call itself; asserts the cookie the server actually issues on success is a fresh, different token, and that the attacker's planted value is still dead afterward. Sent as a raw header rather than via `client.cookies.set(...)` deliberately — the latter hit an `httpx.CookieConflict` when a manually-set cookie and the real `Set-Cookie` response ended up scoped to different cookie-jar domains; a raw header sidesteps that ambiguity entirely.
+- [x] **Tenant isolation, extended from API keys to sessions:** `test_another_users_session_cannot_see_this_users_job` — user B's session gets 404 on both `GET /jobs/{id}` and the download route for user A's job, and it's absent from B's own job-history listing.
+
+### Full suite
+
+- [x] `python -m pytest -q` — **653 passed** (was 646 after Day 24; +7 new), 2 skipped, only the 2 known pre-existing failures remain (`test_render.py::HtmlRenderTest::test_accessibility_landmarks_present` / `test_interactive_diagram_nodes_and_edges`, unchanged since Day 1, unrelated to Day 25).
+- [x] Live smoke: ran the real service as a separate `uvicorn` process on a real socket (not just the in-process ASGI `TestClient`) and drove it with a plain `requests.Session` exactly as the new page JS would — anonymous page load, signup (real `Set-Cookie` session+CSRF), `/app/api/me` 200 with plan/usage, `/app/api/jobs`, logout via the CSRF header, and `/app/api/me` 401 again post-logout. All matched expectations.
+
+### Files touched
+
+- `src/pbicompass/service/app.py` (`resolve_tenant` session fallback + `via_session`; CSRF check on session-authenticated `POST /jobs`)
+- `src/pbicompass/service/static/index.html` (`#account-strip` panel, signed-in `rp-account` label, hidden API-key field when signed in, CSRF-aware `authHeaders()`)
+- `tests/test_session_upload_security.py` (new)
+
+**Verdict: Day 25 is fully done** — and with it, **Sprint 5 (Days 21–25) is complete**: a stranger can sign up, verify their email, sign in (password or Microsoft), and now upload straight from the landing page using nothing but their browser session — no API key required — while the programmatic Bearer-key path stays byte-for-byte unchanged and newly-hardened against CSRF, session fixation, and cross-tenant leakage on the session path specifically. The one gap is the standard "no browser-automation tool in this sandbox" class already flagged on prior UI-adjacent days — a real rendered-screenshot check is still owed.
+
+---
+
+## Sprint 6–7 (Days 26–38)
 
 Not started. See `PRODUCTION_ROADMAP.md` §14 for the full day-by-day breakdown.

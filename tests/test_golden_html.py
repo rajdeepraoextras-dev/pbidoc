@@ -28,12 +28,18 @@ FIXTURE = Path(__file__).parent / "fixtures" / "SampleSales" / "SampleSales.pbip
 GOLDEN_DIR = Path(__file__).parent / "fixtures" / "golden"
 
 _TIMESTAMP_RE = re.compile(r"\d{1,2} [A-Z][a-z]+ \d{4}, \d{2}:\d{2} ?[A-Za-z]*")
+_ISO_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
 def _normalize(html: str) -> str:
-    """Replace the one non-deterministic bit of the output (the render
-    timestamp) with a fixed placeholder so the snapshot is stable run to run."""
-    return _TIMESTAMP_RE.sub("TIMESTAMP", html)
+    """Replace the non-deterministic bits of the output — the render
+    timestamp and any bare ISO date (e.g. the technical doc's sign-off-table
+    "generated" date, derived from `today()` at render time) — with a fixed
+    placeholder so the snapshot is stable run to run and doesn't drift every
+    time midnight passes between when the golden was captured and when the
+    suite is next run."""
+    html = _TIMESTAMP_RE.sub("TIMESTAMP", html)
+    return _ISO_DATE_RE.sub("ISODATE", html)
 
 
 def _model():

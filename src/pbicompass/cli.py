@@ -283,6 +283,16 @@ def main(argv: list[str] | None = None) -> int:
     p_ar = acct_sub.add_parser("revoke", help="Revoke an account (its API key stops working immediately)")
     p_ar.add_argument("--id", required=True, help="Account id (see 'account list')")
     p_ar.add_argument("--db", help="SQLite path (default: $PBICOMPASS_DB or pbicompass.db)")
+    p_ab = acct_sub.add_parser("backup", help="Snapshot accounts/keys/quotas to a JSON file")
+    p_ab.add_argument("--out", required=True, type=Path, help="Output file path")
+    p_ab.add_argument("--db", help="SQLite path (default: $PBICOMPASS_DB or pbicompass.db)")
+    p_arr = acct_sub.add_parser(
+        "restore",
+        help="Restore accounts/keys/quotas from a JSON file (see 'account backup'). "
+             "Point --db at an empty/scratch database for a restore drill.",
+    )
+    p_arr.add_argument("--in", dest="in_path", required=True, type=Path, help="Snapshot file to restore")
+    p_arr.add_argument("--db", help="SQLite path (default: $PBICOMPASS_DB or pbicompass.db)")
 
     args = parser.parse_args(argv)
 
@@ -607,6 +617,16 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"error: no account with id '{args.id}'", file=sys.stderr)
                     return 1
                 print(f"Revoked account '{args.id}'.")
+                return 0
+            if args.account_cmd == "backup":
+                from .service.db_backup import backup_to_file
+                count = backup_to_file(accounts, args.out)
+                print(f"Backed up {count} account(s) (db: {db}) to {args.out}")
+                return 0
+            if args.account_cmd == "restore":
+                from .service.db_backup import restore_from_file
+                count = restore_from_file(accounts, args.in_path)
+                print(f"Restored {count} account(s) from {args.in_path} into {db}")
                 return 0
         finally:
             accounts.close()

@@ -42,6 +42,7 @@ from ..render.audit import _top_cluster as _audit_top_cluster
 from ..render.hub import doc_switcher_links, hub_stats, render_hub
 from .ingest import ingest_to_model
 from .jobs import JobStore
+from .logging_config import job_id_var
 from .sandbox import JobSandbox
 
 log = logging.getLogger("pbicompass.service")
@@ -166,6 +167,10 @@ def _generate_one(document_type: str, model, client, meta: dict, warn: Callable[
 
 def process_job(store: JobStore, job_id: str, upload_path: Path,
                 sandbox: JobSandbox, options: dict) -> None:
+    # Set explicitly (not inherited from request context) so every log line
+    # for this job carries the same id regardless of executor — inline
+    # BackgroundTasks, a Celery worker in a separate process, or the CLI.
+    job_id_token = job_id_var.set(job_id)
     store.mark_processing(job_id)
     try:
         try:
@@ -361,3 +366,4 @@ def process_job(store: JobStore, job_id: str, upload_path: Path,
         audit_rules.set_rules_config_path(None)
         audit_rules.set_rules_override_config({})
         sandbox.cleanup()  # zero-retention: shred everything, success or failure
+        job_id_var.reset(job_id_token)

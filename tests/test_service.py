@@ -59,7 +59,12 @@ class ServiceTest(unittest.TestCase):
         self.fail("job did not finish in time")
 
     def test_healthz_and_index(self):
-        self.assertEqual(self.client.get("/healthz").json(), {"ok": True})
+        health = self.client.get("/healthz")
+        self.assertEqual(health.status_code, 200)
+        body = health.json()
+        self.assertTrue(body["ok"])
+        self.assertTrue(body["checks"]["jobs_db"])
+        self.assertTrue(body["checks"]["queue"])  # inline mode: no external dependency
         index = self.client.get("/")
         self.assertEqual(index.status_code, 200)
         self.assertIn("Generate documentation", index.text)  # upload card heading

@@ -26,6 +26,8 @@ out/
 # Power BI source files — never commit customer artifacts
 *.pbix
 *.pbip
+# Sample/upload zips dropped in examples/ may wrap a .pbip — never commit them
+/examples/*.zip
 # (the synthetic test fixture under tests/fixtures/ is committed deliberately)
 !tests/fixtures/**
 

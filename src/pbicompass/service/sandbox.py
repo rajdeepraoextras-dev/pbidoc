@@ -26,6 +26,21 @@ class JobSandbox:
         os.makedirs(base, exist_ok=True)
         self.dir = Path(tempfile.mkdtemp(prefix=f"pbicompass_{job_id}_", dir=base))
 
+    @classmethod
+    def at(cls, path: str | Path) -> "JobSandbox":
+        """Wrap an *existing* sandbox directory instead of minting a new one.
+
+        Used only by the async-worker path (Day 18): the API process creates
+        the sandbox and writes the upload into it, then a separate Celery
+        worker process needs a handle to that same directory — a fresh
+        ``JobSandbox(job_id, ...)`` would mint an unrelated empty one instead.
+        The inline ``BackgroundTasks`` path never needs this, since it runs
+        in the same process/directory that created the sandbox.
+        """
+        self = cls.__new__(cls)
+        self.dir = Path(path)
+        return self
+
     def path(self, name: str) -> Path:
         return self.dir / name
 

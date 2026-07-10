@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Account — PBICompass</title>
+<style>
+  :root { --indigo:#4f46e5; --indigo-dark:#4338ca; --slate:#1e293b; --muted:#64748b;
+          --line:#e2e8f0; --bg:#f8fafc; --card:#fff; --ok:#059669; --warn:#b45309; --err:#dc2626; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+         background:var(--bg); color:var(--slate); }
+  a { color:var(--indigo); }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
+  header { display:flex; align-items:center; justify-content:space-between; margin-bottom:1.5rem; }
+  .brand { font-weight:700; font-size:1.15rem; }
+  .brand span { color:var(--indigo); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:.75rem;
+          padding:1.25rem 1.35rem; margin-bottom:1.15rem; }
+  h1 { font-size:1.35rem; margin:.2rem 0 1rem; }
+  h2 { font-size:1rem; margin:0 0 .85rem; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+  label { display:block; font-size:.85rem; color:var(--muted); margin:.6rem 0 .25rem; }
+  input { width:100%; padding:.6rem .7rem; border:1px solid var(--line); border-radius:.45rem; font-size:.95rem; }
+  button { font:inherit; cursor:pointer; border:0; border-radius:.45rem; padding:.55rem .95rem;
+           background:var(--indigo); color:#fff; font-weight:600; }
+  button:hover { background:var(--indigo-dark); }
+  button.ghost { background:transparent; color:var(--indigo); border:1px solid var(--line); }
+  button.danger { background:transparent; color:var(--err); border:1px solid var(--line); padding:.35rem .7rem; font-size:.85rem; }
+  button.ms { background:#2f2f2f; }
+  .row { display:flex; gap:.6rem; align-items:center; flex-wrap:wrap; }
+  .spacer { flex:1; }
+  table { width:100%; border-collapse:collapse; font-size:.9rem; }
+  th,td { text-align:left; padding:.5rem .4rem; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-weight:600; font-size:.78rem; text-transform:uppercase; letter-spacing:.03em; }
+  .badge { display:inline-block; font-size:.72rem; font-weight:700; padding:.12rem .5rem; border-radius:1rem; }
+  .badge.plan { background:#eef2ff; color:var(--indigo-dark); }
+  .badge.pri { background:#ecfdf5; color:var(--ok); }
+  .badge.ok { background:#ecfdf5; color:var(--ok); }
+  .badge.no { background:#fef3c7; color:var(--warn); }
+  .badge.st-done { background:#ecfdf5; color:var(--ok); }
+  .badge.st-failed { background:#fee2e2; color:var(--err); }
+  .badge.st-processing,.badge.st-queued { background:#eef2ff; color:var(--indigo-dark); }
+  .meter { height:.5rem; background:var(--line); border-radius:1rem; overflow:hidden; margin:.35rem 0; }
+  .meter > span { display:block; height:100%; background:var(--indigo); }
+  .muted { color:var(--muted); font-size:.85rem; }
+  .keybox { background:#0f172a; color:#e2e8f0; padding:.6rem .75rem; border-radius:.45rem;
+            font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.82rem; word-break:break-all; margin:.5rem 0; }
+  .err { color:var(--err); font-size:.85rem; min-height:1.1rem; }
+  .hidden { display:none; }
+  .tabs { display:flex; gap:.5rem; margin-bottom:1rem; }
+  .tabs button { background:transparent; color:var(--muted); border:1px solid var(--line); }
+  .tabs button.active { background:var(--indigo); color:#fff; border-color:var(--indigo); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">PBI<span>Compass</span></div>
+    <div id="hdr-right"></div>
+  </header>
+
+  <!-- Signed-out view -->
+  <section id="auth" class="hidden">
+    <div class="card" style="max-width:26rem;margin:2rem auto;">
+      <div class="tabs">
+        <button id="tab-login" class="active" onclick="showTab('login')">Sign in</button>
+        <button id="tab-signup" onclick="showTab('signup')">Create account</button>
+      </div>
+      <form id="login-form">
+        <label>Email</label><input type="email" name="email" required>
+        <label>Password</label><input type="password" name="password" required>
+        <div class="err" id="login-err"></div>
+        <div class="row"><button type="submit">Sign in</button></div>
+      </form>
+      <form id="signup-form" class="hidden">
+        <label>Email</label><input type="email" name="email" required>
+        <label>Name (optional)</label><input type="text" name="name">
+        <label>Password (min 8 characters)</label><input type="password" name="password" required minlength="8">
+        <div class="err" id="signup-err"></div>
+        <div class="row"><button type="submit">Create account</button></div>
+      </form>
+      <div id="ms-wrap" class="hidden" style="margin-top:1rem;text-align:center;">
+        <div class="muted" style="margin:.5rem 0;">or</div>
+        <a href="/auth/oidc/login"><button type="button" class="ms">Sign in with Microsoft</button></a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Signed-in dashboard -->
+  <section id="dash" class="hidden">
+    <div class="card">
+      <div class="row">
+        <div>
+          <h1 style="margin:0" id="d-email"></h1>
+          <div class="muted" id="d-verify"></div>
+        </div>
+        <div class="spacer"></div>
+        <span class="badge plan" id="d-plan"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Usage today</h2>
+      <div class="meter"><span id="d-meter"></span></div>
+      <div class="muted" id="d-usage"></div>
+    </div>
+
+    <div class="card">
+      <div class="row"><h2 style="margin:0">API keys</h2><div class="spacer"></div>
+        <button class="ghost" onclick="createKey()">+ New key</button></div>
+      <div id="new-key" class="hidden">
+        <div class="muted">Copy this key now — it won't be shown again:</div>
+        <div class="keybox" id="new-key-val"></div>
+      </div>
+      <table><thead><tr><th>Name</th><th>Created</th><th></th></tr></thead>
+        <tbody id="keys-body"></tbody></table>
+      <div class="muted" id="keys-empty"></div>
+    </div>
+
+    <div class="card">
+      <h2>Recent jobs</h2>
+      <table><thead><tr><th>File</th><th>Status</th><th>Created</th></tr></thead>
+        <tbody id="jobs-body"></tbody></table>
+      <div class="muted" id="jobs-empty"></div>
+    </div>
+  </section>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+function csrf() {
+  const m = document.cookie.match(/(?:^|;\s*)pbicompass_csrf=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : "";
+}
+async function api(path, opts={}) {
+  opts.credentials = "same-origin";
+  opts.headers = Object.assign({}, opts.headers);
+  if (opts.method && opts.method !== "GET") {
+    opts.headers["Content-Type"] = "application/json";
+    opts.headers["X-CSRF-Token"] = csrf();
+  }
+  return fetch(path, opts);
+}
+function fmtDate(ts) { return ts ? new Date(ts*1000).toLocaleString() : "—"; }
+
+function showTab(which) {
+  $("#tab-login").classList.toggle("active", which==="login");
+  $("#tab-signup").classList.toggle("active", which==="signup");
+  $("#login-form").classList.toggle("hidden", which!=="login");
+  $("#signup-form").classList.toggle("hidden", which!=="signup");
+}
+
+async function loadDashboard(me) {
+  $("#auth").classList.add("hidden");
+  $("#dash").classList.remove("hidden");
+  $("#hdr-right").innerHTML = '<button class="ghost" id="logout-btn">Sign out</button>';
+  $("#logout-btn").onclick = async () => {
+    await api("/auth/logout", {method:"POST"}); location.reload();
+  };
+  $("#d-email").textContent = me.email;
+  $("#d-verify").innerHTML = me.email_verified
+    ? '<span class="badge ok">Email verified</span>'
+    : '<span class="badge no">Email not verified</span>';
+  $("#d-plan").textContent = me.plan + " plan";
+  const pct = me.daily_limit ? Math.min(100, Math.round(100*me.used_today/me.daily_limit)) : 0;
+  $("#d-meter").style.width = pct + "%";
+  $("#d-usage").textContent = `${me.used_today} / ${me.daily_limit} documents today · ${me.remaining} remaining`;
+  await loadKeys(); await loadJobs();
+}
+
+async function loadKeys() {
+  const r = await api("/app/api/keys"); const {keys} = await r.json();
+  const body = $("#keys-body"); body.innerHTML = "";
+  keys.forEach(k => {
+    const tr = document.createElement("tr");
+    const primary = k.is_primary ? ' <span class="badge pri">default</span>' : "";
+    tr.innerHTML = `<td>${escapeHtml(k.name)}${primary}</td><td>${fmtDate(k.created_at)}</td>
+      <td style="text-align:right"><button class="danger" data-id="${k.id}">Revoke</button></td>`;
+    tr.querySelector("button").onclick = () => revokeKey(k.id);
+    body.appendChild(tr);
+  });
+  $("#keys-empty").textContent = keys.length ? "" : "No API keys yet.";
+}
+async function createKey() {
+  const name = prompt("Name this key (e.g. 'CI', 'Laptop'):", "API key");
+  if (name === null) return;
+  const r = await api("/app/api/keys", {method:"POST", body: JSON.stringify({name})});
+  if (!r.ok) { const e = await r.json().catch(()=>({})); alert(e.detail || "Could not create key."); return; }
+  const k = await r.json();
+  $("#new-key").classList.remove("hidden");
+  $("#new-key-val").textContent = k.api_key;
+  await loadKeys();
+}
+async function revokeKey(id) {
+  if (!confirm("Revoke this API key? Anything using it will stop working immediately.")) return;
+  const r = await api("/app/api/keys/"+id, {method:"DELETE"});
+  if (!r.ok) { alert("Could not revoke key."); return; }
+  await loadKeys();
+}
+
+async function loadJobs() {
+  const r = await api("/app/api/jobs"); const {jobs} = await r.json();
+  const body = $("#jobs-body"); body.innerHTML = "";
+  jobs.forEach(j => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${escapeHtml(j.filename||"—")}</td>
+      <td><span class="badge st-${j.status}">${j.status}</span></td>
+      <td>${fmtDate(j.created_at)}</td>`;
+    body.appendChild(tr);
+  });
+  $("#jobs-empty").textContent = jobs.length ? "" : "No jobs yet.";
+}
+
+function escapeHtml(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+async function showSignedOut() {
+  $("#dash").classList.add("hidden");
+  $("#auth").classList.remove("hidden");
+  const cfg = await api("/app/api/config").then(r=>r.json()).catch(()=>({}));
+  if (cfg.oidc_enabled) $("#ms-wrap").classList.remove("hidden");
+}
+
+$("#login-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const f = e.target; $("#login-err").textContent = "";
+  const r = await api("/auth/login", {method:"POST",
+    body: JSON.stringify({email:f.email.value, password:f.password.value})});
+  if (r.ok) location.reload();
+  else { const j = await r.json().catch(()=>({})); $("#login-err").textContent = j.detail || "Sign-in failed."; }
+});
+$("#signup-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const f = e.target; $("#signup-err").textContent = "";
+  const r = await api("/auth/signup", {method:"POST",
+    body: JSON.stringify({email:f.email.value, password:f.password.value, name:f.name.value})});
+  if (r.ok) location.reload();
+  else { const j = await r.json().catch(()=>({})); $("#signup-err").textContent = j.detail || "Could not create account."; }
+});
+
+(async function init(){
+  const r = await api("/app/api/me");
+  if (r.ok) loadDashboard(await r.json());
+  else showSignedOut();
+})();
+</script>
+</body>
+</html>

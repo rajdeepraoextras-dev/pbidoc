@@ -4,8 +4,10 @@ AI-powered pipeline that ingests Power BI files (`.pbip` / `.pbix`), extracts
 **metadata only**, and generates enterprise-grade documentation for both
 technical BI developers and business stakeholders.
 
-See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) for the full freemium-first
-architecture and phased roadmap.
+See [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) for the full
+freemium-first architecture and phased roadmap, or
+[docs/TOOL_DETAILS.md](docs/TOOL_DETAILS.md) for an end-to-end reference of every
+component, flag, and endpoint.
 
 ---
 
@@ -192,6 +194,28 @@ $env:PYTHONPATH = "src"; python -m unittest discover -s tests -v
 
 ## Project layout
 
+Repository top level:
+
+```
+pbicompass/
+  README.md               # this file
+  LICENSE  SECURITY.md  CONTRIBUTING.md
+  pyproject.toml          # package metadata + optional extras
+  Dockerfile  .dockerignore  .env.example
+  .github/workflows/      # CI / deploy
+  src/pbicompass/         # the package (see below)
+  tests/                  # test suite + synthetic fixtures
+  docs/                   # all documentation
+    TOOL_DETAILS.md       # complete start-to-end reference
+    IMPLEMENTATION_PLAN.md  DEPLOYMENT.md  BEGINNER_DEPLOY.md
+    planning/             # AI_NATIVE_PLAN, PRODUCTION_ROADMAP, ROADMAP_PROGRESS, DOCUMENTATION_QUALITY_PLAN
+    design/               # wireframe / lineage HTML mockups
+  assets/                 # logo and brand images
+  examples/               # sample Power BI export (zipped)
+```
+
+The package itself:
+
 ```
 src/pbicompass/
   schemas/
@@ -279,12 +303,15 @@ multi-tenancy with freemium quotas**. Remaining for scale/commercial:
 
 | Doc | Covers |
 |---|---|
-| [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) | Full architecture, agent prompts, and phased roadmap |
-| [DEPLOYMENT.md](DEPLOYMENT.md) | Production deployment (Render/Fly.io/VM), env vars, zero-retention checklist |
-| [BEGINNER_DEPLOY.md](BEGINNER_DEPLOY.md) | Click-by-click deploy guide for a first-time host |
+| [docs/TOOL_DETAILS.md](docs/TOOL_DETAILS.md) | **Complete start-to-end reference** — every module, CLI command, flag, env var, endpoint, and data-flow stage |
+| [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) | Full architecture, agent prompts, and phased roadmap |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Production deployment (Render/Fly.io/VM), env vars, zero-retention checklist |
+| [docs/BEGINNER_DEPLOY.md](docs/BEGINNER_DEPLOY.md) | Click-by-click deploy guide for a first-time host |
 | [SECURITY.md](SECURITY.md) | Data-handling model, zero-leakage guarantees, reporting a vulnerability |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Dev setup, test workflow, ground rules for changes |
 | [.env.example](.env.example) | Every environment variable the app reads, with defaults |
+| [docs/planning/](docs/planning/) | AI-native plan, production roadmap, roadmap progress, documentation-quality plan |
+| [docs/design/](docs/design/) | Design artifacts (wireframe/lineage HTML mockups) |
 
 ## License
 
