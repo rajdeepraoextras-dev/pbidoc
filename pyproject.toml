@@ -38,4 +38,4 @@ pbicompass = "pbicompass.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"pbicompass.service" = ["static/*.html", "static/vendor/*.js"]
+"pbicompass.service" = ["static/*.html", "static/*.css", "static/vendor/*.js"]
