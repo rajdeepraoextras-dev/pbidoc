@@ -5,6 +5,15 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Only one production deploy at a time. Rapid successive pushes otherwise
+# overlap on the single VM -- a still-running `docker build` holds the box
+# while the next run's SSH handshake fails ("unable to authenticate"). Queue
+# runs instead of cancelling, so an in-flight build/health-check finishes
+# cleanly before the next starts.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
