@@ -35,13 +35,17 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-import sqlite3
 import threading
 import time
 import uuid
 from dataclasses import dataclass
 from datetime import date
 from typing import Optional
+
+# The shared SQLite/Postgres wrapper now lives in db.py so JobStore can reuse
+# it too (Day 34). Re-exported here because callers/tests import
+# ``is_postgres_url`` from this module.
+from .db import _Connection, is_postgres_url  # noqa: F401  (re-exported)
 
 # Daily document quota per plan (jobs accepted per UTC day).
 PLAN_LIMITS = {"free": 10, "pro": 200, "enterprise": 100_000}
@@ -51,65 +55,6 @@ MAX_API_KEYS_PER_ACCOUNT = 20             # soft cap so a dashboard user can't m
 
 def _hash_key(raw: str) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
-
-
-def is_postgres_url(db_path: str) -> bool:
-    return db_path.startswith("postgres://") or db_path.startswith("postgresql://")
-
-
-class _Connection:
-    """Unifies sqlite3/psycopg placeholder and row-access differences behind
-    one surface (``execute``/``executemany``/``executescript``/``commit``/
-    ``close``), so ``AccountStore``'s SQL and row-access code stays identical
-    for both backends. ``psycopg`` is imported lazily — a sqlite-only install
-    never needs it (keeps the zero-dependency default intact)."""
-
-    def __init__(self, db_path: str) -> None:
-        self.is_postgres = is_postgres_url(db_path)
-        if self.is_postgres:
-            try:
-                import psycopg
-            except ImportError as exc:  # pragma: no cover - exercised via fake module in tests
-                raise RuntimeError(
-                    "A postgres:// PBICOMPASS_DB URL needs the 'postgres' extra: "
-                    "pip install \"pbicompass[postgres]\""
-                ) from exc
-            self._conn = psycopg.connect(db_path, row_factory=psycopg.rows.dict_row)
-        else:
-            self._conn = sqlite3.connect(db_path, check_same_thread=False)
-            self._conn.row_factory = sqlite3.Row
-
-    def _sql(self, sql: str) -> str:
-        # Safe unconditionally: none of this module's SQL text contains a
-        # literal '?' outside of a placeholder position.
-        return sql.replace("?", "%s") if self.is_postgres else sql
-
-    def execute(self, sql: str, params: tuple = ()):
-        cur = self._conn.cursor()
-        cur.execute(self._sql(sql), params)
-        return cur
-
-    def executemany(self, sql: str, seq) -> None:
-        cur = self._conn.cursor()
-        cur.executemany(self._sql(sql), seq)
-
-    def executescript(self, script: str) -> None:
-        # psycopg has no sqlite-style ``executescript``, but both engines
-        # happily run a parameter-free, ';'-separated multi-statement string
-        # through a single plain ``execute`` — used only for schema DDL.
-        if self.is_postgres:
-            self._conn.cursor().execute(script)
-        else:
-            self._conn.executescript(script)
-
-    def commit(self) -> None:
-        self._conn.commit()
-
-    def rollback(self) -> None:
-        self._conn.rollback()
-
-    def close(self) -> None:
-        self._conn.close()
 
 
 @dataclass

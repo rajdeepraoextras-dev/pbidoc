@@ -79,15 +79,21 @@ class CeleryTaskBodyTest(unittest.TestCase):
         # needed to prove the task body itself is correct.
         process_job_task(job.id, str(upload_path), str(sandbox.dir), db_path, options)
 
-        # A second, independent JobStore instance opened against the same
-        # file — standing in for the API process's poller — must see the
-        # result the task (conceptually a different process) produced.
+        # A second, independent JobStore instance opened against the same DB
+        # — standing in for the API process's poller — sees the job METADATA
+        # the task (conceptually a different process) produced: status and
+        # formats. Day 34: the rendered output BYTES live in each process's
+        # own memory and are never persisted (zero-retention), so they do NOT
+        # cross instances — a Celery/multi-instance deployment needs a shared
+        # ephemeral output cache to serve downloads. Inline mode (the default,
+        # and what this app runs) is unaffected: there the worker and the API
+        # share one store instance in one process.
         poller = JobStore(db_path)
         self.addCleanup(poller.close)
         finished = poller.get(job.id)
         self.assertEqual(finished.status.value, "done")
         self.assertIn("md", finished.formats)
-        self.assertIsNotNone(poller.get_output(job.id, "md"))
+        self.assertIsNone(poller.get_output(job.id, "md"))  # ephemeral, process-local
 
     def test_task_marks_job_failed_on_bad_upload_without_raising(self):
         from pbicompass.service.celery_app import process_job_task
@@ -156,10 +162,18 @@ class CeleryEndToEndTest(unittest.TestCase):
         job_id = resp.json()["job_id"]
         status = self._wait(job_id)
         self.assertEqual(status["status"], "done")
+        self.assertIn("md", status["formats"])
 
+        # Day 34 (zero-retention): the Celery task ran in its own reconstructed
+        # store, so the rendered bytes are in *that* store's memory, not the
+        # API process's — cross-process downloads need a shared ephemeral
+        # output cache (a follow-up for Celery/multi-instance). The job
+        # metadata (status/formats) still crosses via the shared DB, which is
+        # what this dispatch test proves. In inline mode (the default) the
+        # same-process store serves downloads normally — see
+        # InlineQueueUnaffectedTest and test_service.py's full download flow.
         md = self.client.get(f"/jobs/{job_id}/download", params={"format": "md"})
-        self.assertEqual(md.status_code, 200)
-        self.assertIn("Orphan Margin", md.text)
+        self.assertEqual(md.status_code, 404)  # outputs not shared across processes
 
     def test_in_memory_store_with_celery_queue_is_rejected_clearly(self):
         # A separate worker process can't share a ":memory:" sqlite DB — the

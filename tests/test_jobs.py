@@ -80,9 +80,11 @@ class InMemoryDefaultBehaviorTest(unittest.TestCase):
 
 
 class PersistenceAcrossRestartTest(unittest.TestCase):
-    """A2-1's actual done-when: a second ``JobStore`` instance pointed at the
-    same file (simulating a process restart) must see everything the first
-    instance wrote — status, timestamps, and rendered output bytes alike."""
+    """A2-1's done-when, refined for the Day 34 zero-retention split: a second
+    ``JobStore`` pointed at the same DB (simulating a restart) must see all the
+    job **metadata** the first wrote — status, timestamps, usage. The rendered
+    **output bytes** must NOT survive: they live in process memory only and are
+    never persisted (no document content is ever written to the DB or disk)."""
 
     def setUp(self):
         self._tmpdir = tempfile.TemporaryDirectory()
@@ -91,12 +93,14 @@ class PersistenceAcrossRestartTest(unittest.TestCase):
     def tearDown(self):
         self._tmpdir.cleanup()
 
-    def test_finished_job_and_outputs_survive_a_restart(self):
+    def test_finished_job_metadata_survives_a_restart_but_outputs_do_not(self):
         first = JobStore(self.db_path)
         job = first.create("Model.pbix", tenant="acme")
         first.mark_processing(job.id)
         first.mark_done(job.id, ["md", "html"], usage={"agent": {"calls": 2}})
         first.store_outputs(job.id, {"md": b"# Report", "html": b"<html>ok</html>"})
+        # In the same instance, the outputs are available for download...
+        self.assertEqual(first.get_output(job.id, "md"), b"# Report")
         first.close()
 
         second = JobStore(self.db_path)
@@ -107,8 +111,9 @@ class PersistenceAcrossRestartTest(unittest.TestCase):
             self.assertEqual(revived.filename, "Model.pbix")
             self.assertEqual(revived.tenant, "acme")
             self.assertEqual(revived.usage, {"agent": {"calls": 2}})
-            self.assertEqual(second.get_output(job.id, "md"), b"# Report")
-            self.assertEqual(second.get_output(job.id, "html"), b"<html>ok</html>")
+            # ...but the rendered bytes are gone after a restart — never persisted.
+            self.assertIsNone(second.get_output(job.id, "md"))
+            self.assertIsNone(second.get_output(job.id, "html"))
         finally:
             second.close()
 
@@ -141,9 +146,11 @@ class PersistenceAcrossRestartTest(unittest.TestCase):
             second.close()
 
 
-class SweepBehaviorUnchangedTest(unittest.TestCase):
-    """The watchdog and TTL-expiry contract must be identical to the old
-    in-memory implementation — only the storage backing changed."""
+class SweepBehaviorTest(unittest.TestCase):
+    """The watchdog force-fail and the output-TTL eviction still behave as
+    before; only what expires changed — the ephemeral output bytes expire, but
+    the job **metadata** is now kept as a durable history (Day 34) instead of
+    being deleted with its BLOBs."""
 
     def test_watchdog_force_fails_stuck_processing_job(self):
         store = JobStore(processing_timeout_seconds=0.01)
@@ -162,12 +169,18 @@ class SweepBehaviorUnchangedTest(unittest.TestCase):
         time.sleep(0.05)
         self.assertIsNone(store.get_output(job.id, "md"))
 
-    def test_finished_job_without_outputs_expires_after_ttl(self):
+    def test_finished_job_metadata_is_kept_as_history_after_ttl(self):
+        # Day 34: the job record persists (durable job history in the DB) even
+        # after its output TTL elapses -- only the ephemeral output bytes go.
         store = JobStore(ttl_seconds=0.01)
         job = store.create("x.zip")
-        store.mark_done(job.id, [])
+        store.mark_done(job.id, ["md"])
+        store.store_outputs(job.id, {"md": b"# Report"})
         time.sleep(0.05)
-        self.assertIsNone(store.get(job.id))
+        revived = store.get(job.id)
+        self.assertIsNotNone(revived)                     # metadata kept
+        self.assertIs(revived.status, JobStatus.DONE)
+        self.assertIsNone(store.get_output(job.id, "md"))  # bytes gone
 
 
 @unittest.skipUnless(_HAVE_SERVICE, "service extras (fastapi/httpx/multipart) not installed")

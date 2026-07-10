@@ -1,21 +1,29 @@
-"""Job registry with TTL expiry — backed by stdlib ``sqlite3``.
+"""Job registry — metadata in SQLite/Postgres, rendered bytes in memory only.
 
 A ``Job`` record holds **status and timestamps only** — never uploaded content
-or extracted metadata. The rendered documents (the user-owned output) are
-stored as BLOBs in the same database and expire after ``ttl_seconds``. This is
-the only state that survives a request, and only briefly.
+or extracted metadata. It is the one piece of state that persists, so a job
+started before a restart is still visible afterwards (A2-1) and the account
+dashboard can show a durable job history. It goes to whatever
+``PBICOMPASS_JOBS_DB`` points at: a sqlite path (self-host default) or a
+``postgres://`` URL (managed Postgres, e.g. Supabase) via the shared
+:class:`~pbicompass.service.db._Connection` wrapper — the same one
+``AccountStore`` uses. No sqlite file is required in a hosted deployment.
 
-Defaults to an in-memory database (``:memory:``, matching ``AccountStore``'s
-convention) so tests and ad hoc runs behave exactly as the previous pure-Python
-implementation did. Point ``db_path`` at a file (or a mounted volume, via
-``PBICOMPASS_JOBS_DB``) so a job started before a restart/redeploy is still
-visible to the poller afterwards, instead of silently 404ing (A2-1).
+The rendered documents (the user-owned output) are held **in process memory
+only** — TTL-swept and **never written to any database or disk**. So no
+document content is ever stored durably (zero-retention): the outputs live
+just long enough for the user to download them and vanish on process restart.
+Only "the job id and stuff" (status/timestamps) is ever persisted.
+
+This assumes the single-process inline queue mode (the default). A
+Celery/multi-instance setup would need a shared *ephemeral* cache for the
+output bytes — a later scaling step; it must never become a durable store, or
+the zero-retention guarantee breaks.
 """
 
 from __future__ import annotations
 
 import json
-import sqlite3
 import threading
 import time
 import uuid
@@ -23,7 +31,13 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
+from .db import _Connection
 from .metrics import MetricsRegistry
+
+_TIMEOUT_MESSAGE = (
+    "Generation timed out. Try a smaller file, a lower AI effort level, "
+    "or the offline engine."
+)
 
 
 class JobStatus(str, Enum):
@@ -56,7 +70,8 @@ class JobStore:
         # Recorded (not just consumed) so a separate process — a Celery
         # worker (Day 18) — can open its own connection to the exact same
         # database the API process is using, since a Python object can't
-        # cross the broker.
+        # cross the broker. A postgres:// URL routes to managed Postgres via
+        # _Connection (Day 34); anything else is a stdlib sqlite path.
         self.db_path = db_path
         self.ttl = ttl_seconds
         # Watchdog ceiling: a job stuck in PROCESSING longer than this is
@@ -69,12 +84,16 @@ class JobStore:
         # ``JobStore()`` test call site is unaffected — this only tracks
         # counts and integer token numbers, never job content.
         self.metrics = metrics
-        # One shared connection guarded by a lock: works for both file and
-        # in-memory DBs across FastAPI's threadpool (same pattern as
-        # ``AccountStore``).
-        self._conn = sqlite3.connect(db_path, check_same_thread=False)
-        self._conn.row_factory = sqlite3.Row
+        # One shared metadata connection guarded by a lock: works for both
+        # file/in-memory sqlite and a Postgres connection across FastAPI's
+        # threadpool (same pattern as ``AccountStore``).
+        self._conn = _Connection(db_path)
         self._lock = threading.Lock()
+        # Rendered output bytes live HERE — process memory, never a DB/disk.
+        # job_id -> {"expires": float, "blobs": {format: bytes}}. Guarded by
+        # the same lock. TTL-swept; lost on restart, by design (zero
+        # retention: document content is never persisted anywhere durable).
+        self._outputs: dict[str, dict] = {}
         self._init_schema()
 
     def close(self) -> None:
@@ -83,6 +102,12 @@ class JobStore:
 
     def _init_schema(self) -> None:
         with self._lock:
+            # DOUBLE PRECISION (not REAL): a unix timestamp needs float8 to
+            # stay precise on Postgres — REAL is float4 there and would round
+            # a ~1.7e9 timestamp by minutes, breaking the TTL/watchdog math.
+            # sqlite treats DOUBLE PRECISION as REAL affinity (8-byte float),
+            # identical to before. Only job metadata is stored — no outputs
+            # table exists anymore (rendered bytes never touch the DB).
             self._conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS jobs (
@@ -90,20 +115,13 @@ class JobStore:
                     filename TEXT NOT NULL,
                     tenant TEXT NOT NULL DEFAULT 'public',
                     status TEXT NOT NULL,
-                    created_at REAL NOT NULL,
-                    started_at REAL,
-                    finished_at REAL,
+                    created_at DOUBLE PRECISION NOT NULL,
+                    started_at DOUBLE PRECISION,
+                    finished_at DOUBLE PRECISION,
                     error TEXT,
                     formats TEXT NOT NULL DEFAULT '[]',
                     warnings TEXT NOT NULL DEFAULT '[]',
                     usage TEXT NOT NULL DEFAULT '{}'
-                );
-                CREATE TABLE IF NOT EXISTS outputs (
-                    job_id TEXT NOT NULL,
-                    format TEXT NOT NULL,
-                    data BLOB NOT NULL,
-                    expires REAL NOT NULL,
-                    PRIMARY KEY (job_id, format)
                 );
                 """
             )
@@ -163,14 +181,11 @@ class JobStore:
             self.metrics.record_job_failed()
 
     def store_outputs(self, job_id: str, data: dict[str, bytes]) -> None:
+        """Hold the rendered bytes in memory until ``ttl`` elapses. Never
+        written to the DB or disk — this is the whole zero-retention point."""
         expires = time.time() + self.ttl
         with self._lock:
-            self._conn.execute("DELETE FROM outputs WHERE job_id = ?", (job_id,))
-            self._conn.executemany(
-                "INSERT INTO outputs (job_id, format, data, expires) VALUES (?,?,?,?)",
-                [(job_id, fmt, blob, expires) for fmt, blob in data.items()],
-            )
-            self._conn.commit()
+            self._outputs[job_id] = {"expires": expires, "blobs": dict(data)}
 
     # -- access -------------------------------------------------------------
     def get(self, job_id: str) -> Optional[Job]:
@@ -182,10 +197,8 @@ class JobStore:
     def get_output(self, job_id: str, fmt: str) -> Optional[bytes]:
         self.sweep()
         with self._lock:
-            row = self._conn.execute(
-                "SELECT data FROM outputs WHERE job_id = ? AND format = ?", (job_id, fmt)
-            ).fetchone()
-        return row["data"] if row else None
+            entry = self._outputs.get(job_id)
+            return entry["blobs"].get(fmt) if entry else None
 
     def list_for_tenant(self, tenant: str, limit: int = 50) -> list[Job]:
         """A tenant's recent jobs, newest first — for the account dashboard's
@@ -200,28 +213,41 @@ class JobStore:
             ).fetchall()
         return [self._row_to_job(r) for r in rows]
 
+    def list_all(self, limit: int = 200, tenant: str | None = None) -> list[Job]:
+        """Every tenant's recent jobs, newest first — for the admin panel's
+        cross-tenant job browser (Day 38). Optional ``tenant`` filter narrows
+        it to one tenant. Still status/timestamps only, zero-retention."""
+        self.sweep()
+        with self._lock:
+            if tenant:
+                rows = self._conn.execute(
+                    "SELECT * FROM jobs WHERE tenant = ? ORDER BY created_at DESC LIMIT ?",
+                    (tenant, limit),
+                ).fetchall()
+            else:
+                rows = self._conn.execute(
+                    "SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?", (limit,)
+                ).fetchall()
+        return [self._row_to_job(r) for r in rows]
+
     def sweep(self) -> None:
-        """Drop expired outputs and the job records that go with them; force-fail
-        any job stuck in PROCESSING past the watchdog timeout."""
+        """Force-fail any job stuck in PROCESSING past the watchdog timeout,
+        and drop expired output bytes from memory. Job **metadata** is kept as
+        a durable history (only the ephemeral output bytes expire) — unlike
+        the pre-Day-34 store, which deleted the whole record with its BLOBs."""
         now = time.time()
         with self._lock:
             cur = self._conn.execute(
                 "UPDATE jobs SET status = ?, finished_at = ?, error = ? "
                 "WHERE status = ? AND started_at IS NOT NULL AND (? - started_at) > ?",
-                (JobStatus.FAILED.value, now,
-                 "Generation timed out. Try a smaller file, a lower AI "
-                 "effort level, or the offline engine.",
+                (JobStatus.FAILED.value, now, _TIMEOUT_MESSAGE,
                  JobStatus.PROCESSING.value, now, self.processing_timeout),
             )
             timed_out = cur.rowcount
-            self._conn.execute("DELETE FROM outputs WHERE expires < ?", (now,))
-            # also expire terminal jobs past their TTL even if outputs were never stored
-            self._conn.execute(
-                "DELETE FROM jobs WHERE finished_at IS NOT NULL AND (? - finished_at) > ? "
-                "AND id NOT IN (SELECT job_id FROM outputs)",
-                (now, self.ttl),
-            )
             self._conn.commit()
+            # Evict expired output blobs (in-memory only, never persisted).
+            for jid in [jid for jid, e in self._outputs.items() if e["expires"] < now]:
+                del self._outputs[jid]
         if self.metrics and timed_out > 0:
             for _ in range(timed_out):
                 self.metrics.record_job_failed()
@@ -247,7 +273,7 @@ class JobStore:
         return payload
 
     @staticmethod
-    def _row_to_job(row: sqlite3.Row) -> Job:
+    def _row_to_job(row) -> Job:
         return Job(
             id=row["id"],
             filename=row["filename"],
