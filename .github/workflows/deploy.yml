@@ -11,14 +11,43 @@ jobs:
     steps:
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          PBICOMPASS_DB: ${{ secrets.PBICOMPASS_DB }}
+          MESHAPI_API_KEY: ${{ secrets.MESHAPI_API_KEY }}
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
+          envs: SUPABASE_URL,SUPABASE_ANON_KEY,SUPABASE_SERVICE_ROLE_KEY,PBICOMPASS_DB,MESHAPI_API_KEY
           script: |
             set -e
             cd ~/pbicompass
             git pull origin main
+
+            # Idempotently upsert secret-managed vars into the persistent,
+            # never-committed ~/pbicompass.env (outside the repo dir, read by
+            # `docker run --env-file` below). Only touches a key when the
+            # matching GitHub secret is actually set, so vars maintained by
+            # hand directly on the VM (e.g. PBICOMPASS_ADMIN_TOKEN,
+            # ANTHROPIC_API_KEY) are left alone unless/until you also add
+            # them as GitHub secrets.
+            touch ~/pbicompass.env
+            upsert_env() {
+              if [ -n "$2" ]; then
+                grep -v "^$1=" ~/pbicompass.env > ~/pbicompass.env.tmp || true
+                mv ~/pbicompass.env.tmp ~/pbicompass.env
+                echo "$1=$2" >> ~/pbicompass.env
+              fi
+            }
+            upsert_env SUPABASE_URL "$SUPABASE_URL"
+            upsert_env SUPABASE_ANON_KEY "$SUPABASE_ANON_KEY"
+            upsert_env SUPABASE_SERVICE_ROLE_KEY "$SUPABASE_SERVICE_ROLE_KEY"
+            upsert_env PBICOMPASS_DB "$PBICOMPASS_DB"
+            upsert_env MESHAPI_API_KEY "$MESHAPI_API_KEY"
+
             sudo docker build -t pbicompass .
             sudo docker rm -f pbicompass || true
             sudo docker run -d --name pbicompass \

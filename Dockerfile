@@ -20,9 +20,14 @@ COPY src ./src
 # Claude, Gemini, or Cohere per job — ship all so that choice isn't silently
 # a no-op). No engine does anything without its API key set at runtime
 # (ANTHROPIC_API_KEY / GEMINI_API_KEY / COHERE_API_KEY) or passed BYOK from
-# the UI; the offline engine still needs neither. Add ".[service,agents,pbix]"
-# for legacy .pbix parsing too.
-RUN pip install ".[service,agents]"
+# the UI; the offline engine still needs neither. Add ".[pbix]" for legacy
+# .pbix parsing too.
+# postgres: managed Postgres for AccountStore (PBICOMPASS_DB=postgres://...,
+#   e.g. Supabase's own Postgres) -- inert if PBICOMPASS_DB stays a plain
+#   sqlite path.
+# auth: Supabase Auth JWT verification (SUPABASE_URL) -- inert if
+#   SUPABASE_URL is unset (API-key-only self-host mode).
+RUN pip install ".[service,agents,postgres,auth]"
 
 # Run as a non-root user; /data holds the SQLite accounts DB (mount a volume here).
 RUN useradd --create-home app && mkdir -p /data && chown app /data
