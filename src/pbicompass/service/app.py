@@ -192,8 +192,9 @@ def create_app(
     index_html = (_STATIC / "index.html").read_text(encoding="utf-8")
     admin_html = (_STATIC / "admin.html").read_text(encoding="utf-8")
     app_html = (_STATIC / "app.html").read_text(encoding="utf-8")
-    # Legal pages required to link Paddle billing (Day 35): read-once-into-
-    # memory, same pattern as the other static pages above.
+    # Pricing + legal pages required to link Paddle billing (Day 35/36):
+    # read-once-into-memory, same pattern as the other static pages above.
+    pricing_html = (_STATIC / "pricing.html").read_text(encoding="utf-8")
     privacy_html = (_STATIC / "privacy.html").read_text(encoding="utf-8")
     terms_html = (_STATIC / "terms.html").read_text(encoding="utf-8")
     refund_html = (_STATIC / "refund.html").read_text(encoding="utf-8")
@@ -354,6 +355,10 @@ def create_app(
     @app.get("/admin", response_class=HTMLResponse)
     def admin_page() -> str:
         return admin_html
+
+    @app.get("/pricing", response_class=HTMLResponse)
+    def pricing_page() -> str:
+        return pricing_html
 
     @app.get("/privacy", response_class=HTMLResponse)
     def privacy_page() -> str:
