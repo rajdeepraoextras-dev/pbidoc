@@ -10,6 +10,7 @@ import unittest
 from pbicompass.agents.report_facts import (
     FIELD_SELECTOR_LABEL,
     business_plain_english,
+    data_source_type_counts,
     declassify,
     field_parameter_table_names,
     first_sentence,
@@ -171,13 +172,18 @@ class FieldParameterRecognitionTest(unittest.TestCase):
         self.assertFalse(any("select" in q for q in questions),
                          f"field parameter leaked into a question: {questions}")
 
-    def test_field_parameter_labeled_as_selector_in_glossary(self):
+    def test_field_parameter_excluded_from_glossary(self):
+        # P2: a field parameter/system selector is UI mechanics, not
+        # business vocabulary — it has no place in a *business* glossary at
+        # all (previously labeled "A field selector that switches what the
+        # chart displays.", which also left it exposed to a critic/
+        # grounding pass overwriting that fixed, correct text with a
+        # leaked editing instruction — see also the "Explain" directive
+        # fixed in sanitize.py).
         from pbicompass.agents.generators.user_guide import BusinessGuideGenerator
 
         doc = BusinessGuideGenerator.generate(_model_with_field_parameter())
-        term = next((g for g in doc.glossary if g.term == "select"), None)
-        self.assertIsNotNone(term)
-        self.assertIn("field selector", term.plain_definition.lower())
+        self.assertIsNone(next((g for g in doc.glossary if g.term == "select"), None))
 
 
 def _model_with_bare_field_parameter() -> SemanticModel:
@@ -263,14 +269,17 @@ class BareFieldSelectorRegressionTest(unittest.TestCase):
         self.assertNotIn("select", terms)
         self.assertNotIn("select1", terms)
 
-    def test_bare_field_parameter_labeled_as_selector_in_user_guide_glossary(self):
+    def test_bare_field_parameter_excluded_from_user_guide_glossary(self):
+        # P2: now consistent with the technical doc's glossary (above) —
+        # a field parameter is UI mechanics, not business vocabulary, so
+        # it's excluded from the *business* glossary entirely rather than
+        # merely relabeled.
         from pbicompass.agents.generators.user_guide import BusinessGuideGenerator
 
         doc = BusinessGuideGenerator.generate(_model_with_bare_field_parameter())
-        for name in ("select", "select1"):
-            term = next((g for g in doc.glossary if g.term == name), None)
-            self.assertIsNotNone(term, f"expected a glossary entry for {name!r}")
-            self.assertIn("field selector", term.plain_definition.lower())
+        terms = {g.term for g in doc.glossary}
+        self.assertNotIn("select", terms)
+        self.assertNotIn("select1", terms)
 
 
 class LocalPathSourcesTest(unittest.TestCase):
@@ -285,6 +294,59 @@ class LocalPathSourcesTest(unittest.TestCase):
         paths = local_path_sources(model)
         self.assertEqual(len(paths), 1)
         self.assertIn("orders.xlsx", paths[0])
+
+
+class DataSourceTypeCountsTest(unittest.TestCase):
+    """Day 5: G.1's own worked example — "1 Excel workbook — Data.xlsx", not
+    the raw connector name "1 File.Contents(s)"."""
+
+    def test_file_contents_resolves_by_extension_and_shows_filename(self):
+        model = SemanticModel(
+            report_name="R",
+            data_sources=[DataSource(type="File.Contents", detail=r"C:\Users\me\Data.xlsx")],
+        )
+        lines = data_source_type_counts(model)
+        self.assertEqual(lines, ["1 Excel workbook — Data.xlsx"])
+
+    def test_never_shows_the_raw_connector_name(self):
+        model = SemanticModel(
+            report_name="R",
+            data_sources=[DataSource(type="File.Contents", detail=r"C:\data\report.unknownext")],
+        )
+        lines = data_source_type_counts(model)
+        self.assertNotIn("File.Contents", lines[0])
+
+    def test_never_shows_a_directory_path(self):
+        model = SemanticModel(
+            report_name="R",
+            data_sources=[DataSource(type="Excel.Workbook", detail=r"C:\Users\me\Desktop\Data.xlsx")],
+        )
+        lines = data_source_type_counts(model)
+        self.assertNotIn("Users", lines[0])
+        self.assertNotIn("\\", lines[0])
+
+    def test_pluralizes_correctly_at_count_one_and_many(self):
+        one = SemanticModel(report_name="R", data_sources=[DataSource(type="Sql.Database", server="s", database="d")])
+        many = SemanticModel(
+            report_name="R",
+            data_sources=[
+                DataSource(type="Sql.Database", server="s1", database="d1"),
+                DataSource(type="Sql.Database", server="s2", database="d2"),
+            ],
+        )
+        self.assertEqual(data_source_type_counts(one), ["1 SQL database"])
+        self.assertEqual(data_source_type_counts(many), ["2 SQL databases"])
+
+    def test_multiple_sources_of_one_file_like_type_omit_filenames(self):
+        model = SemanticModel(
+            report_name="R",
+            data_sources=[
+                DataSource(type="Excel.Workbook", detail=r"C:\a\One.xlsx"),
+                DataSource(type="Excel.Workbook", detail=r"C:\b\Two.xlsx"),
+            ],
+        )
+        lines = data_source_type_counts(model)
+        self.assertEqual(lines, ["2 Excel workbooks"])
 
 
 class FirstSentenceTest(unittest.TestCase):

@@ -15,10 +15,14 @@ from pathlib import Path
 from ..schemas.executive_document import ExecutiveDocument, ExecutiveRisk
 from ._docx_writer import _Docx
 from ._html_shell import page_shell
+from ._shared import HEALTH_COMPONENT_LABELS
+from ._shared import action_chip as _chip
 from ._shared import doc_subtitle as _doc_subtitle
 from ._shared import format_timestamp as _fmt_ts
 from ._shared import html_e as _e
+from ._shared import html_table as _html_table
 from ._shared import md_table as _table
+from ._shared import truncate_label as _truncate
 
 _SECTION_TITLES = [
     "1. Purpose & Value",
@@ -29,22 +33,58 @@ _SECTION_TITLES = [
     "6. What's Next",
 ]
 
+# Component order for the mini-bars — same 5 components the audit report's
+# score-hero shows, condensed to a bar instead of a table row with a prose
+# "why". Labels are the audit doc's own ``HEALTH_COMPONENT_LABELS``, except
+# "DAX Quality" — this document never names DAX/implementation terms
+# (``_IMPLEMENTATION_JARGON`` in the generator enforces the same rule on
+# risk/next-step text), so the calculation-logic component gets its own
+# business-safe label here.
+_COMPONENT_ORDER = ["modeling", "dax", "governance", "performance", "unused_assets"]
+_EXEC_COMPONENT_LABELS = dict(HEALTH_COMPONENT_LABELS, dax="Calculation Quality")
+
 
 def _risk_line(r: ExecutiveRisk) -> str:
     return f"[{r.severity}] {r.consequence} — **Ask:** {r.ask}"
 
 
+def _band_class(band: str) -> str:
+    return (band or "").strip().lower().replace(" ", "-") or "fair"
+
+
+def _score_color(score: int) -> str:
+    if score >= 90:
+        return "#16a34a"
+    if score >= 75:
+        return "#124fed"
+    if score >= 50:
+        return "#b45309"
+    return "#b42318"
+
+
 # -- Markdown -------------------------------------------------------------------
 def render_markdown(doc: ExecutiveDocument) -> str:
     md = doc.metadata
+    subtitle = _doc_subtitle(md)
+    if getattr(md, "score_trend", None):
+        subtitle += f" · Score Trend: {md.score_trend}"
     out: list[str] = [f"# {md.report_name} — Executive Summary\n"]
-    out.append(f"_{_doc_subtitle(md)}_\n")
+    out.append(f"_{subtitle}_\n")
 
     out.append(f"\n## {_SECTION_TITLES[0]}\n")
     out.append(doc.purpose + "\n")
     out.append(doc.business_value + "\n")
     if getattr(doc, "requirements_coverage", None):
         out.append(f"**Requirements coverage:** {doc.requirements_coverage}\n")
+
+    h = doc.health
+    if h:
+        out.append(f"\n**Health Score: {h.overall}/100 — {h.band}**\n")
+        out.append(_table(
+            ["Component", "Score"],
+            [[_EXEC_COMPONENT_LABELS.get(k, k.replace("_", " ").title()), str(h.component_scores.get(k, "—"))]
+             for k in _COMPONENT_ORDER if k in h.component_scores],
+        ))
 
     out.append(f"\n## {_SECTION_TITLES[1]}\n")
     if doc.key_kpis:
@@ -73,17 +113,22 @@ def render_markdown(doc: ExecutiveDocument) -> str:
     out.append(doc.maintenance_note + "\n")
 
     out.append(f"\n## {_SECTION_TITLES[4]}\n")
-    ownership_rows = [["Owner", md.owner or "not specified"]]
+    ownership_rows = [["Owner", md.owner or "⚠ not assigned"]]
     if doc.steward:
         ownership_rows.append(["Steward", doc.steward])
     if doc.classification:
         ownership_rows.append(["Classification", doc.classification])
     out.append(_table(["Field", "Value"], ownership_rows))
+    if not md.owner:
+        out.append("\n> **⚠ Action needed:** no owner is assigned. Assign someone accountable so refresh "
+                    "failures and change requests have a clear point of contact.\n")
 
     out.append(f"\n## {_SECTION_TITLES[5]}\n")
     if doc.next_steps:
-        for s in doc.next_steps:
-            out.append(f"- {s}")
+        out.append(_table(
+            ["Severity", "Action", "Effort"],
+            [[s.severity, s.action, s.effort] for s in doc.next_steps],
+        ))
     else:
         out.append("_Nothing outstanding._")
     out.append("")
@@ -104,6 +149,64 @@ def _risk_href(rule_id: str, audit_href: str | None) -> str:
     return f' — <a href="{_e(audit_href)}#{_e(anchor)}">full detail</a>'
 
 
+def _health_mini_html(h) -> str:
+    """Condensed band chip + per-component mini-bars — the executive doc's
+    own compact take on the audit report's score-hero (Day 5)."""
+    if not h:
+        return ""
+    bars = []
+    for k in _COMPONENT_ORDER:
+        if k not in h.component_scores:
+            continue
+        score = h.component_scores[k]
+        label = _EXEC_COMPONENT_LABELS.get(k, k.replace("_", " ").title())
+        bars.append(
+            '<div class="mini-bar-row">'
+            f'<span class="mini-bar-label">{_e(label)}</span>'
+            '<span class="mini-bar-track"><span class="mini-bar-fill" '
+            f'style="width:{max(0, min(100, score))}%; background:{_score_color(score)};"></span></span>'
+            f'<span class="mini-bar-value">{_e(score)}</span>'
+            '</div>'
+        )
+    return (
+        '<div class="health-mini">'
+        f'<div><div class="score-big" style="font-size:2.2rem;">{_e(h.overall)}/100</div>'
+        f'<span class="band-chip {_e(_band_class(h.band))}">{_e(h.band)}</span></div>'
+        f'<div class="mini-bars">{"".join(bars)}</div>'
+        '</div>'
+    )
+
+
+def _thumbnails_html(doc: ExecutiveDocument, sibling_hrefs: dict[str, str] | None) -> str:
+    """"Report at a glance" (Day 5): a small grid of wireframe thumbnails,
+    one per visible page (capped, "+N more" beyond that). Screen-only
+    (``.no-print`` — see ``_html_shell.py``) so it never grows the exec
+    doc's printed-page count. Each card deep-links into a sibling document's
+    full-size page section when one was generated in the same job (2.7)."""
+    if not doc.page_thumbnails:
+        return ""
+    from ._shared import pluralize_count
+
+    target_href = (sibling_hrefs or {}).get("user_guide") or (sibling_hrefs or {}).get("technical")
+    cards = []
+    for t in doc.page_thumbnails:
+        caption = _truncate(t.name, 28)
+        inner = f'{t.svg}<span class="thumb-caption" title="{_e(t.name)}">{_e(caption)}</span>'
+        if target_href:
+            cards.append(f'<div class="thumb-card"><a href="{_e(target_href)}#{_e(t.anchor)}">{inner}</a></div>')
+        else:
+            cards.append(f'<div class="thumb-card">{inner}</div>')
+    remaining = doc.page_count - len(doc.page_thumbnails)
+    if remaining > 0:
+        cards.append(f'<div class="thumb-more">+{_e(pluralize_count("more page", remaining))}</div>')
+    return (
+        '<div class="no-print">'
+        f'<h3>Report at a glance <span class="muted">({_e(pluralize_count("page", doc.page_count))})</span></h3>'
+        f'<div class="thumb-grid">{"".join(cards)}</div>'
+        '</div>'
+    )
+
+
 def render_html(
     doc: ExecutiveDocument, *,
     doc_links: list[tuple[str, str]] | None = None,
@@ -113,7 +216,10 @@ def render_html(
     audit_href = (sibling_hrefs or {}).get("audit")
 
     toc = [(f"sec{i+1}", title.split(". ", 1)[1]) for i, title in enumerate(_SECTION_TITLES)]
-    kpis = [
+    kpis = []
+    if doc.health:
+        kpis.append(("Health Score", f"{doc.health.overall}/100 · {doc.health.band}"))
+    kpis += [
         ("Key KPIs", len(doc.key_kpis)),
         ("Top Risks", len(doc.top_risks)),
         ("Data Sources", len(doc.data_source_types)),
@@ -126,6 +232,8 @@ def render_html(
     o.append(f"<p>{_e(doc.business_value)}</p>")
     if getattr(doc, "requirements_coverage", None):
         o.append(f'<p><strong>Requirements coverage:</strong> {_e(doc.requirements_coverage)}</p>')
+    o.append(_health_mini_html(doc.health))
+    o.append(_thumbnails_html(doc, sibling_hrefs))
 
     kpi_ids = [f"kpi-{i}" for i in range(len(doc.key_kpis))]
     o.append(f'<h2 id="sec2">{_e(_SECTION_TITLES[1])}</h2>')
@@ -158,8 +266,7 @@ def render_html(
         o.append(f'<p><strong>Gateway &amp; latency:</strong> {_e(doc.refresh_notes)}</p>')
     o.append(f"<p>{_e(doc.maintenance_note)}</p>")
 
-    _not_specified = '<span class="muted">not specified</span>'
-    owner_html = _e(md.owner) if md.owner else _not_specified
+    owner_html = _e(md.owner) if md.owner else _chip("⚠ Not assigned", tone="warn")
     ownership_items = [f"<li><strong>Owner:</strong> {owner_html}</li>"]
     if doc.steward:
         ownership_items.append(f"<li><strong>Steward:</strong> {_e(doc.steward)}</li>")
@@ -167,10 +274,20 @@ def render_html(
         ownership_items.append(f"<li><strong>Classification:</strong> {_e(doc.classification)}</li>")
     o.append(f'<h2 id="sec5">{_e(_SECTION_TITLES[4])}</h2>')
     o.append("<ul>" + "".join(ownership_items) + "</ul>")
+    if not md.owner:
+        o.append(
+            '<div class="card-section" style="border-left: 4px solid #b45309;">'
+            '<p><strong>⚠ Action needed:</strong> no owner is assigned. Assign someone accountable so '
+            'refresh failures and change requests have a clear point of contact.</p></div>'
+        )
 
     o.append(f'<h2 id="sec6">{_e(_SECTION_TITLES[5])}</h2>')
     if doc.next_steps:
-        o.append("<ul>" + "".join(f"<li>{_e(s)}</li>" for s in doc.next_steps) + "</ul>")
+        o.append(_html_table(
+            ["Severity", "Action", "Effort"],
+            [[f'<span class="pill {_e(s.severity.lower())}">{_e(s.severity)}</span>', _e(s.action), _e(s.effort)]
+             for s in doc.next_steps],
+        ))
     else:
         o.append('<p class="muted">Nothing outstanding.</p>')
 
@@ -184,9 +301,13 @@ def render_html(
         for r, rid in zip(doc.top_risks, risk_ids)
     ]
 
+    subtitle = _doc_subtitle(md)
+    if getattr(md, "score_trend", None):
+        subtitle += f' · Score Trend: {md.score_trend}'
+
     return page_shell(
         title=f"{md.report_name} — Executive Summary",
-        subtitle=_doc_subtitle(md),
+        subtitle=subtitle,
         toc=toc, kpis=kpis, body_html="\n".join(o), doc_links=doc_links, search_index=search_index,
         owner=md.owner, version=md.version, status=md.status, classification=doc.classification,
     )
@@ -199,8 +320,11 @@ def render_docx(doc: ExecutiveDocument, out_path) -> Path:
     d = _Docx()
     md = doc.metadata
 
+    subtitle = _doc_subtitle(md)
+    if getattr(md, "score_trend", None):
+        subtitle += f" · Score Trend: {md.score_trend}"
     d.heading(0, f"{md.report_name} — Executive Summary")
-    d.para([d._run(_doc_subtitle(md), italic=True)])
+    d.para([d._run(subtitle, italic=True)])
 
     def _bullets_or_none(items: list[str], empty: str) -> None:
         if items:
@@ -214,6 +338,14 @@ def render_docx(doc: ExecutiveDocument, out_path) -> Path:
     d.para(doc.business_value)
     if getattr(doc, "requirements_coverage", None):
         d.para([d._run("Requirements coverage: ", bold=True), d._run(doc.requirements_coverage)])
+    if doc.health:
+        h = doc.health
+        d.para([d._run(f"Health Score: {h.overall}/100 — {h.band}", bold=True)])
+        d.table(
+            ["Component", "Score"],
+            [[_EXEC_COMPONENT_LABELS.get(k, k.replace("_", " ").title()), str(h.component_scores.get(k, "—"))]
+             for k in _COMPONENT_ORDER if k in h.component_scores],
+        )
 
     d.heading(1, _SECTION_TITLES[1])
     _bullets_or_none(doc.key_kpis, "No KPIs identified.")
@@ -234,15 +366,26 @@ def render_docx(doc: ExecutiveDocument, out_path) -> Path:
     d.para(doc.maintenance_note)
 
     d.heading(1, _SECTION_TITLES[4])
-    ownership_rows = [["Owner", md.owner or "not specified"]]
+    ownership_rows = [["Owner", md.owner or "⚠ Not assigned"]]
     if doc.steward:
         ownership_rows.append(["Steward", doc.steward])
     if doc.classification:
         ownership_rows.append(["Classification", doc.classification])
     d.table(["Field", "Value"], ownership_rows)
+    if not md.owner:
+        d.para([d._run(
+            "⚠ Action needed: no owner is assigned. Assign someone accountable so refresh "
+            "failures and change requests have a clear point of contact.", bold=True,
+        )])
 
     d.heading(1, _SECTION_TITLES[5])
-    _bullets_or_none(doc.next_steps, "Nothing outstanding.")
+    if doc.next_steps:
+        d.table(
+            ["Severity", "Action", "Effort"],
+            [[s.severity, s.action, s.effort] for s in doc.next_steps],
+        )
+    else:
+        d.para([d._run("Nothing outstanding.", italic=True)])
 
     d.save(out_path)
     return out_path

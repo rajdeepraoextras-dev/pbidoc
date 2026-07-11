@@ -285,8 +285,10 @@ def business_analyst_deterministic(model: SemanticModel) -> ExecutiveSummary:
         purpose += f", tracking {', '.join(key_measures[:4])}"
     if dims:
         purpose += f" across {', '.join(dims[:4])}"
+    from ..render._shared import pluralize_count  # lazy: avoids the agents<->render import cycle
+
     purpose += (
-        f". It spans {len(visible_pages)} report page(s), documented individually below. "
+        f". It spans {pluralize_count('report page', len(visible_pages))}, documented individually below. "
         "This purpose statement is derived from the model contents alone — the business "
         "context requires confirmation from the report owner."
     )
@@ -296,7 +298,7 @@ def business_analyst_deterministic(model: SemanticModel) -> ExecutiveSummary:
         theme = _page_theme(p.visuals, field_param_tables)
         counts = Counter(v.type for v in p.visuals)
         inv = ", ".join(f"{n} {_visual_name(vt, n)}" for vt, n in counts.most_common(5))
-        summary = f"Presents {len(p.visuals)} visual(s)"
+        summary = f"Presents {pluralize_count('visual', len(p.visuals))}"
         if inv:
             summary += f" — {inv}"
         summary += "."
@@ -379,13 +381,15 @@ def schema_shape(model: SemanticModel) -> tuple[str, list[str], list[str]]:
 
 
 def data_modeler_deterministic(model: SemanticModel) -> tuple[str, list[str]]:
+    from ..render._shared import pluralize_count  # lazy: avoids the agents<->render import cycle
+
     shape, facts, dims = schema_shape(model)
 
     summary = (
-        f"The model is {shape}. It has {len(facts)} fact table(s) "
-        f"({', '.join(facts) or 'none'}) and {len(dims)} dimension table(s) "
-        f"({', '.join(dims) or 'none'}), connected by {len(model.relationships)} "
-        f"relationship(s)."
+        f"The model is {shape}. It has {pluralize_count('fact table', len(facts))} "
+        f"({', '.join(facts) or 'none'}) and {pluralize_count('dimension table', len(dims))} "
+        f"({', '.join(dims) or 'none'}), connected by "
+        f"{pluralize_count('relationship', len(model.relationships))}."
     )
 
     risks: list[str] = []

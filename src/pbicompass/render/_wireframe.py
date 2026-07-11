@@ -30,7 +30,7 @@ from ._diagram_theme import (
     ACCENT, CAPTION, EDGE, FAINT, GHOST_EDGE, HAIRLINE, INK, MUTED,
     SKELETON, SKELETON_SOFT, canvas, canvas_defs, chip, legend,
 )
-from ._shared import anchor_slug, html_e
+from ._shared import anchor_slug, html_e, pluralize_count
 
 # Non-data layout elements — quieter styling, never linked to a
 # data-dictionary row (I3).
@@ -758,6 +758,6 @@ def render_wireframe(
 
     footer = ""
     if decorative_overflow:
-        footer = f'<p class="wf-footer">+{decorative_overflow} decorative shape(s)</p>'
+        footer = f'<p class="wf-footer">+{pluralize_count("decorative shape", decorative_overflow)}</p>'
 
     return f'<div class="diagram">{"".join(svg)}{footer}{_LEGEND}</div>'

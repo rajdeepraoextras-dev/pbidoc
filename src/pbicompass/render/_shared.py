@@ -24,10 +24,66 @@ HEALTH_COMPONENT_LABELS = {
 }
 
 
+def pluralize(word: str, count: int, plural: str | None = None) -> str:
+    """Regular-English pluralization for microcopy. Kills the "asset(s)"
+    pattern scattered across the audit engine and generators — grammatically
+    wrong at count==1 ("1 asset(s)" reads like an unfinished template) and
+    the kind of rough edge a Fortune-500 reviewer notices in the first
+    minute. Pass an explicit ``plural`` for irregular nouns; otherwise a
+    standard English suffix rule is applied (works for every noun this
+    codebase actually pluralizes: workbook/database/source/file/finding/
+    asset/field/item/check/component/page/risk/step)."""
+    if count == 1:
+        return word
+    if plural is not None:
+        return plural
+    if re.search(r"(s|x|z|ch|sh)$", word, re.IGNORECASE):
+        return word + "es"
+    if re.search(r"[^aeiou]y$", word, re.IGNORECASE):
+        return word[:-1] + "ies"
+    return word + "s"
+
+
+def pluralize_count(word: str, count: int, plural: str | None = None) -> str:
+    """``"{count} {pluralize(word, count, plural)}"`` — the common case of
+    ``pluralize`` where the number is shown right next to the noun."""
+    return f"{count} {pluralize(word, count, plural)}"
+
+
+def action_chip(text: str, *, tone: str = "warn") -> str:
+    """A small actionable pill for a missing/unassigned governance field
+    (owner, steward, classification) — replaces a bare, easy-to-miss "not
+    specified" with something that visually reads as an open action item.
+    ``tone``: "warn" (amber, the default — something a reader should go
+    fill in) or "muted" (a neutral placeholder, no action implied)."""
+    return f'<span class="action-chip {html_e(tone)}">{html_e(text)}</span>'
+
+
+def truncate_label(text: str, limit: int) -> str:
+    """Ellipsis-truncate ``text`` to ``limit`` characters for a narrow UI
+    slot (e.g. a wireframe thumbnail caption). Callers pair this with a
+    ``title="{text}"`` attribute holding the untruncated value so the full
+    label is always recoverable (hover / screen reader), never silently
+    lost."""
+    text = text or ""
+    return text if len(text) <= limit else text[: max(1, limit - 1)].rstrip() + "…"
+
+
+# Model diagram (§6): the actual SVG render call is disabled pending the
+# v6 "Studio" redesign pass the wireframe/lineage diagrams already got
+# (tracked separately). A single flag here so every renderer's own claim
+# about where the diagram lives stays in sync with whether it's actually
+# rendered, instead of three independently-maintained sentences (§6's own
+# markdown aside, §18's own note in all three formats) that can silently
+# drift into a false claim (P2) — flip this to ``True`` in the same change
+# that re-enables the diagram render call(s).
+MODEL_DIAGRAM_RENDERED = False
+
+
 def non_data_note(count: int) -> str:
     """The standard line for non-data page objects (buttons, images, shapes,
     text labels) — layout elements, not documented individually."""
-    return (f"{count} non-data object(s) on this page — buttons, images, shapes, "
+    return (f"{pluralize_count('non-data object', count)} on this page — buttons, images, shapes, "
             "and text labels used for layout and navigation.")
 
 

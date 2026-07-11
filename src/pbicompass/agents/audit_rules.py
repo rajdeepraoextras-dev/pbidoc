@@ -41,6 +41,19 @@ from .usage import used_column_names, used_measure_names
 
 _SEVERITY_COST = {"Critical": 15, "High": 8, "Medium": 4, "Low": 1}
 
+
+def _pl(word: str, count: int, plural: str | None = None) -> str:
+    """``"{count} {word or plural}"`` (P2) — kills the "asset(s)" pattern
+    across every finding/check ``detail`` string in this module. Lazily
+    imports ``render._shared.pluralize_count`` (not a top-level import) to
+    avoid the agents<->render import cycle: ``render/audit.py`` imports
+    ``RULE_METADATA`` from this module at top level, so this module
+    importing ``render._shared`` at its own top level would trigger
+    ``render/__init__`` while this module is still mid-import (same
+    reasoning as ``report_facts.py``'s identical lazy-import pattern)."""
+    from ..render._shared import pluralize_count
+    return pluralize_count(word, count, plural)
+
 # Power BI's Auto Date/Time creates two hidden tables per date column,
 # "LocalDateTable_<GUID>" and "DateTableTemplate_<GUID>" — real Auto
 # Date/Time table names don't contain "TemplateId" on their own, but the
@@ -451,19 +464,20 @@ def compute_health_score(
         "unused_assets": max(0, 100 - unused_cost),
     }
 
-    def _count_note(findings: list, label: str) -> str:
+    def _count_note(findings: list, singular: str) -> str:
         if not findings:
-            return f"No {label} identified."
+            return f"No {_pl(singular, 0)} identified."
         worst = min(findings, key=lambda f: _PRIORITY_ORDER.get(f.severity, 4))
-        return f"{len(findings)} {label} (worst severity: {worst.severity})."
+        return f"{_pl(singular, len(findings))} (worst severity: {worst.severity})."
 
     component_notes = {
-        "modeling": (f"{len(failed_practices)} of {len(best_practices)} best-practice check(s) failed."
+        "modeling": (f"{len(failed_practices)} of {_pl('best-practice check', len(best_practices))} failed."
                      if failed_practices else "All best-practice checks passed."),
-        "dax": _count_note(dax_findings, "DAX finding(s)"),
-        "governance": _count_note(governance, "governance finding(s)"),
-        "performance": _count_note(performance_risks, "performance risk signal(s)"),
-        "unused_assets": (f"{unused_count} unused asset(s) add size and maintenance load without analytical value."
+        "dax": _count_note(dax_findings, "DAX finding"),
+        "governance": _count_note(governance, "governance finding"),
+        "performance": _count_note(performance_risks, "performance risk signal"),
+        "unused_assets": (f"{_pl('unused asset', unused_count)} {'adds' if unused_count == 1 else 'add'} size "
+                          "and maintenance load without analytical value."
                           if unused_count else "Every measure, column, table, and page is in use."),
     }
     overall = round(sum(component_scores.values()) / len(component_scores))
@@ -650,8 +664,8 @@ def find_dax_findings(measures: list[Measure]) -> list[DaxFinding]:
         if years:
             findings.append(DaxFinding(
                 measure=m.name, table=m.table, kind="hardcoded_year",
-                detail=f"Contains hardcoded year value(s) ({', '.join(years)}) — this measure stops "
-                       f"reflecting current data at the next year boundary.",
+                detail=f"Contains {_pl('hardcoded year value', len(years))} ({', '.join(years)}) — this "
+                       f"measure stops reflecting current data at the next year boundary.",
                 severity="Critical",
             ))
         
@@ -709,17 +723,20 @@ def check_best_practices(model: SemanticModel) -> list[BestPracticeCheck]:
     shape, facts, dims = schema_shape(model)
 
     is_star = shape.startswith("a star schema")
+    # ``shape`` already reads "a star schema centred on the 'X' fact table"
+    # when true — prefixing "Model follows a star schema — " on top of that
+    # doubled the phrase ("a star schema — a star schema centred on...").
     checks.append(BestPracticeCheck(
         id="star_schema", name="Star schema", passed=is_star, category="schema",
         detail=f"Model shape detected as {shape}." if not is_star else
-               f"Model follows a star schema — {shape}.",
+               f"Model follows {shape}.",
     ))
 
     fact_dim_ok = bool(facts) and bool(dims)
     checks.append(BestPracticeCheck(
         id="fact_dimension_separation", name="Fact/dimension separation", passed=fact_dim_ok,
         category="schema",
-        detail=(f"{len(facts)} fact table(s), {len(dims)} dimension table(s)." if fact_dim_ok
+        detail=(f"{_pl('fact table', len(facts))}, {_pl('dimension table', len(dims))}." if fact_dim_ok
                 else "No clear fact/dimension separation was detected."),
     ))
 
@@ -727,8 +744,8 @@ def check_best_practices(model: SemanticModel) -> list[BestPracticeCheck]:
     checks.append(BestPracticeCheck(
         id="naming_conventions", name="Table naming conventions", passed=not generic_names,
         category="naming",
-        detail=(f"Generic/default table name(s) found: {', '.join(generic_names)}." if generic_names
-                else "No generic/default table names detected."),
+        detail=(f"{_pl('Generic/default table name', len(generic_names))} found: {', '.join(generic_names)}."
+                if generic_names else "No generic/default table names detected."),
     ))
 
     measures = model.all_measures()
@@ -781,7 +798,7 @@ def check_best_practices(model: SemanticModel) -> list[BestPracticeCheck]:
     checks.append(BestPracticeCheck(
         id="unused_calculated_columns", name="Unused calculated columns", passed=not unused_calc_cols,
         category="modeling",
-        detail=(f"{len(unused_calc_cols)} calculated column(s) are not referenced by any visual: "
+        detail=(f"{_pl('calculated column', len(unused_calc_cols))} not referenced by any visual: "
                 + ", ".join(f"{c['table']}[{c['column']}]" for c in unused_calc_cols) + "."
                 if unused_calc_cols else "Every calculated column is referenced by a visual."),
     ))
@@ -790,7 +807,7 @@ def check_best_practices(model: SemanticModel) -> list[BestPracticeCheck]:
     checks.append(BestPracticeCheck(
         id="inactive_relationships", name="Inactive relationships", passed=not inactive,
         category="modeling",
-        detail=(f"{len(inactive)} inactive relationship(s) — only reachable via USERELATIONSHIP()."
+        detail=(f"{_pl('inactive relationship', len(inactive))} — only reachable via USERELATIONSHIP()."
                 if inactive else "No inactive relationships."),
     ))
 
@@ -798,7 +815,8 @@ def check_best_practices(model: SemanticModel) -> list[BestPracticeCheck]:
     checks.append(BestPracticeCheck(
         id="bidirectional_filters", name="Bidirectional cross-filtering", passed=not bidirectional,
         category="modeling",
-        detail=(f"{len(bidirectional)} relationship(s) use bidirectional cross-filtering, which can "
+        detail=(f"{_pl('relationship', len(bidirectional))} "
+                f"{'uses' if len(bidirectional) == 1 else 'use'} bidirectional cross-filtering, which can "
                 f"create ambiguous filter paths." if bidirectional
                 else "No bidirectional relationships."),
     ))
@@ -808,7 +826,7 @@ def check_best_practices(model: SemanticModel) -> list[BestPracticeCheck]:
     checks.append(BestPracticeCheck(
         id="many_to_many_relationships", name="Many-to-many relationships", passed=not many_to_many,
         category="modeling",
-        detail=(f"{len(many_to_many)} many-to-many relationship(s) detected." if many_to_many
+        detail=(f"{_pl('many-to-many relationship', len(many_to_many))} detected." if many_to_many
                 else "No many-to-many relationships."),
     ))
 
@@ -835,7 +853,8 @@ def check_best_practices(model: SemanticModel) -> list[BestPracticeCheck]:
     checks.append(BestPracticeCheck(
         id="m2m_no_bridge", name="Many-to-many relationship without a bridge table",
         passed=not m2m_direct, category="modeling",
-        detail=(f"{len(m2m_direct)} many-to-many relationship(s) connect two tables directly with no "
+        detail=(f"{_pl('many-to-many relationship', len(m2m_direct))} "
+                f"{'connects' if len(m2m_direct) == 1 else 'connect'} two tables directly with no "
                 f"bridge/junction table in between: "
                 + ", ".join(f"{r.from_table} <-> {r.to_table}" for r in m2m_direct) + "."
                 if m2m_direct else
@@ -851,7 +870,8 @@ def check_best_practices(model: SemanticModel) -> list[BestPracticeCheck]:
     checks.append(BestPracticeCheck(
         id="bidirectional_fact", name="Bidirectional relationship filtering a fact table",
         passed=not bidi_fact, category="modeling",
-        detail=(f"{len(bidi_fact)} bidirectional relationship(s) filter a fact table, a major "
+        detail=(f"{_pl('bidirectional relationship', len(bidi_fact))} "
+                f"{'filters' if len(bidi_fact) == 1 else 'filter'} a fact table, a major "
                 f"performance and correctness risk: "
                 + ", ".join(f"{r.from_table} <-> {r.to_table}" for r in bidi_fact) + "."
                 if bidi_fact else "No bidirectional relationships touch a fact table."),
@@ -895,7 +915,8 @@ def check_best_practices(model: SemanticModel) -> list[BestPracticeCheck]:
     checks.append(BestPracticeCheck(
         id="disconnected_tables", name="No disconnected fact/dimension tables", passed=not disconnected,
         category="modeling",
-        detail=(f"{len(disconnected)} fact/dimension table(s) have no relationships and won't filter "
+        detail=(f"{_pl('fact/dimension table', len(disconnected))} "
+                f"{'has' if len(disconnected) == 1 else 'have'} no relationships and won't filter "
                 f"or summarize with the rest of the model: {', '.join(disconnected)}." if disconnected
                 else "Every fact/dimension table participates in at least one relationship."),
     ))
@@ -906,8 +927,9 @@ def check_best_practices(model: SemanticModel) -> list[BestPracticeCheck]:
     checks.append(BestPracticeCheck(
         id="dev_leftover_naming", name="No development leftovers in production model", passed=not dev_leftover,
         category="naming",
-        detail=(f"Object name(s) look like development leftovers, not production content: "
-                f"{', '.join(dev_leftover)}." if dev_leftover
+        detail=(f"{_pl('Object name', len(dev_leftover))} "
+                f"{'looks' if len(dev_leftover) == 1 else 'look'} like development leftovers, not "
+                f"production content: {', '.join(dev_leftover)}." if dev_leftover
                 else "No table/column names match common development-leftover patterns."),
     ))
 
@@ -974,8 +996,9 @@ def check_best_practices(model: SemanticModel) -> list[BestPracticeCheck]:
     checks.append(BestPracticeCheck(
         id="column_naming_conventions", name="Column naming conventions (typos)", passed=not col_typos,
         category="naming",
-        detail=(f"Column name(s) contain typos: {', '.join(col_typos)}." if col_typos
-                else "No typos detected in column names."),
+        detail=(f"{_pl('Column name', len(col_typos))} "
+                f"{'contains' if len(col_typos) == 1 else 'contain'} typos: {', '.join(col_typos)}."
+                if col_typos else "No typos detected in column names."),
     ))
 
     filtered = []
@@ -1035,7 +1058,7 @@ def find_performance_risks(model: SemanticModel) -> list[PerformanceRisk]:
             if c.cardinality is not None and c.cardinality <= near_constant_max and not c.is_hidden:
                 risks.append(PerformanceRisk(
                     kind="near_constant_dimension", object_name=c.name, table=t.name,
-                    detail=f"'{c.name}' has measured cardinality of {c.cardinality} distinct value(s) "
+                    detail=f"'{c.name}' has measured cardinality of {_pl('distinct value', c.cardinality)} "
                            f"(measured via pbixray) — almost no variation, adding dictionary overhead "
                            f"without analytical value.",
                     severity="Low",
@@ -1118,8 +1141,9 @@ def find_performance_risks(model: SemanticModel) -> list[PerformanceRisk]:
         risks.append(PerformanceRisk(
             kind="auto_datetime", object_name="Auto Date/Time", table=None,
             detail=(
-                f"Auto date/time is enabled in this model — {len(auto_date_tables)} hidden local "
-                f"table(s) with {column_count} column(s) total are created for date columns, "
+                f"Auto date/time is enabled in this model — {_pl('hidden local table', len(auto_date_tables))} "
+                f"with {_pl('column', column_count)} total "
+                f"{'is' if len(auto_date_tables) == 1 else 'are'} created for date columns, "
                 f"increasing file size. These hidden tables' own columns are its own category, "
                 f"excluded from the Unused Assets report below rather than inflating it — disabling "
                 f"Auto Date/Time (Options > Data Load) removes them entirely."
@@ -1198,7 +1222,9 @@ def check_governance(
     if sensitive:
         findings.append(GovernanceFinding(
             area="sensitive_columns",
-            detail=f"Visible column name(s) suggest sensitive data: {', '.join(sensitive)}.",
+            detail=(f"{_pl('Visible column name', len(sensitive))} "
+                    f"{'suggests' if len(sensitive) == 1 else 'suggest'} sensitive data: "
+                    f"{', '.join(sensitive)}."),
             severity="High",
         ))
 
@@ -1215,7 +1241,8 @@ def check_governance(
     if local_paths:
         findings.append(GovernanceFinding(
             area="hardcoded_paths",
-            detail=f"Hardcoded local file path(s) in data sources: {'; '.join(local_paths)}.",
+            detail=f"{_pl('Hardcoded local file path', len(local_paths))} in data sources: "
+                   f"{'; '.join(local_paths)}.",
             severity="High",
         ))
 
@@ -1591,7 +1618,8 @@ def build_recommendations(
     if unused_total:
         recs.append(_recommendation(
             "Low",
-            f"{unused_total} unused asset(s) were found (measures, columns, tables, calculated "
+            f"{_pl('unused asset', unused_total)} "
+            f"{'was' if unused_total == 1 else 'were'} found (measures, columns, tables, calculated "
             f"columns, or hidden non-drillthrough pages).",
             "Unused assets add to model size, refresh time, and cognitive load for anyone maintaining the report.",
             "Remove unused assets, or confirm they're intentionally kept for a documented reason (e.g. future use, RLS support).",
@@ -1845,5 +1873,28 @@ def get_and_update_score_history(report_name: str, current_score: int) -> Option
         diff = current_score - last_run["overall"]
         diff_str = f"+{diff}" if diff >= 0 else str(diff)
         return f"{last_run['overall']} → {current_score} ({diff_str}) since {date_str}"
-        
+
     return None
+
+
+def get_shared_score_trend(ai_context, report_name: str, current_score: int) -> Optional[str]:
+    """Job-scoped wrapper around :func:`get_and_update_score_history`.
+
+    That function both reads *and appends to* the on-disk history file, so
+    calling it once per document type in a ``--document all`` job (audit,
+    technical, and now executive all want the trend string) would append
+    the same run 2-3 times and have the later calls compare their score
+    against the earlier calls' own freshly-written entries from the same
+    run. When ``ai_context`` is given, the first caller in a job computes
+    and caches the answer on it (via ``JobAIContext.score_trend`` /
+    ``_score_trend_set``); every later caller in the same job reuses the
+    cached value instead of writing again. When ``ai_context`` is ``None``
+    (a generator invoked directly, as most tests do, or a single-doc-type
+    run with no client), this degrades to a direct call — identical to the
+    pre-existing per-generator behavior."""
+    if ai_context is None:
+        return get_and_update_score_history(report_name, current_score)
+    if not ai_context._score_trend_set:
+        ai_context.score_trend = get_and_update_score_history(report_name, current_score)
+        ai_context._score_trend_set = True
+    return ai_context.score_trend

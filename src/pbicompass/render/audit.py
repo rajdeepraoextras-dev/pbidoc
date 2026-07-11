@@ -21,6 +21,8 @@ from ._html_shell import page_shell
 from .docx import _add_para_with_md
 from ._shared import HEALTH_COMPONENT_LABELS
 from ._shared import anchor_slug
+from ._shared import pluralize
+from ._shared import pluralize_count
 from ._shared import doc_subtitle as _doc_subtitle
 from ._shared import format_timestamp as _fmt_ts
 from ._shared import html_discrepancy_callout as _html_discrepancy_callout
@@ -111,9 +113,9 @@ def _auto_datetime_note(ua) -> str:
     n = getattr(ua, "auto_datetime_excluded", 0)
     if not n:
         return ""
-    return (f"{n} additional otherwise-unused item(s) belonging to Power BI's auto-generated "
-            f"Auto Date/Time tables are excluded from the counts above — see PBIC-PERF-007 "
-            f"in Performance Risks.")
+    return (f"{pluralize_count('additional otherwise-unused item', n)} belonging to Power BI's "
+            f"auto-generated Auto Date/Time tables are excluded from the counts above — see "
+            f"PBIC-PERF-007 in Performance Risks.")
 
 
 def _unused_rows(ua) -> list[list]:
@@ -265,8 +267,9 @@ def render_markdown(doc: AuditDocument) -> str:
 
     if getattr(doc, "requirements_gaps", None):
         out.append("\n### Requirements gaps\n")
-        out.append("_Business requirement(s) with nothing in the report satisfying them (Requirements "
-                   "Traceability Matrix — see the technical document's §3):_\n")
+        out.append(f"_{pluralize('Business requirement', len(doc.requirements_gaps))} with nothing in the "
+                   "report satisfying them (Requirements Traceability Matrix — see the technical "
+                   "document's §3):_\n")
         for g in doc.requirements_gaps:
             priority = f"[{g['priority']}] " if g.get("priority") else ""
             out.append(f"- {priority}{g['text']}")
@@ -438,7 +441,8 @@ def render_html(
     if getattr(doc, "requirements_gaps", None):
         o.append('<div class="card-section" style="border-left: 4px solid #b42318;">')
         o.append('<h3>Requirements gaps</h3>')
-        o.append('<p class="muted">Business requirement(s) with nothing in the report satisfying them '
+        o.append(f'<p class="muted">{_e(pluralize("Business requirement", len(doc.requirements_gaps)))} '
+                 'with nothing in the report satisfying them '
                  '(Requirements Traceability Matrix — see the technical document\'s §3):</p>')
         o.append('<ul>')
         for g in doc.requirements_gaps:
@@ -609,8 +613,9 @@ def render_docx(doc: AuditDocument, out_path) -> Path:
 
     if getattr(doc, "requirements_gaps", None):
         d.heading(2, "Requirements gaps")
-        d.para([d._run("Business requirement(s) with nothing in the report satisfying them (Requirements "
-                       "Traceability Matrix — see the technical document's §3):", italic=True)])
+        d.para([d._run(f"{pluralize('Business requirement', len(doc.requirements_gaps))} with nothing in "
+                       "the report satisfying them (Requirements Traceability Matrix — see the technical "
+                       "document's §3):", italic=True)])
         for g in doc.requirements_gaps:
             prefix = f"[{g['priority']}] " if g.get("priority") else ""
             d.bullet(f"{prefix}{g['text']}")

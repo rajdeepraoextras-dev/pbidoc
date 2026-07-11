@@ -109,12 +109,14 @@ def build_model_digest(model: SemanticModel, audit_summary: dict, char_budget: i
         f"Health score: {audit_summary['health_overall']}/100 ({audit_summary['health_band']}); "
         f"complexity: {audit_summary['complexity_level']}"
     )
+    from ..render._shared import pluralize_count  # lazy: avoids the agents<->render import cycle
+
     lines.append(
         f"Findings: {audit_summary['dax_finding_count']} DAX, "
         f"{audit_summary['failed_practice_count']} failed best-practice, "
         f"{audit_summary['performance_risk_count']} performance risk, "
         f"{audit_summary['governance_finding_count']} governance, "
-        f"{audit_summary['unused_asset_count']} unused asset finding(s)"
+        f"{pluralize_count('unused asset finding', audit_summary['unused_asset_count'])}"
     )
 
     digest = "\n".join(lines)

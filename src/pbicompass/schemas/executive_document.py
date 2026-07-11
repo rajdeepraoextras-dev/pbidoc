@@ -19,6 +19,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
+from .audit_document import HealthScore
 from .shared import DocMetadataCore
 
 
@@ -32,6 +33,33 @@ class ExecutiveRisk:
     consequence: str
     ask: str
     rule_id: str = ""
+
+
+@dataclass
+class ExecutiveNextStep:
+    """One row of the "What's Next" table (Day 5 restructure): a remediation
+    item not already covered by Top Risks, scored the same way (severity,
+    a business-phrased action, and the audit engine's own effort estimate)
+    so a reader can triage in seconds instead of reading prose."""
+    severity: str
+    action: str
+    effort: str = "Medium"
+    rule_id: str = ""
+
+
+@dataclass
+class ExecutivePageThumbnail:
+    """A small (25%-scale) rendering of one report page's wireframe (Day 5):
+    gives a non-technical reader the shape of the report at a glance without
+    opening the technical document or user guide. Reuses the exact same SVG
+    building block those two documents use full-size (``render._wireframe``)
+    — never a second, divergent drawing of the same page. ``anchor`` is the
+    stable ``page-{slug}`` id shared by every renderer, so the HTML version
+    can deep-link into a sibling document's full-size page section when one
+    was generated in the same job."""
+    name: str
+    svg: str
+    anchor: str
 
 
 @dataclass
@@ -56,10 +84,26 @@ class ExecutiveDocument:
     # once it's wired in — always "not specified" until then.
     steward: Optional[str] = None
     classification: Optional[str] = None
-    next_steps: list[str] = field(default_factory=list)
+    # Day 5: structured rows (severity/action/effort), replacing the old
+    # plain-string bullet list — a boardroom reader triages a table in
+    # seconds; prose sentences made them re-read every line.
+    next_steps: list[ExecutiveNextStep] = field(default_factory=list)
     # Day 4: "7/9"-style Requirements Traceability coverage stat (empty
     # when no requirements were supplied) — see agents.traceability.
     requirements_coverage: str = ""
+    # Day 5 (G.1 boardroom-grade pass): the deterministic audit engine's
+    # health score, reused verbatim (never re-derived) so the exec doc's
+    # number always agrees with the Audit & Health Report's. ``None`` only
+    # if the caller didn't run the audit engine at all (never happens via
+    # the normal generator entry point).
+    health: Optional[HealthScore] = None
+    # Day 5: up to 6 visible report pages, each a small wireframe thumbnail
+    # — "Report at a glance" for a reader who will never open the technical
+    # document or user guide.
+    page_thumbnails: list[ExecutivePageThumbnail] = field(default_factory=list)
+    # True count of visible pages (may exceed len(page_thumbnails) — the
+    # section caps at 6 and notes "+N more" rather than growing unbounded).
+    page_count: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)

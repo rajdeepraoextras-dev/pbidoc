@@ -95,6 +95,14 @@ class BestPracticesTest(unittest.TestCase):
         checks = {c.id: c for c in audit_rules.check_best_practices(_model())}
         self.assertTrue(checks["star_schema"].passed)
         self.assertTrue(checks["fact_dimension_separation"].passed)
+
+    def test_star_schema_detail_never_doubles_the_phrase(self):
+        # P2: "a star schema — a star schema centred on..." — the detail
+        # text used to prefix "a star schema" onto a shape string that
+        # already started with it.
+        checks = {c.id: c for c in audit_rules.check_best_practices(_model())}
+        detail = checks["star_schema"].detail
+        self.assertEqual(detail.lower().count("a star schema"), 1)
         self.assertTrue(checks["date_table_present"].passed)
         # SampleSales has a bidirectional Sales<->Date relationship and an
         # inactive ShipDateKey relationship — both known best-practice fails.
@@ -546,6 +554,42 @@ class RulesEngineTest(unittest.TestCase):
         """The hosted service never sets PBICOMPASS_SCORE_HISTORY, so this
         must stay a no-op — the zero-retention guarantee for score trend."""
         self.assertIsNone(audit_rules.get_and_update_score_history("AnyReport", 80))
+
+    def test_shared_score_trend_writes_only_once_per_job(self):
+        # Day 5: audit/technical/executive all want a trend string in a
+        # --document all job. Calling the raw function once per doc type
+        # would append the same run 2-3 times and have later calls compare
+        # against the earlier calls' own fresh entries from the same run.
+        import os
+        import tempfile
+        from pathlib import Path
+
+        from pbicompass.agents.context import JobAIContext
+
+        with tempfile.TemporaryDirectory() as td:
+            history_file = Path(td) / "history.json"
+            os.environ["PBICOMPASS_SCORE_HISTORY"] = str(history_file)
+            try:
+                # Seed one prior run directly.
+                audit_rules.get_and_update_score_history("TestReport", 80)
+
+                ctx = JobAIContext()
+                first = audit_rules.get_shared_score_trend(ctx, "TestReport", 85)
+                second = audit_rules.get_shared_score_trend(ctx, "TestReport", 85)
+                self.assertEqual(first, second)
+                self.assertIn("80 → 85 (+5)", first)
+
+                import json
+                history = json.loads(history_file.read_text(encoding="utf-8"))
+                # Exactly one new entry appended for this job, not two.
+                self.assertEqual(len(history["TestReport"]), 2)
+            finally:
+                del os.environ["PBICOMPASS_SCORE_HISTORY"]
+
+    def test_shared_score_trend_without_ai_context_calls_through_directly(self):
+        # ai_context=None (offline / single-doc-type / direct generator
+        # call, as most tests do) must behave exactly like the raw function.
+        self.assertIsNone(audit_rules.get_shared_score_trend(None, "AnyReport", 80))
 
     def test_get_threshold_returns_default_when_unset(self):
         self.assertEqual(audit_rules.get_threshold("visual_density_limit", 12), 12)

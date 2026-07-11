@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 
 from ._shared import html_e as _e
+from ._logo import LOGO_DATA_URI
 from ._poppins_font import POPPINS_FONT_FACES_CSS, POPPINS_FONT_STACK
 
 _CSS = POPPINS_FONT_FACES_CSS + """
@@ -25,9 +26,9 @@ _CSS = POPPINS_FONT_FACES_CSS + """
   --text-muted: #475569;
   --text-faint: #64748b;
   --border-color: #e2e8f0;
-  --primary: #4f46e5;
-  --primary-hover: #4338ca;
-  --primary-light: #eef2ff;
+  --primary: #124fed;
+  --primary-hover: #0e3db8;
+  --primary-light: #eef2fd;
   --secondary: #0ea5e9;
   --success: #10b981;
   --success-light: #ecfdf5;
@@ -128,10 +129,10 @@ body {
   margin-bottom: 28px;
   letter-spacing: -0.02em;
 }
-.sidebar-logo svg {
-  width: 26px;
-  height: 26px;
-  fill: currentColor;
+.sidebar-logo img {
+  height: 28px;
+  width: auto;
+  display: block;
 }
 .toc-list {
   list-style: none;
@@ -256,7 +257,7 @@ body {
 
 /* Header Cards */
 .header-card {
-  background: linear-gradient(135deg, #1e1b4b 0%, #311042 100%);
+  background: linear-gradient(135deg, #1a2740 0%, #124fed 100%);
   color: #ffffff;
   border-radius: 16px;
   padding: 44px;
@@ -272,7 +273,7 @@ body {
   right: -20%;
   width: 350px;
   height: 350px;
-  background: radial-gradient(circle, rgba(79, 70, 229, 0.3) 0%, rgba(0,0,0,0) 70%);
+  background: radial-gradient(circle, rgba(18, 79, 237, 0.35) 0%, rgba(0,0,0,0) 70%);
   border-radius: 50%;
   pointer-events: none;
 }
@@ -724,10 +725,17 @@ details.collapsible > .code-block pre {
   display: none;
 }
 .print-cover-mark {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   font-weight: 800;
   font-size: 1.1rem;
   letter-spacing: -0.02em;
   color: var(--primary);
+}
+.print-cover-mark img {
+  height: 30px;
+  width: auto;
 }
 .print-cover h1 {
   font-size: 2.4rem;
@@ -810,6 +818,105 @@ details.collapsible > .code-block pre {
   letter-spacing: 0.04em;
 }
 
+/* Executive doc: compact health-score band chip + component mini-bars
+   (Day 5 boardroom-grade pass) — a condensed version of the audit report's
+   score-hero, scannable in a few seconds rather than a full table. */
+.band-chip {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.band-chip.excellent, .band-chip.good { background: var(--success-light); color: #067647; }
+.band-chip.fair { background: var(--warning-light); color: #b45309; }
+.band-chip.poor { background: var(--danger-light); color: #b42318; }
+
+.health-mini {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin: 8px 0 18px;
+}
+.mini-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-width: 240px;
+}
+.mini-bar-row {
+  display: grid;
+  grid-template-columns: 140px 1fr 34px;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.8rem;
+}
+.mini-bar-label { color: var(--text-muted); }
+.mini-bar-track {
+  background: var(--bg-code-inline);
+  height: 7px;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.mini-bar-fill { height: 100%; border-radius: 4px; }
+.mini-bar-value { text-align: right; font-weight: 700; color: var(--text-main); }
+
+/* A missing governance field (owner/steward/classification) rendered as an
+   open action item instead of an easy-to-miss bare "not specified". */
+.action-chip {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.action-chip.warn { background: var(--warning-light); color: #b45309; }
+.action-chip.muted { background: var(--bg-code-inline); color: var(--text-faint); font-weight: 500; }
+
+/* "Report at a glance" wireframe thumbnail grid (Day 5) — 25%-ish scale
+   cards reusing the same wireframe SVG the technical doc/user guide render
+   full-size; screen-only (see .no-print), so it never grows the exec doc's
+   printed-page count. */
+.thumb-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 14px;
+  margin: 12px 0;
+}
+.thumb-card { text-align: center; }
+.thumb-card .diagram { pointer-events: none; }
+.thumb-card svg {
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+.thumb-caption {
+  display: block;
+  margin-top: 6px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.thumb-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--border-color);
+  border-radius: 8px;
+  color: var(--text-faint);
+  font-size: 0.8rem;
+  font-weight: 600;
+  min-height: 80px;
+}
+
 /* Mobile TOC toggle — hidden on desktop, shown as a fixed hamburger button
    below the 1024px breakpoint where the sidebar becomes an overlay. */
 .mobile-toc-toggle {
@@ -830,26 +937,49 @@ details.collapsible > .code-block pre {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
 }
 
-/* Theme toggle — icon-only, sits under the sidebar logo on desktop. */
+/* Theme toggle — a two-option segmented pill (Light / Dark) under the
+   sidebar logo, both icons always visible so the current mode is obvious
+   at a glance rather than inferred from a single swapping icon. */
 .theme-toggle {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
+  gap: 2px;
+  width: fit-content;
   margin-bottom: 20px;
-  padding: 0;
+  padding: 3px;
   border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border-radius: 999px;
   background: var(--bg-main);
-  color: var(--text-muted);
-  font-size: 1.05rem;
-  line-height: 1;
-  cursor: pointer;
 }
-.theme-toggle:hover {
+.theme-opt {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.theme-opt svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.theme-opt:hover {
   color: var(--primary);
-  border-color: var(--primary-light);
+}
+.theme-opt[aria-pressed="true"] {
+  background: var(--primary-light);
+  color: var(--primary);
 }
 
 /* Responsiveness & Print settings */
@@ -931,6 +1061,12 @@ details.collapsible > .code-block pre {
   details.collapsible > .code-block,
   details.collapsible > .collapsible-body {
     display: block !important;
+  }
+  /* An on-screen-only visual with no print equivalent (e.g. the executive
+     doc's wireframe-thumbnail grid) — keeps a rich screen view without
+     blowing past the doc's printed-page budget. */
+  .no-print {
+    display: none !important;
   }
 
   /* Cover page — a full page ahead of section 1, print-only. */
@@ -1084,27 +1220,31 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   })();
 
-  // Theme toggle
-  const themeBtn = document.querySelector('.theme-toggle');
-  if (themeBtn) {
+  // Theme toggle — segmented Light/Dark pill; each option sets its theme
+  // explicitly rather than swapping a single icon, so the current mode is
+  // always visible without reading state off the button.
+  const themeOpts = document.querySelectorAll('.theme-opt');
+  if (themeOpts.length) {
     const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
     function currentTheme() {
       const attr = document.documentElement.getAttribute('data-theme');
       if (attr) return attr;
       return prefersDark ? 'dark' : 'light';
     }
-    function updateLabel() {
-      const dark = currentTheme() === 'dark';
-      themeBtn.textContent = dark ? '☀️' : '🌙';
-      themeBtn.setAttribute('aria-label', dark ? 'Switch to light mode' : 'Switch to dark mode');
-      themeBtn.setAttribute('title', dark ? 'Switch to light mode' : 'Switch to dark mode');
+    function updatePressed() {
+      const active = currentTheme();
+      themeOpts.forEach((opt) => {
+        opt.setAttribute('aria-pressed', String(opt.getAttribute('data-theme-choice') === active));
+      });
     }
-    updateLabel();
-    themeBtn.addEventListener('click', () => {
-      const next = currentTheme() === 'dark' ? 'light' : 'dark';
-      document.documentElement.setAttribute('data-theme', next);
-      try { localStorage.setItem('pbicompass-theme', next); } catch (e) {}
-      updateLabel();
+    updatePressed();
+    themeOpts.forEach((opt) => {
+      opt.addEventListener('click', () => {
+        const next = opt.getAttribute('data-theme-choice');
+        document.documentElement.setAttribute('data-theme', next);
+        try { localStorage.setItem('pbicompass-theme', next); } catch (e) {}
+        updatePressed();
+      });
     });
   }
 
@@ -1254,9 +1394,16 @@ document.addEventListener('DOMContentLoaded', () => {
 </script>
 """
 
-_LOGO_SVG = (
-    '<svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z'
-    'm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>'
+_SUN_SVG = (
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="5"/>'
+    '<line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>'
+    '<line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>'
+    '<line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>'
+    '<line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>'
+)
+_MOON_SVG = (
+    '<svg viewBox="0 0 24 24" aria-hidden="true">'
+    '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>'
 )
 
 
@@ -1303,6 +1450,7 @@ def page_shell(
 
     o: list[str] = ["<!DOCTYPE html>", '<html lang="en"><head><meta charset="utf-8">']
     o.append(f"<title>{_e(title)} — Documentation</title>")
+    o.append(f'<link rel="icon" type="image/png" href="{LOGO_DATA_URI}">')
     o.append(_THEME_INIT_SCRIPT)
     o.append(f"<style>{_CSS}</style></head><body>")
 
@@ -1312,7 +1460,7 @@ def page_shell(
     o.append('<div class="sidebar-scrim"></div>')
 
     o.append('<div class="print-cover">')
-    o.append('<div class="print-cover-mark">PBICompass</div>')
+    o.append(f'<div class="print-cover-mark"><img src="{LOGO_DATA_URI}" alt=""><span>PBICompass</span></div>')
     o.append(f"<h1>{_e(title)}</h1>")
     o.append(f'<p class="print-cover-subtitle">{_e(subtitle)}</p>')
     o.append('<dl class="print-cover-meta">')
@@ -1330,11 +1478,15 @@ def page_shell(
 
     o.append('<nav class="sidebar" aria-label="Table of contents">')
     o.append('<div class="sidebar-logo">')
-    o.append(_LOGO_SVG)
+    o.append(f'<img src="{LOGO_DATA_URI}" alt="PBICompass">')
     o.append('<span>PBICompass</span>')
     o.append('</div>')
-    o.append('<button type="button" class="theme-toggle" aria-label="Toggle dark mode" '
-             'title="Toggle dark mode">🌙</button>')
+    o.append('<div class="theme-toggle" role="group" aria-label="Theme">')
+    o.append('<button type="button" class="theme-opt" data-theme-choice="light" '
+             'aria-pressed="true" title="Light mode" aria-label="Light mode">' + _SUN_SVG + '</button>')
+    o.append('<button type="button" class="theme-opt" data-theme-choice="dark" '
+             'aria-pressed="false" title="Dark mode" aria-label="Dark mode">' + _MOON_SVG + '</button>')
+    o.append('</div>')
     if doc_links:
         o.append('<nav class="doc-switcher" aria-label="Other documents in this job">')
         for label, href in doc_links:
@@ -1364,7 +1516,7 @@ def page_shell(
         o.append(f'<span>{missing_count} fields awaiting input</span>')
         o.append('</div>')
         o.append('<div class="progress-bar-bg" style="background:#e2e8f0; height:6px; border-radius:3px; overflow:hidden; position:relative;">')
-        o.append(f'<div class="progress-bar-fill" style="background:#4f46e5; width:{pct}%; height:100%;"></div>')
+        o.append(f'<div class="progress-bar-fill" style="background:var(--primary); width:{pct}%; height:100%;"></div>')
         o.append('</div>')
         if missing_fields:
             readable = [f.replace("_", " ").title() for f in missing_fields[:5]]

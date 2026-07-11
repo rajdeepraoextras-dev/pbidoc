@@ -12,6 +12,7 @@ from __future__ import annotations
 from ..agents.audit_rules import TOTAL_RULE_COUNT
 from ..schemas.document import Document
 from ._shared import HEALTH_COMPONENT_LABELS
+from ._shared import MODEL_DIAGRAM_RENDERED
 from ._shared import format_timestamp as _fmt_ts
 from ._shared import md_discrepancy_callout
 from ._shared import is_local_path as _is_local_path
@@ -154,7 +155,8 @@ def render_markdown(doc: Document) -> str:
                       [[ed["from"], ed["to"], f'{ed.get("from_card")}-to-{ed.get("to_card")}',
                         ed.get("cross_filter"), "Yes" if ed.get("is_active") else "No"]
                        for ed in sm.relationship_edges], "_No relationships defined._"))
-    out.append("\n_(See the HTML version for the model diagram.)_\n")
+    if MODEL_DIAGRAM_RENDERED:
+        out.append("\n_(See the HTML version for the model diagram.)_\n")
     out.append("\n**Data dictionary**\n")
     out.append(_table(["Table", "Column", "Data Type", "Description", "Used by"],
                       [[r.get("table", ""), r.get("column", ""), r.get("data_type", ""), r.get("description", ""), r.get("used_by", "")]
@@ -464,7 +466,8 @@ def render_markdown(doc: Document) -> str:
 
     # 18. Appendix & Sign-off
     out.append(f"\n## 18. Appendix & Sign-off{_badge(18)}\n")
-    out.append("The model diagram is in section 6.\n")
+    if MODEL_DIAGRAM_RENDERED:
+        out.append("The model diagram is in section 6.\n")
     generated_date = (md.generated_at or "")[:10]
     # owner -> Business Owner, author -> Developer, reviewer -> Approver
     # (Day 3) — each row filled from the metadata field it corresponds to.

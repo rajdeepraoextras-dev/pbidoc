@@ -63,6 +63,19 @@ class JobAIContext:
     # instead of re-deriving them a different way and disagreeing.
     checks_ledger: Optional[dict] = None
 
+    # Score-trend string (4.5) — ``audit_rules.get_and_update_score_history``
+    # both reads *and appends to* the on-disk history file, so calling it
+    # more than once per job for the same report double-writes the run and
+    # makes the second call compare its score against the first call's
+    # freshly-written entry from the same run. ``get_shared_score_trend``
+    # computes it once per job and caches the result here (including a
+    # legitimate ``None`` — history off, or no prior run) so every document
+    # generator in a multi-doc job (audit/technical/executive all render a
+    # score trend) reuses the same value. ``_trend_set`` distinguishes "not
+    # computed yet" from "computed, and the answer was None".
+    score_trend: Optional[str] = None
+    _score_trend_set: bool = False
+
     # Job-sandbox-scoped LLM response cache path (service only); ``None``
     # means "use the client-wide default" (``LLMResponseCache``'s own
     # ``PBICOMPASS_LLM_CACHE`` env-var lookup, e.g. the CLI's persistent

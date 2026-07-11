@@ -58,6 +58,15 @@ from ..report_facts import (
     table_priority_key,
 )
 from ..sanitize import is_meta_commentary, is_punt_phrase
+
+
+def _pl(word: str, count: int, plural: str | None = None) -> str:
+    """``"{count} {word or plural}"`` (P2) — kills the "asset(s)" pattern.
+    Lazily imports ``render._shared.pluralize_count`` (not a top-level
+    import) to avoid the agents<->render import cycle — see
+    ``audit_rules.py``'s identical helper for the full reasoning."""
+    from ...render._shared import pluralize_count
+    return pluralize_count(word, count, plural)
 from ..usage import measure_dependencies, measure_usage, used_measure_names
 from .base import Warn, call_llm, call_llm_with_retry
 
@@ -350,13 +359,13 @@ def _semantic_model(model: SemanticModel, client, warn, col_descs: dict,
             
             parts = []
             if rel_list:
-                parts.append(f"{len(rel_list)} relationship(s)")
+                parts.append(_pl("relationship", len(rel_list)))
             if meas_list:
-                parts.append(f"{len(meas_list)} measure(s) ({', '.join(meas_list[:2])}{'...' if len(meas_list) > 2 else ''})")
+                parts.append(f"{_pl('measure', len(meas_list))} ({', '.join(meas_list[:2])}{'...' if len(meas_list) > 2 else ''})")
             if vis_list:
-                parts.append(f"{len(vis_list)} page(s) ({', '.join(vis_list[:2])}{'...' if len(vis_list) > 2 else ''})")
+                parts.append(f"{_pl('page', len(vis_list))} ({', '.join(vis_list[:2])}{'...' if len(vis_list) > 2 else ''})")
             if rls_list:
-                parts.append(f"RLS role(s): {', '.join(rls_list)}")
+                parts.append(f"{_pl('RLS role', len(rls_list))}: {', '.join(rls_list)}")
                 
             used_by_text = "; ".join(parts) if parts else "not referenced — see unused assets"
             
@@ -397,6 +406,19 @@ def _semantic_model(model: SemanticModel, client, warn, col_descs: dict,
     ]
     return SemanticModelDoc(summary=summary, data_dictionary=data_dictionary, relationships=rels,
                             risks=risks, tables=tables, relationship_edges=edges)
+
+
+def _join_caveat(existing: str, note: str) -> str:
+    """Append ``note`` onto ``existing`` as a new sentence, adding exactly
+    one separating period (P2) — a plain ``f"{existing}. {note}"`` doubles
+    up when ``existing`` already ends with terminal punctuation ("...date
+    filters.. Housed in...")."""
+    existing = (existing or "").rstrip()
+    if not existing:
+        return note
+    if existing[-1] not in ".!?":
+        existing += "."
+    return f"{existing} {note}"
 
 
 # -- V. Measure Catalog -------------------------------------------------------
@@ -489,10 +511,7 @@ def _measure_catalog(model: SemanticModel, client, warn, ai_context: Optional[Jo
             )
             if is_mismatch and entry.table != true_table:
                 note = f"Housed in '{entry.table}' table but operates on '{true_table}' table."
-                if entry.caveats:
-                    entry.caveats = f"{entry.caveats}. {note}"
-                else:
-                    entry.caveats = note
+                entry.caveats = _join_caveat(entry.caveats, note)
 
     return MeasureCatalog(measures=entries, dependency_svg=render_measure_dependency_graph_svg(model))
 
@@ -510,7 +529,8 @@ def _security(model: SemanticModel, security_notes: Optional[str] = None) -> Sec
     ]
     if model.roles:
         constraints = [
-            f"{len(model.roles)} row-level security role(s) are defined. Role membership "
+            f"{_pl('row-level security role', len(model.roles))} "
+            f"{'is' if len(model.roles) == 1 else 'are'} defined. Role membership "
             "and workspace access are managed in the Power BI Service and should be "
             "reviewed there against this catalog."
         ]
@@ -536,7 +556,8 @@ def _audit(model: SemanticModel) -> TechDebtAudit:
             f"on any report page (directly or via another measure)."
         )
     if hidden_used:
-        notes.append(f"{len(hidden_used)} hidden measure(s) are still referenced by report visuals.")
+        notes.append(f"{_pl('hidden measure', len(hidden_used))} "
+                     f"{'is' if len(hidden_used) == 1 else 'are'} still referenced by report visuals.")
     total_visuals = sum(len(p.visuals) for p in model.pages)
     if measures and not used and total_visuals:
         notes.append(
@@ -936,8 +957,8 @@ class TechnicalDocumentationGenerator:
         doc.checks_by_category = ledger["by_category"]
         doc.top_cluster = dataclasses.asdict(top_cluster) if top_cluster else None
         
-        trend = audit_rules.get_and_update_score_history(
-            model.report_name or "UnknownReport",
+        trend = audit_rules.get_shared_score_trend(
+            ai_context, model.report_name or "UnknownReport",
             health_score.get("overall", 0)
         )
         doc.metadata.score_trend = trend

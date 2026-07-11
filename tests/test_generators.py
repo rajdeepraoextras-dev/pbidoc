@@ -14,6 +14,7 @@ import unittest
 from pathlib import Path
 
 from pbicompass.agents import generate_document
+from pbicompass.agents.generators.technical import _join_caveat
 from pbicompass.agents.generators import (
     DOCUMENT_TYPES,
     AuditReportGenerator,
@@ -142,6 +143,25 @@ class DocumentTypesRegistryTest(unittest.TestCase):
         self.assertIs(DOCUMENT_TYPES["user-guide"], BusinessGuideGenerator)
 
 
+class JoinCaveatTest(unittest.TestCase):
+    """P2: the measure catalog's "operates on a different table" caveat
+    must never double up terminal punctuation when appended onto an
+    existing caveat sentence ("...date filters.. Housed in...")."""
+
+    def test_appends_with_exactly_one_period_when_existing_already_ends_in_one(self):
+        result = _join_caveat("Uses date filters.", "Housed in 'X' table but operates on 'Y' table.")
+        self.assertEqual(result, "Uses date filters. Housed in 'X' table but operates on 'Y' table.")
+        self.assertNotIn("..", result)
+
+    def test_adds_a_period_when_existing_has_none(self):
+        result = _join_caveat("Uses date filters", "Second sentence.")
+        self.assertEqual(result, "Uses date filters. Second sentence.")
+
+    def test_empty_existing_returns_note_unchanged(self):
+        self.assertEqual(_join_caveat("", "Only sentence."), "Only sentence.")
+        self.assertEqual(_join_caveat(None, "Only sentence."), "Only sentence.")
+
+
 class TechnicalGeneratorShimTest(unittest.TestCase):
     """generate_document() must delegate to TechnicalDocumentationGenerator
     with unchanged behavior — the backward-compatibility guarantee."""
@@ -225,6 +245,88 @@ class AuditGeneratorLlmTest(unittest.TestCase):
         )
         self.assertTrue(warnings)
         self.assertIn(str(doc.health.overall), doc.narrative_overview)
+
+
+class FakePuntLeakClient:
+    """Simulates the corrupted output seen in production (P0): the Audit
+    Narrator/Synthesizer responses carry the leaked "Unknown — requires
+    business confirmation." punt sentence — the shape a mis-firing
+    grounding pass leaves behind — plus a wrong health-score number in the
+    narrator's own prose, one point off the model's actual computed score."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def complete_json(self, system: str, user: str, schema: dict, *, effort: str | None = None) -> dict:
+        self.calls += 1
+        if "root-cause synthesis" in system:
+            return {
+                "clusters": [
+                    {
+                        "root_cause": "Auto Date/Time feature enabled",
+                        "rule_ids": ["PBIC-PERF-007"],
+                        "narrative": (
+                            "Address the Unknown — requires business confirmation. Its resolution will "
+                            "both eliminate unused calculated columns and Unknown — requires business "
+                            "confirmation. Unknown — requires business confirmation."
+                        ),
+                        "confidence": "High",
+                    }
+                ],
+                "strategic_narrative": (
+                    "The Unknown — requires business confirmation. Unknown — requires business confirmation."
+                ),
+            }
+        if "Audit & Health Report" in system:
+            import json as _json
+            payload = _json.loads(user)
+            wrong_score = payload["health_overall"] - 1
+            return {"narrative_overview": (
+                f"The overall health score of this model is {wrong_score}, categorized as "
+                f"'{payload['health_band']}'. The governance and unused assets components are the "
+                "primary areas limiting a higher score, Unknown — requires business confirmation. "
+                "Unknown — requires business confirmation. Immediate attention should be directed "
+                "towards those."
+            )}
+        if "expert technical editor" in system:  # the critic pass (5.3)
+            return {"violations": []}
+        raise AssertionError("unexpected system prompt")
+
+
+class AuditPuntLeakAndScoreConsistencyTest(unittest.TestCase):
+    """P0 blockers: the punt-phrase leak and the score-number contradiction
+    must never survive into the rendered document, regardless of what an
+    LLM narrator/synthesizer returns."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.client = FakePuntLeakClient()
+        cls.doc = AuditReportGenerator.generate(_model(), cls.client)
+
+    def test_punt_phrase_never_appears_in_narrative_overview(self):
+        self.assertNotIn("requires business confirmation", self.doc.narrative_overview.lower())
+
+    def test_punt_phrase_never_appears_in_strategic_narrative(self):
+        self.assertNotIn("requires business confirmation", self.doc.strategic_narrative.lower())
+
+    def test_punt_phrase_never_appears_in_cluster_narratives(self):
+        for cluster in self.doc.clusters:
+            self.assertNotIn("requires business confirmation", cluster.narrative.lower())
+
+    def test_punt_phrase_never_appears_anywhere_in_document_json(self):
+        self.assertNotIn("requires business confirmation", self.doc.to_json().lower())
+
+    def test_narrative_overview_still_carries_real_content(self):
+        # The strip must not gut the paragraph down to nothing — the score
+        # sentence and the trailing real sentence both survive.
+        self.assertIn(str(self.doc.health.overall), self.doc.narrative_overview)
+        self.assertIn("Immediate attention should be directed towards those.", self.doc.narrative_overview)
+
+    def test_score_number_matches_the_actual_computed_score(self):
+        # The narrator claimed health.overall - 1; the post-check must
+        # have replaced that sentence with the real number.
+        self.assertIn(f"is {self.doc.health.overall}", self.doc.narrative_overview)
+        self.assertNotIn(str(self.doc.health.overall - 1), self.doc.narrative_overview)
 
 
 class FakeAiFixSnippetClient:
@@ -409,13 +511,13 @@ class ExecutiveGeneratorDeterministicTest(unittest.TestCase):
         # something an executive reader needs to see — it must never appear
         # in the rendered next_steps, only as a job warning (below).
         for s in self.doc.next_steps:
-            self.assertNotIn("% complete", s)
-            self.assertNotIn("still need business", s)
+            self.assertNotIn("% complete", s.action)
+            self.assertNotIn("still need business", s.action)
 
     def test_incomplete_metadata_surfaces_as_a_warning_not_doc_content(self):
         warnings = []
         ExecutiveSummaryGenerator.generate(_model(), on_warning=warnings.append)
-        self.assertTrue(any("metadata field(s) still need business input" in w for w in warnings))
+        self.assertTrue(any("still need business input" in w for w in warnings))
 
     def test_maintenance_note_has_no_governance_or_audit_jargon(self):
         # D1: "governance finding(s)"/"best-practice gap(s)" is audit-speak
@@ -433,7 +535,7 @@ class ExecutiveGeneratorDeterministicTest(unittest.TestCase):
         risk_consequences = [r.consequence for r in self.doc.top_risks]
         for step in self.doc.next_steps:
             for consequence in risk_consequences:
-                self.assertNotIn(consequence, step)
+                self.assertNotIn(consequence, step.action)
 
     def test_ownership_fields_present(self):
         doc = ExecutiveSummaryGenerator.generate(_model(), owner="Jane Doe", classification="Confidential")
@@ -446,6 +548,64 @@ class ExecutiveGeneratorDeterministicTest(unittest.TestCase):
         self.assertIn('"purpose"', text)
         self.assertIn('"top_risks"', text)
         self.assertIn('"next_steps"', text)
+
+    # -- Day 5: boardroom-grade pass ------------------------------------
+
+    def test_health_score_matches_audit_engine(self):
+        # The exec doc's score must never be independently re-derived from
+        # the audit report's — same rule engine, same inputs.
+        from pbicompass.agents import audit_rules
+
+        model = _model()
+        measures = model.all_measures()
+        expected = audit_rules.compute_health_score(
+            audit_rules.find_dax_findings(measures),
+            audit_rules.check_best_practices(model),
+            audit_rules.find_performance_risks(model),
+            audit_rules.check_governance(model),
+            audit_rules.find_unused_assets(model),
+        )
+        doc = ExecutiveSummaryGenerator.generate(_model())
+        self.assertEqual(doc.health.overall, expected.overall)
+        self.assertEqual(doc.health.band, expected.band)
+
+    def test_health_score_never_names_dax(self):
+        # This document never names implementation terms — the "dax"
+        # component must get its own business-safe label wherever it's
+        # rendered (never bare "DAX" from HEALTH_COMPONENT_LABELS).
+        self.assertIn("dax", self.doc.health.component_scores)
+
+    def test_next_steps_are_structured_rows(self):
+        for step in self.doc.next_steps:
+            self.assertIn(step.severity, ("Critical", "High", "Medium", "Low"))
+            self.assertTrue(step.action)
+            self.assertIn(step.effort, ("Low", "Medium", "High"))
+
+    def test_next_steps_capped_at_five(self):
+        self.assertLessEqual(len(self.doc.next_steps), 5)
+
+    def test_page_thumbnails_reuse_technical_docs_wireframe_svg(self):
+        # Reuses the same SVG report_facts.report_pages() builds for the
+        # technical document/user guide — never a second drawing.
+        from pbicompass.agents.report_facts import report_pages
+
+        expected = [p["wireframe_svg"] for p in report_pages(_model()) if not p["hidden"]]
+        self.assertTrue(self.doc.page_thumbnails)
+        self.assertEqual([t.svg for t in self.doc.page_thumbnails], expected[: len(self.doc.page_thumbnails)])
+        self.assertEqual(self.doc.page_count, len(expected))
+
+    def test_page_thumbnails_skip_hidden_pages(self):
+        names = [t.name for t in self.doc.page_thumbnails]
+        model = _model()
+        hidden_names = {p.display_name for p in model.pages if p.is_hidden}
+        self.assertFalse(hidden_names & set(names))
+
+    def test_data_source_never_shows_raw_connector_name(self):
+        # File.Contents/Excel.Workbook/etc. are internal Power Query
+        # connector names, never a reader-facing label.
+        for s in self.doc.data_source_types:
+            self.assertNotIn("File.Contents", s)
+            self.assertNotRegex(s, r"[A-Z][a-z]+\.[A-Z][a-zA-Z]+")
 
 
 class ExecutiveGeneratorLlmTest(unittest.TestCase):

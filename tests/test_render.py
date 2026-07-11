@@ -333,6 +333,46 @@ class MarkdownRenderTest(unittest.TestCase):
             self.assertIn(label, ("Extracted", "AI-inferred", "Human-provided"))
 
 
+class ModelDiagramClaimConsistencyTest(unittest.TestCase):
+    """P2: §18's "The model diagram is in section 6" (and §6's own aside in
+    the markdown renderer) must never claim the diagram exists while its
+    render call is disabled — both are gated on the single
+    ``_shared.MODEL_DIAGRAM_RENDERED`` flag so they can never drift out of
+    sync with each other or with reality."""
+
+    def test_sentence_absent_while_diagram_rendering_is_disabled(self):
+        import pbicompass.render._shared as shared
+        self.assertFalse(shared.MODEL_DIAGRAM_RENDERED, "flip this test's expectations too once re-enabled")
+
+        doc = _doc()
+        self.assertNotIn("The model diagram is in section 6", render_html(doc))
+        self.assertNotIn("The model diagram is in section 6", render_markdown(doc))
+        self.assertNotIn("See the HTML version for the model diagram", render_markdown(doc))
+        with tempfile.TemporaryDirectory() as td:
+            path = render_docx(doc, Path(td) / "t.docx")
+            with zipfile.ZipFile(path) as zf:
+                text = zf.read("word/document.xml").decode("utf-8")
+        self.assertNotIn("model diagram", text.lower())
+
+    def test_sentence_appears_once_the_flag_is_enabled(self):
+        import pbicompass.render._shared as shared
+        import pbicompass.render.html as html_mod
+        import pbicompass.render.markdown as markdown_mod
+
+        doc = _doc()
+        original = shared.MODEL_DIAGRAM_RENDERED
+        try:
+            shared.MODEL_DIAGRAM_RENDERED = True
+            html_mod.MODEL_DIAGRAM_RENDERED = True
+            markdown_mod.MODEL_DIAGRAM_RENDERED = True
+            self.assertIn("The model diagram is in section 6", render_html(doc))
+            self.assertIn("The model diagram is in section 6", render_markdown(doc))
+        finally:
+            shared.MODEL_DIAGRAM_RENDERED = original
+            html_mod.MODEL_DIAGRAM_RENDERED = original
+            markdown_mod.MODEL_DIAGRAM_RENDERED = original
+
+
 class TechnicalTopClusterTest(unittest.TestCase):
     """Day 8: the technical doc's §16 surfaces the sibling Audit document's
     broadest-impact root-cause cluster when the caller (cli.py/worker.py)

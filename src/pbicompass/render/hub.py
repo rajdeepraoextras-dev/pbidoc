@@ -14,6 +14,7 @@ per-job download names are fixed enough to link between).
 from __future__ import annotations
 
 from ._shared import html_e as _e
+from ._logo import LOGO_DATA_URI
 from ._poppins_font import POPPINS_FONT_FACES_CSS, POPPINS_FONT_STACK
 
 _CSS = POPPINS_FONT_FACES_CSS + """
@@ -25,8 +26,8 @@ _CSS = POPPINS_FONT_FACES_CSS + """
   --text-muted: #475569;
   --text-faint: #64748b;
   --border-color: #e2e8f0;
-  --primary: #4f46e5;
-  --primary-light: #eef2ff;
+  --primary: #124fed;
+  --primary-light: #eef2fd;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -44,11 +45,24 @@ body {
 }
 .wrap { max-width: 960px; margin: 0 auto; }
 .hub-header {
-  background: linear-gradient(135deg, #1e1b4b 0%, #311042 100%);
+  background: linear-gradient(135deg, #1a2740 0%, #124fed 100%);
   color: #fff;
   border-radius: 16px;
   padding: 40px 44px;
   margin-bottom: 32px;
+}
+.hub-mark {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.hub-mark img { height: 26px; width: auto; }
+.hub-mark span {
+  font-weight: 800;
+  font-size: 0.95rem;
+  letter-spacing: -0.01em;
+  color: rgba(255,255,255,0.9);
 }
 .hub-header h1 { font-size: 2rem; font-weight: 800; margin-bottom: 6px; }
 .hub-header p { color: rgba(255,255,255,0.78); font-size: 0.95rem; }
@@ -191,9 +205,11 @@ def render_hub(
         "<!DOCTYPE html>"
         '<html lang="en"><head><meta charset="utf-8">'
         f"<title>{_e(report_name)} — Documentation Hub</title>"
+        f'<link rel="icon" type="image/png" href="{LOGO_DATA_URI}">'
         f"<style>{_CSS}</style></head><body>"
         '<div class="wrap">'
         '<div class="hub-header">'
+        f'<div class="hub-mark"><img src="{LOGO_DATA_URI}" alt=""><span>PBICompass</span></div>'
         f"<h1>{_e(report_name)}</h1>"
         f"<p>Documentation generated {_e(generated_at)}</p>"
         f"{dial}"

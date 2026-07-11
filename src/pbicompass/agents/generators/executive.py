@@ -21,7 +21,9 @@ from __future__ import annotations
 
 from typing import Optional
 
-from ...schemas.executive_document import ExecutiveDocument, ExecutiveRisk
+from ...schemas.executive_document import (
+    ExecutiveDocument, ExecutiveNextStep, ExecutivePageThumbnail, ExecutiveRisk,
+)
 from .. import audit_rules
 from .. import io
 from .. import usage
@@ -179,32 +181,70 @@ def _business_value(key_kpis: list[str], audience: Optional[str]) -> str:
 
 
 def _maintenance_note(failed_practice_count: int, governance_count: int) -> str:
+    from ...render._shared import pluralize_count
+
     total = failed_practice_count + governance_count
     if total:
-        return (f"{total} item(s) from the latest review should be checked periodically to keep this "
-                f"report reliable and secure.")
+        return (f"{pluralize_count('item', total)} from the latest review should be checked periodically "
+                f"to keep this report reliable and secure.")
     return "No outstanding items were found in the latest review; the report is in good shape to maintain."
 
 
-def _next_steps(recommendations, shown_rule_ids: set[str], metadata, warn: Warn) -> list[str]:
-    """"What's next" (G.1): the top remediation not already covered by Top
-    Risks. Document-completeness is an internal production concern, not
-    something an executive reader needs to see (D1) — it's reported to
-    ``warn`` (surfaced as a job warning) instead of rendered into the doc."""
-    from ...render._shared import compute_completeness
+def _next_step_action(r) -> str:
+    """Business-safe one-line action for a "What's Next" row: the same
+    DAX/CROSSFILTER/USERELATIONSHIP/VAR-stripping rule Top Risks' asks use
+    (``_business_safe_ask``), applied to this recommendation's own issue +
+    expected benefit so the table never leaks implementation jargon either."""
+    text = f"{r.issue} — expected benefit: {r.expected_benefit}"
+    if any(term in text for term in _IMPLEMENTATION_JARGON):
+        return "Ask your Power BI developer or BI team to review this item from the audit report."
+    return text
 
-    steps: list[str] = []
+
+def _next_steps(recommendations, shown_rule_ids: set[str], metadata, warn: Warn,
+                 limit: int = 5) -> list[ExecutiveNextStep]:
+    """"What's next" (Day 5): up to ``limit`` remaining remediation items not
+    already covered by Top Risks, as severity/action/effort rows — a
+    boardroom reader triages a short table in seconds rather than reading
+    prose bullets. Document-completeness is an internal production concern,
+    not something an executive reader needs to see (D1) — it's reported to
+    ``warn`` (surfaced as a job warning) instead of rendered into the doc."""
+    from ...render._shared import compute_completeness, pluralize
+
     remaining = [r for r in recommendations if (getattr(r, "rule_id", "") or "") not in shown_rule_ids]
-    if remaining:
-        top = remaining[0]
-        steps.append(f"Next priority: {top.issue} — expected benefit: {top.expected_benefit}")
-    else:
-        steps.append("No further action items from the latest review.")
+    steps = [
+        ExecutiveNextStep(
+            severity=r.priority, action=_next_step_action(r), effort=r.effort,
+            rule_id=getattr(r, "rule_id", "") or "",
+        )
+        for r in remaining[:limit]
+    ]
     _pct, missing_count, missing_fields = compute_completeness(metadata)
     if missing_count:
-        warn(f"Executive Summary: {missing_count} metadata field(s) still need business input: "
+        warn(f"Executive Summary: {pluralize('field', missing_count)} still need business input: "
              f"{', '.join(missing_fields)}.")
     return steps
+
+
+def _page_thumbnails(model, limit: int = 6) -> tuple[list[ExecutivePageThumbnail], int]:
+    """Up to ``limit`` visible report pages as small wireframe thumbnails
+    (Day 5 "Report at a glance"), plus the total number eligible (so the
+    renderer can note "+N more" rather than growing the section unbounded).
+    Reuses the exact SVG the technical document and user guide already
+    build full-size (``report_facts.report_pages``), never a second drawing
+    of the same page. Skips gracefully (empty list) when the model carries
+    no layout coordinates (the pbix-parsed path) — ``render_wireframe``
+    already returns falsy in that case, same guard every other wireframe
+    consumer uses."""
+    from ...render._shared import anchor_slug
+    from ..report_facts import report_pages
+
+    pages = [p for p in report_pages(model) if not p["hidden"] and p.get("wireframe_svg")]
+    thumbnails = [
+        ExecutivePageThumbnail(name=p["name"], svg=p["wireframe_svg"], anchor=f"page-{anchor_slug(p['name'])}")
+        for p in pages[:limit]
+    ]
+    return thumbnails, len(pages)
 
 
 def _narrative_triples(doc: ExecutiveDocument) -> list[tuple[str, str, "callable"]]:
@@ -326,6 +366,9 @@ class ExecutiveSummaryGenerator:
             dax_findings, best_practices, performance_risks, governance, unused_assets,
         )
         failed_practice_count = sum(1 for c in best_practices if not c.passed)
+        health = audit_rules.compute_health_score(
+            dax_findings, best_practices, performance_risks, governance, unused_assets,
+        )
 
         key_kpis = _key_kpis(model, client, warn, ai_context)
         key_kpi_names = [k.split(" — ", 1)[0] for k in key_kpis]
@@ -378,6 +421,11 @@ class ExecutiveSummaryGenerator:
             deployment_notes=deployment_notes, access_notes=access_notes,
             glossary=glossary, assumptions=assumptions, support_notes=support_notes,
         )
+        metadata.score_trend = audit_rules.get_shared_score_trend(
+            ai_context, model.report_name or "UnknownReport", health.overall,
+        )
+
+        page_thumbnails, page_count = _page_thumbnails(model)
 
         doc = ExecutiveDocument(
             metadata=metadata,
@@ -393,6 +441,9 @@ class ExecutiveSummaryGenerator:
             classification=classification,
             next_steps=_next_steps(recommendations, shown_rule_ids, metadata, warn),
             requirements_coverage=coverage_stat(requirements_matrix),
+            health=health,
+            page_thumbnails=page_thumbnails,
+            page_count=page_count,
         )
 
         if client is not None:

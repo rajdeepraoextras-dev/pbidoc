@@ -80,6 +80,80 @@ class MatchCandidatesTest(unittest.TestCase):
         matched = match_candidates("Show revenue", candidates, top_n=3)
         self.assertEqual(len(matched), 3)
 
+    # -- P1: RTM matcher recall ------------------------------------------
+
+    def test_plural_and_gerund_forms_still_match(self):
+        # P1's own worked example: an "IT Spend Trend" page must match a
+        # requirement phrased "spending trends" — different word forms of
+        # the same concept, previously zero keyword overlap.
+        candidates = [{"kind": "page", "name": "IT Spend Trend", "anchor": "page-it-spend-trend",
+                       "text": "IT Spend Trend"}]
+        matched = match_candidates("Track monthly and yearly spending trends", candidates)
+        self.assertEqual(len(matched), 1)
+
+    def test_used_candidate_is_boosted_over_unused(self):
+        candidates = [
+            {"kind": "column", "name": "Department[VP]", "anchor": "column-department-vp",
+             "text": "Department VP", "used": False},
+            {"kind": "column", "name": "Department[Department]", "anchor": "column-department-department",
+             "text": "Department Department", "used": True},
+        ]
+        matched = match_candidates("Break spending down by Department", candidates)
+        self.assertEqual(matched[0]["anchor"], "column-department-department")
+
+    def test_self_named_dimension_column_is_boosted_over_lone_column(self):
+        # P1's own worked example: prefer a dimension's own canonical
+        # attribute column (Department[Department]) over an unrelated
+        # column that just happens to share the table-name keyword
+        # (Department[VP]).
+        candidates = [
+            {"kind": "column", "name": "Department[VP]", "anchor": "column-department-vp",
+             "text": "Department VP", "used": True, "self_named": False},
+            {"kind": "column", "name": "Department[Department]", "anchor": "column-department-department",
+             "text": "Department Department", "used": True, "self_named": True},
+        ]
+        matched = match_candidates("Break spending down by Department", candidates)
+        self.assertEqual(matched[0]["anchor"], "column-department-department")
+
+    def test_candidates_without_used_or_self_named_keys_still_score(self):
+        # Backward compatible: a caller that doesn't set the new P1 keys
+        # (e.g. a hand-built candidate list, as most tests here use) must
+        # not raise and must still score on keyword overlap alone.
+        candidates = [{"kind": "measure", "name": "A", "anchor": "measure-a", "text": "Total Revenue"}]
+        matched = match_candidates("Show total revenue", candidates)
+        self.assertEqual(len(matched), 1)
+        self.assertEqual(matched[0]["score"], 2)
+
+
+class TimeIntelligenceKeywordsTest(unittest.TestCase):
+    """P1: time-intelligence DAX functions must surface trend/period
+    vocabulary even when the measure's own name/description doesn't."""
+
+    def test_totalytd_measure_matches_a_yearly_trend_requirement(self):
+        from pbicompass.schemas.model import Column, Measure, ModelMeta, Page, SemanticModel, Table, Visual
+
+        measure = Measure(name="Sale_YTD", table="Sales",
+                          expression="TOTALYTD(SUM(Sales[Amount]), 'Date'[Date])")
+        table = Table(name="Sales", columns=[Column(name="Amount")], measures=[measure])
+        model = SemanticModel(
+            report_name="R", meta=ModelMeta(), tables=[table],
+            pages=[Page(id="p1", display_name="Overview",
+                        visuals=[Visual(id="v1", type="card", fields=["Sales.Sale_YTD"])])],
+        )
+        candidates = build_candidates(model)
+        matched = match_candidates("Track yearly spending trends", candidates)
+        self.assertTrue(any(c["name"] == "Sale_YTD" for c in matched))
+
+    def test_measure_with_no_time_intelligence_is_unaffected(self):
+        from pbicompass.schemas.model import Column, Measure, ModelMeta, SemanticModel, Table
+
+        measure = Measure(name="Total", table="Sales", expression="SUM(Sales[Amount])")
+        table = Table(name="Sales", columns=[Column(name="Amount")], measures=[measure])
+        model = SemanticModel(report_name="R", meta=ModelMeta(), tables=[table])
+        candidates = build_candidates(model)
+        total = next(c for c in candidates if c["name"] == "Total")
+        self.assertNotIn("yearly", total["text"])
+
 
 class BuildCandidatesTest(unittest.TestCase):
     def test_candidates_cover_measures_columns_and_pages(self):
@@ -100,6 +174,19 @@ class BuildCandidatesTest(unittest.TestCase):
         page_names = {c["name"] for c in candidates if c["kind"] == "page"}
         hidden_names = {p.display_name for p in model.pages if p.is_hidden}
         self.assertFalse(page_names & hidden_names)
+
+    def test_every_candidate_carries_a_used_flag(self):
+        # P1: build_candidates() must always set "used" (used in a
+        # relative later score boost) — never a KeyError further downstream.
+        model = _model()
+        candidates = build_candidates(model)
+        for c in candidates:
+            self.assertIn("used", c)
+
+    def test_pages_are_always_used(self):
+        model = _model()
+        candidates = build_candidates(model)
+        self.assertTrue(all(c["used"] for c in candidates if c["kind"] == "page"))
 
 
 class BuildRequirementsMatrixDeterministicTest(unittest.TestCase):

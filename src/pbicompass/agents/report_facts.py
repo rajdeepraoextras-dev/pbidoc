@@ -382,30 +382,91 @@ def data_source_summaries(model: SemanticModel) -> list[str]:
 
 
 _FRIENDLY_SOURCE_TYPE = {
-    "sql.database": "SQL database", "excel.workbook": "Excel workbook",
-    "web.contents": "Web/API source", "sharepoint.contents": "SharePoint source",
+    "sql.database": "SQL database", "sql.databases": "SQL database",
+    "postgresql.database": "PostgreSQL database", "mysql.database": "MySQL database",
+    "oracle.database": "Oracle database", "snowflake.databases": "Snowflake database",
+    "amazonredshift.database": "Amazon Redshift database",
+    "googlebigquery.database": "Google BigQuery database",
+    "databricks.catalogs": "Databricks catalog",
+    "excel.workbook": "Excel workbook",
+    "web.contents": "Web/API source", "odata.feed": "OData feed",
+    "sharepoint.contents": "SharePoint source", "sharepoint.tables": "SharePoint source",
+    "sharepoint.files": "SharePoint source",
     "odbc.datasource": "ODBC source", "folder.contents": "folder source",
+    "folder.files": "folder source",
     "csv.document": "CSV file", "json.document": "JSON file",
-    "azuredatalake.contents": "Azure Data Lake source",
+    "azuredatalake.contents": "Azure Data Lake source", "azurestorage.blobs": "Azure Storage source",
 }
 
+# ``File.Contents``/``Folder.Files`` name the *mechanism* Power Query used to
+# read a file, not what kind of file it is — the extension on ``ds.detail``
+# is the only signal that distinguishes "1 Excel workbook" from "1 CSV file"
+# for those two connectors.
+_FRIENDLY_EXTENSION = {
+    ".xlsx": "Excel workbook", ".xls": "Excel workbook", ".xlsm": "Excel workbook",
+    ".csv": "CSV file", ".tsv": "CSV file", ".json": "JSON file",
+    ".pbix": "Power BI file", ".txt": "text file", ".pdf": "PDF file",
+    ".xml": "XML file", ".parquet": "Parquet file",
+}
+_FILE_LIKE_TYPES = {"file.contents", "folder.files"}
 
-def _friendly_source_type(raw_type: str | None) -> str:
+
+def _basename(path_str: str | None) -> str:
+    """Bare filename from a path/URL string, stripping every directory
+    component — the exec doc may show *which* file (G.1's own worked
+    example: "1 Excel workbook — Data.xlsx"), but never the directory it
+    lives in (that's a local-path finding, not a data-source summary)."""
+    if not path_str:
+        return ""
+    return re.split(r"[\\/]+", path_str.strip())[-1]
+
+
+def _friendly_source_type(raw_type: str | None, detail: str | None = None) -> str:
     if not raw_type:
         return "data source"
-    return _FRIENDLY_SOURCE_TYPE.get(raw_type.lower(), raw_type)
+    key = raw_type.lower()
+    friendly = _FRIENDLY_SOURCE_TYPE.get(key)
+    if friendly:
+        return friendly
+    if key in _FILE_LIKE_TYPES:
+        ext = "." + _basename(detail).rsplit(".", 1)[-1].lower() if "." in _basename(detail) else ""
+        friendly_ext = _FRIENDLY_EXTENSION.get(ext)
+        if friendly_ext:
+            return friendly_ext
+        return "file source"
+    # Last resort: a generic, honest label — never the raw internal
+    # connector name (e.g. never literally "File.Contents").
+    return "data source"
 
 
 def data_source_type_counts(model: SemanticModel) -> list[str]:
     """Executive-safe data source summary (G.1): counts by source *type*
-    only — e.g. "3 Excel workbook(s)" — never a path, server, or database
-    name. The exec doc's "Data & refresh at a glance" section is
-    deliberately non-technical and must never leak a personal file path;
-    the hardcoded-path finding already covers that risk in the audit and
-    technical documents."""
-    from collections import Counter
-    counts = Counter(ds.type for ds in model.data_sources)
-    return [f"{n} {_friendly_source_type(t)}(s)" for t, n in counts.most_common()]
+    only — e.g. "3 Excel workbooks" — never a path, server, or database
+    name, with one exception: when there's exactly one source of a given
+    type, its bare filename is appended ("1 Excel workbook — Data.xlsx")
+    since a single named file is what a reader actually asks "which file?"
+    about, and a filename alone (no directory) carries none of the
+    machine-specific path risk the hardcoded-path finding exists to catch."""
+    from collections import defaultdict
+
+    from ..render._shared import pluralize  # lazy: avoids the agents<->render import cycle
+
+    by_type: dict[str, list] = defaultdict(list)
+    for ds in model.data_sources:
+        by_type[ds.type].append(ds)
+    ordered = sorted(by_type.items(), key=lambda kv: -len(kv[1]))
+
+    lines = []
+    for raw_type, sources in ordered:
+        n = len(sources)
+        friendly = _friendly_source_type(raw_type, sources[0].detail if n == 1 else None)
+        line = f"{n} {pluralize(friendly, n)}"
+        if n == 1 and (raw_type or "").lower() in _FILE_LIKE_TYPES | {"excel.workbook", "csv.document", "json.document"}:
+            fname = _basename(sources[0].detail)
+            if fname and "." in fname:
+                line += f" — {fname}"
+        lines.append(line)
+    return lines
 
 
 _LOCAL_PATH_RE = re.compile(r"^[A-Za-z]:[\\/]")

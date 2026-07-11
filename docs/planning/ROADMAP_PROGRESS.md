@@ -1633,3 +1633,134 @@ waiver.
 - Model diagram + measure-dep graph + nav map remain disabled ("WIP");
   they should be reintroduced *on top of* `_diagram_theme` so the family
   stays consistent (roadmap §5 items, plus the 2 stale tests above).
+
+---
+
+## Day 35 (2026-07-12) — Executive doc "boardroom grade" + microcopy sweep
+
+**Objective (from the user, a fresh Day-1..7 mini-plan supplied directly in
+chat — its own numbering doesn't correspond to this file's Day count):**
+"Day 5" of that plan — health score + band chip + component mini-bars (+
+trend), human source phrasing, a missing-owner action callout, a "What's
+Next" severity/action/effort table, 25%-scale wireframe thumbnails per page,
+and a pluralization/tooltip/"not specified" microcopy pass. Done-when: a
+non-technical reader gets score, risks, actions, and owner in under 60
+seconds from the exec doc alone. Days 6/7 of that plan (ER diagram/wireframe
+overlap/pan-zoom, golden-suite hardening) are out of scope today.
+
+### What changed, concretely
+- **`agents/generators/executive.py`** — `ExecutiveSummaryGenerator` now
+  computes `audit_rules.compute_health_score(...)` itself (never
+  re-derived independently — same rule engine, same inputs the audit
+  report uses) and sets `metadata.score_trend`; `_next_steps` returns up to
+  5 `ExecutiveNextStep` rows (severity/business-safe action/effort) instead
+  of prose bullets; new `_page_thumbnails(model)` reuses
+  `report_facts.report_pages()`'s existing wireframe SVGs (never a second
+  drawing of a page) for up to 6 visible pages.
+- **`schemas/executive_document.py`** — new `ExecutiveNextStep`,
+  `ExecutivePageThumbnail` dataclasses; `ExecutiveDocument` gains
+  `health: Optional[HealthScore]`, `page_thumbnails`, `page_count`;
+  `next_steps` changes from `list[str]` to `list[ExecutiveNextStep]`
+  (deliberate breaking change to the JSON contract, same convention as
+  J.C's executive-doc restructure).
+- **`agents/report_facts.py`** — `data_source_type_counts`/
+  `_friendly_source_type` rewritten: connector types missing from the
+  friendly-name map (PostgreSQL/MySQL/Oracle/Snowflake/Redshift/BigQuery/
+  Databricks/OData/SharePoint/Azure Storage) added; `File.Contents`/
+  `Folder.Files` (which name the read *mechanism*, not the file kind) now
+  resolve by the file extension on `ds.detail`; when there's exactly one
+  source of a type, its bare filename (never the directory) is appended —
+  "1 Excel workbook — Data.xlsx" instead of the reported "1
+  File.Contents(s)"; last-resort fallback is the honest generic "data
+  source", never a raw connector name.
+- **`render/_shared.py`** — new `pluralize`/`pluralize_count` (regular-
+  English pluralization, used to kill the "asset(s)" pattern at the call
+  sites this pass actually touches — see Honest gaps), `action_chip` (a
+  missing owner/steward/classification renders as a pill that reads as an
+  open action item, not a bare "not specified"), `truncate_label` (paired
+  with a `title=` attribute so a truncated label is always recoverable).
+- **`render/executive.py`** — band chip + per-component mini-bars (own
+  business-safe label set, `_EXEC_COMPONENT_LABELS`, so "DAX Quality"
+  never leaks into a document that bans DAX/implementation terms
+  everywhere else); a "Report at a glance" thumbnail grid (`.no-print` —
+  screen-only, so it doesn't grow the doc's printed-page count; each card
+  deep-links into the sibling technical/user-guide doc's page section when
+  one exists in the same job, 2.7); a missing-owner callout card; "What's
+  Next" as an HTML/Markdown/DOCX table. Markdown/DOCX skip the thumbnail
+  grid (SVG has no home in either format — same precedent the technical
+  doc and user guide already set for wireframes).
+- **`render/_html_shell.py`** — `.band-chip`/`.health-mini`/`.mini-bar-*`/
+  `.action-chip`/`.thumb-grid`/`.thumb-card`/`.thumb-more` CSS (shared
+  block, reused verbatim by all four doc types' shell); new `.no-print`
+  print rule.
+- **A real pre-existing bug found and fixed while wiring this in**:
+  `audit.py` and `technical.py` each independently call
+  `audit_rules.get_and_update_score_history` — a function that both reads
+  *and appends to* the on-disk history file. In a `--document all` job
+  both ran, double-writing the same run and having the second call compare
+  its score against the first call's own freshly-written entry. Adding the
+  executive doc as a third independent caller would have made this worse.
+  Fixed with `JobAIContext.score_trend`/`_score_trend_set` +
+  `audit_rules.get_shared_score_trend(ai_context, ...)`: the first caller
+  in a job computes and caches the trend, every later caller in the same
+  job reuses it; `ai_context=None` (offline / direct generator calls, as
+  most tests do) degrades to the original direct-call behavior byte-for-
+  byte. `audit.py`/`technical.py` both switched to the shared wrapper.
+
+### Testing
+- `tests/test_generators.py::ExecutiveGeneratorDeterministicTest` — new
+  Day-5 block: health score matches the audit engine's own computation,
+  the "dax" component is present but never renders as bare "DAX" anywhere
+  in this document, next-step rows are well-formed and capped at 5, page
+  thumbnails reuse `report_pages()`'s SVG verbatim and skip hidden pages,
+  data-source lines never carry a raw connector name. Three pre-existing
+  tests updated for the `next_steps: list[str] -> list[ExecutiveNextStep]`
+  contract change.
+- `tests/test_report_facts.py::DataSourceTypeCountsTest` — new: the exact
+  "File.Contents" → "Excel workbook — Data.xlsx" fix, no raw connector name
+  ever shown, no directory path ever shown, correct pluralization at
+  count 1 vs. many, filenames omitted once a type has more than one source.
+- `tests/test_audit_rules.py` — new: `get_shared_score_trend` writes the
+  on-disk history exactly once per job even when called twice with the
+  same `ai_context`, and degrades to the raw function when
+  `ai_context=None`.
+- Golden HTML snapshots regenerated for all four doc types
+  (`PBICOMPASS_UPDATE_GOLDEN=1`) — the CSS block is shared by every shell,
+  so all four shifted even though only the executive doc's body content
+  changed.
+- **Live browser verification**: generated the executive doc from the real
+  `SampleSales.pbip` fixture (real layout coordinates, so thumbnails
+  populate), served it locally, and inspected both the accessibility tree
+  and rendered screenshots — health score band chip + mini-bars, the
+  2-page "Report at a glance" thumbnail grid (with working cross-document
+  hrefs into `#page-…`/`#visual-…` anchors), the missing-owner chip +
+  callout, and the What's Next table all render correctly in both light
+  and dark theme.
+- Full suite: **739 passed, 2 skipped**, only the 2 pre-existing (since
+  Day 1) `test_render.py` model-diagram failures remain, unrelated to
+  today's change.
+
+### Honest gaps
+- **The pluralization/microcopy sweep is scoped to the executive doc's own
+  surface, not a full codebase pass.** The "asset(s)"/"finding(s)"/"(s)"
+  pattern this plan calls out by name still exists in ~40 other call sites
+  across `audit_rules.py`, `technical.py`, `user_guide.py`, etc. — fixing
+  all of them in one pass risked destabilizing dozens of unrelated golden
+  snapshots for a mostly cosmetic win outside today's actual done-when
+  ("...from the exec doc alone"). The `pluralize`/`pluralize_count`
+  helpers are now in `render/_shared.py` for the next pass to pick up.
+- **Title tooltips on truncated labels** were added concretely where this
+  pass introduces new CSS-truncated text (the thumbnail caption); a wider
+  audit of every truncation point in the other three doc types wasn't
+  attempted.
+- **"Not specified" → actionable chips** was applied to the Owner field
+  specifically (the one field with a real governance consequence and an
+  explicit "missing-owner callout" ask). Steward/Classification stay
+  conditionally hidden when unset, per the standing G.1/D1 fix ("render
+  Steward/Classification only when set" — a prior, deliberate defect fix
+  this pass does not reopen).
+- No live LLM smoke test — same standing gap as every day since Day 5 of
+  the *other* numbering (no provider credentials in this sandbox); today's
+  changes are entirely in deterministic code paths (health score, data
+  source naming, next-steps table, thumbnails), so the risk is low, but
+  it's an explicit gap, not a silently-skipped one.

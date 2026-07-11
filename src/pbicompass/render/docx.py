@@ -15,6 +15,7 @@ from ..agents.audit_rules import TOTAL_RULE_COUNT
 from ..schemas.document import Document
 from ._docx_writer import _Docx
 from ._shared import HEALTH_COMPONENT_LABELS
+from ._shared import MODEL_DIAGRAM_RENDERED
 from ._shared import format_timestamp as _fmt_ts
 from ._shared import is_local_path as _is_local_path
 from ._shared import non_data_note as _non_data_note
@@ -467,7 +468,8 @@ def render_docx(doc: Document, out_path) -> Path:
         
     # 18. Appendix & Sign-off
     d.heading(1, f"18. Appendix & Sign-off{_badge(18)}")
-    d.para("The model diagram is in the HTML / section 6.")
+    if MODEL_DIAGRAM_RENDERED:
+        d.para("The model diagram is in the HTML / section 6.")
     generated_date = (md.generated_at or "")[:10]
     # owner -> Business Owner, author -> Developer, reviewer -> Approver
     # (Day 3) — each row filled from the metadata field it corresponds to.

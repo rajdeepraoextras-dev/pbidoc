@@ -138,7 +138,10 @@ def apply_critic_pass(
 
         unknown = _unknown_bracketed_names(cleaned, known_names)
         if unknown:
-            warn(f"{location}: references unknown object(s) {', '.join(unknown)} — verify wording.")
+            from ..render._shared import pluralize_count  # lazy: avoids the agents<->render import cycle
+
+            warn(f"{location}: references {pluralize_count('unknown object', len(unknown))} "
+                 f"{', '.join(unknown)} — verify wording.")
 
     if client is not None and working:
         try:

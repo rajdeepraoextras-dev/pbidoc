@@ -87,8 +87,59 @@ _STOPWORDS = frozenset(
 )
 
 
+def _stem(word: str) -> str:
+    """Crude suffix-stripping so a requirement's word form doesn't have to
+    match a candidate's exactly (P1): a page literally named "IT Spend
+    Trend" must match a requirement asking to "track ... spending trends"
+    — "spend"/"spending" and "trend"/"trends" are the same concept, but a
+    bare-word-overlap match treats them as unrelated tokens. No real
+    morphology, just enough to close that gap; never shown to a reader,
+    only used to score candidates."""
+    if len(word) > 5 and word.endswith("ing"):
+        return word[:-3]
+    if len(word) > 4 and word.endswith("ies"):
+        return word[:-3] + "y"
+    if len(word) > 4 and word.endswith("es"):
+        return word[:-2]
+    if len(word) > 3 and word.endswith("ed"):
+        return word[:-2]
+    if len(word) > 3 and word.endswith("s") and not word.endswith("ss"):
+        return word[:-1]
+    return word
+
+
 def _significant_words(text: str) -> set[str]:
-    return {w.lower() for w in re.findall(r"[A-Za-z][A-Za-z0-9]{2,}", text) if w.lower() not in _STOPWORDS}
+    return {_stem(w.lower()) for w in re.findall(r"[A-Za-z][A-Za-z0-9]{2,}", text) if w.lower() not in _STOPWORDS}
+
+
+# DAX time-intelligence functions -> the vocabulary a business requirement
+# actually uses to ask for them ("track monthly and yearly spending
+# trends") — a measure named e.g. "Sale_YTD" whose *expression* wraps
+# TOTALYTD carries none of those words in its name/description, so a
+# requirement asking for a trend/period comparison was showing a false Gap
+# even though the report has exactly the measure it's asking for (P1).
+_TIME_INTELLIGENCE_KEYWORDS: dict[str, str] = {
+    "TOTALYTD": "year yearly annual ytd trend cumulative",
+    "TOTALQTD": "quarter quarterly qtd trend cumulative",
+    "TOTALMTD": "month monthly mtd trend cumulative",
+    "DATESYTD": "year yearly annual ytd trend",
+    "DATESQTD": "quarter quarterly qtd trend",
+    "DATESMTD": "month monthly mtd trend",
+    "SAMEPERIODLASTYEAR": "year yearly annual trend comparison prior",
+    "PARALLELPERIOD": "period trend comparison prior",
+    "DATEADD": "trend comparison period",
+    "PREVIOUSYEAR": "year yearly annual prior trend",
+    "PREVIOUSQUARTER": "quarter quarterly prior trend",
+    "PREVIOUSMONTH": "month monthly prior trend",
+    "NEXTYEAR": "year yearly annual trend",
+    "NEXTQUARTER": "quarter quarterly trend",
+    "NEXTMONTH": "month monthly trend",
+}
+
+
+def _time_intelligence_keywords(expression: Optional[str]) -> str:
+    expr_upper = (expression or "").upper()
+    return " ".join(kw for func, kw in _TIME_INTELLIGENCE_KEYWORDS.items() if func in expr_upper)
 
 
 def build_candidates(model, translations: Optional[dict] = None) -> list[dict]:
@@ -99,18 +150,25 @@ def build_candidates(model, translations: Optional[dict] = None) -> list[dict]:
     no ordering dependency on technical.py having already run. Uses
     ``report_facts.report_pages`` for the page/visual text — the same
     grounded facts every renderer already shows (Day 4: "grounded against
-    report_facts"). ``{kind, name, anchor, text}`` per candidate."""
+    report_facts"). ``{kind, name, anchor, text, used, ...}`` per
+    candidate — ``used``/``self_named`` (P1) let :func:`match_candidates`
+    prefer real, report-bound evidence over an incidental keyword hit."""
     from ..render._shared import anchor_slug
     from .report_facts import report_pages
+    from .usage import used_column_names, used_measure_names
 
     translations = translations or {}
+    used_measures = used_measure_names(model)
+    used_columns = used_column_names(model)
     candidates: list[dict] = []
     for m in model.all_measures():
         translated = (translations.get(m.name) or {}).get("plain_english", "")
-        text = f"{m.name} {m.description or ''} {translated}"
+        time_kw = _time_intelligence_keywords(m.expression)
+        text = f"{m.name} {m.description or ''} {translated} {time_kw}".strip()
         candidates.append({
             "kind": "measure", "name": m.name,
             "anchor": f"measure-{anchor_slug(m.name)}", "text": text,
+            "used": m.name in used_measures,
         })
     for t in model.tables:
         for c in t.columns:
@@ -120,6 +178,13 @@ def build_candidates(model, translations: Optional[dict] = None) -> list[dict]:
                 "kind": "column", "name": f"{t.name}[{c.name}]",
                 "anchor": f"column-{anchor_slug(t.name)}-{anchor_slug(c.name)}",
                 "text": f"{t.name} {c.name} {c.description or ''}",
+                "used": c.name in used_columns,
+                # A column named after its own table (e.g. Department[Department])
+                # is almost always that dimension's canonical label/attribute —
+                # the natural evidence for "grouped/filtered by X" — versus an
+                # unrelated column in the same table (Department[VP]) that only
+                # coincidentally shares the table-name word.
+                "self_named": c.name.strip().lower() == t.name.strip().lower(),
             })
     for page in report_pages(model):
         if page.get("hidden"):
@@ -133,22 +198,33 @@ def build_candidates(model, translations: Optional[dict] = None) -> list[dict]:
             "kind": "page", "name": name,
             "anchor": f"page-{anchor_slug(name)}",
             "text": f"{name} {visual_text} {metric_text} {dim_text}",
+            "used": True,  # a rendered, visible page is inherently "in use"
         })
     return candidates
 
 
 def match_candidates(requirement_text: str, candidates: list[dict], *, top_n: int = 5) -> list[dict]:
     """Rank ``candidates`` by shared significant words with
-    ``requirement_text``; returns the top ``top_n`` with ``score > 0``,
-    each candidate dict extended with its ``score``."""
+    ``requirement_text``, boosted (P1) for candidates that are actually
+    bound to a report visual (``used``) and for a column that is its own
+    table's canonical dimension attribute (``self_named``) — real,
+    report-bound evidence outranks an unused column that only coincidentally
+    shares a keyword. Returns the top ``top_n`` with ``score > 0``, each
+    candidate dict extended with its ``score``."""
     req_words = _significant_words(requirement_text)
     if not req_words:
         return []
     scored = []
     for c in candidates:
-        score = len(req_words & _significant_words(c["text"]))
-        if score > 0:
-            scored.append({**c, "score": score})
+        overlap = len(req_words & _significant_words(c["text"]))
+        if overlap == 0:
+            continue
+        score = overlap
+        if c.get("used"):
+            score += 1
+        if c.get("self_named"):
+            score += 1
+        scored.append({**c, "score": score})
     scored.sort(key=lambda c: -c["score"])
     return scored[:top_n]
 

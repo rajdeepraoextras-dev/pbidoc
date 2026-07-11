@@ -24,7 +24,9 @@ from ..schemas.document import Document
 from ._dax_highlight import highlight_dax
 from ._html_shell import page_shell
 from ._shared import HEALTH_COMPONENT_LABELS
+from ._shared import MODEL_DIAGRAM_RENDERED
 from ._shared import anchor_slug
+from ._shared import pluralize_count
 from ._shared import dedupe_ids
 from ._shared import format_timestamp as _fmt_ts
 from ._shared import html_discrepancy_callout
@@ -36,7 +38,7 @@ from ._shared import non_data_note as _non_data_note
 from ._shared import section_provenance
 from ._shared import slicer_field_label as _slicer_label
 
-_FACT_FILL, _FACT_LINE = "#eef2ff", "#6366f1"
+_FACT_FILL, _FACT_LINE = "#eef2fd", "#124fed"
 _DIM_FILL, _DIM_LINE = "#ffffff", "#cbd5e1"
 _CALC_FILL, _CALC_LINE = "#f5f3ff", "#a78bfa"
 
@@ -125,7 +127,7 @@ def _diagram(tables: list[dict], edges: list[dict]) -> str:
     svg = [f'<svg viewBox="0 0 {W} {H}" width="100%" xmlns="http://www.w3.org/2000/svg" '
            f'role="img" aria-labelledby="model-diagram-title">\n<style>text {{ font-family: "Poppins", sans-serif !important; }}</style>']
     svg.append(f'<title id="model-diagram-title">Data model diagram: {_e(table_names)}, connected by '
-               f'{len(edges)} relationship(s)</title>')
+               f'{_e(pluralize_count("relationship", len(edges)))}</title>')
     svg.append('<defs><marker id="arr" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">'
                '<path d="M0,0 L7,3 L0,6 Z" fill="#94a3b8"/></marker>'
                '<marker id="arro" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">'
@@ -389,9 +391,9 @@ def render_html(
         o.append("<h3>Relationships of note &amp; risks</h3>")
         for r in sm.risks:
             o.append(f'<div class="risk">{_e(r)}</div>')
-    if sm.tables:
-        # o.append("<h3>Model diagram</h3>")
-        # o.append(_diagram(sm.tables, sm.relationship_edges))
+    if MODEL_DIAGRAM_RENDERED and sm.tables:
+        o.append("<h3>Model diagram</h3>")
+        o.append(_diagram(sm.tables, sm.relationship_edges))
         pass
     o.append("<h3>Key tables</h3>")
     table_ids = dedupe_ids([f"table-{anchor_slug(t['name'])}" for t in sm.tables])
@@ -793,7 +795,8 @@ def render_html(
 
     # 18. Appendix & Sign-off
     o.append(f'<h2 id="sec18">18. Appendix &amp; Sign-off{_header_badge(18)}</h2>')
-    o.append("<p>The model diagram is in section 6. Attach wireframes/mockups and any source-to-target mapping here.</p>")
+    diagram_note = "The model diagram is in section 6. " if MODEL_DIAGRAM_RENDERED else ""
+    o.append(f"<p>{diagram_note}Attach wireframes/mockups and any source-to-target mapping here.</p>")
     
     generated_date = _e((md.generated_at or "")[:10])
     # owner -> Business Owner, author -> Developer, reviewer -> Approver:

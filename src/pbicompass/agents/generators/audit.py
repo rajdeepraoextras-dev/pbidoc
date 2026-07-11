@@ -23,7 +23,7 @@ from ..context import JobAIContext
 from ..critic import apply_critic_pass, apply_results
 from ..grounding import apply_grounding_pass
 from ..llm import LLMClient
-from ..sanitize import is_meta_commentary
+from ..sanitize import enforce_score_consistency, is_meta_commentary, strip_punt_leak
 from .base import Warn, build_core_metadata, call_llm
 
 # Day 9 (paid feature, §4.3/4.6): the plan tiers allowed to receive
@@ -133,13 +133,39 @@ def _deterministic_overview(
             f"({health.component_scores[weakest]}/100), while {strongest.replace('_', ' ')} "
             f"is the strongest area ({health.component_scores[strongest]}/100)."
         )
-    counts = (f"{len(dax_findings)} DAX finding(s), {len(failed)} failed best-practice check(s), "
-              f"{len(performance_risks)} performance risk signal(s), and {len(governance)} "
-              f"governance finding(s) were identified.")
+    from ...render._shared import pluralize_count  # lazy: avoids the agents<->render import cycle
+
+    counts = (f"{pluralize_count('DAX finding', len(dax_findings))}, "
+              f"{pluralize_count('failed best-practice check', len(failed))}, "
+              f"{pluralize_count('performance risk signal', len(performance_risks))}, and "
+              f"{pluralize_count('governance finding', len(governance))} were identified.")
     parts.append(counts)
     if top:
         parts.append(f"The top priority is: {top.issue} ({top.priority}) — {top.suggested_fix}")
     return " ".join(parts)
+
+
+def _cluster_fallback_narrative(cluster: FindingCluster) -> str:
+    """Deterministic backstop for a cluster's root-cause explanation (P0) —
+    used only when :func:`sanitize.strip_punt_leak` guts the LLM-written
+    ``narrative`` down to nothing (the grounding pass replacing more than
+    one claim in the field with the same canned punt sentence). No prose
+    subtlety, just the facts: what the root cause is and which findings
+    it's tied to — always available since ``root_cause``/``rule_ids`` come
+    straight from the Audit Synthesizer's own structured output, not prose."""
+    ids = ", ".join(cluster.rule_ids) if cluster.rule_ids else "the related findings"
+    return f"{cluster.root_cause} is the shared root cause behind {ids}. Resolving it should clear all of them together."
+
+
+def _strategic_narrative_fallback(clusters: list[FindingCluster]) -> str:
+    """Deterministic backstop for the overall root-cause story (P0) — same
+    reasoning as :func:`_cluster_fallback_narrative`, one level up."""
+    if not clusters:
+        return ""
+    if len(clusters) == 1:
+        return f"One root-cause cluster was identified: {clusters[0].root_cause}."
+    causes = "; ".join(c.root_cause for c in clusters)
+    return f"{len(clusters)} root-cause clusters were identified: {causes}."
 
 
 def _narrative_triples(doc: AuditDocument) -> list[tuple[str, str, "callable"]]:
@@ -367,8 +393,8 @@ class AuditReportGenerator:
             deployment_notes=deployment_notes, access_notes=access_notes,
             glossary=glossary, assumptions=assumptions, support_notes=support_notes,
         )
-        meta.score_trend = audit_rules.get_and_update_score_history(
-            model.report_name or "UnknownReport",
+        meta.score_trend = audit_rules.get_shared_score_trend(
+            ai_context, model.report_name or "UnknownReport",
             health.overall
         )
         ledger = audit_rules.compute_checks_ledger(
@@ -404,5 +430,28 @@ class AuditReportGenerator:
         if client is not None:
             _run_critic(doc, model, client, warn, ai_context)
             _run_grounding(doc, client, warn, ai_context)
+
+        # P0: a narrative sentence claiming "the health score" must agree
+        # with the one deterministic number this document actually
+        # reports (its own KPI strip) — an LLM narrator can misstate it
+        # even when given the correct value verbatim in its prompt.
+        # Unconditional for the same reason as the punt-leak strip below.
+        doc.narrative_overview = enforce_score_consistency(doc.narrative_overview, health.overall, health.band)
+
+        # P0: the grounding pass can replace more than one claim in the
+        # same field with the identical "Unknown — requires business
+        # confirmation." sentence — a leaked placeholder, not prose a
+        # reader should see, and its one legitimate home is an unexplained
+        # column/measure description, never a summary/root-cause paragraph.
+        # Runs unconditionally (not gated on ``client``) since it's a pure
+        # cleanup pass with a safe deterministic fallback either way.
+        doc.narrative_overview = strip_punt_leak(doc.narrative_overview, narrative)
+        if doc.strategic_narrative:
+            doc.strategic_narrative = strip_punt_leak(
+                doc.strategic_narrative, _strategic_narrative_fallback(doc.clusters),
+            )
+        for cluster in doc.clusters:
+            if cluster.narrative:
+                cluster.narrative = strip_punt_leak(cluster.narrative, _cluster_fallback_narrative(cluster))
 
         return doc

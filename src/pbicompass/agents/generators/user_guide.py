@@ -124,13 +124,21 @@ def _build_glossary(model, client: Optional[LLMClient], warn: Warn,
                 if not leaf or leaf in measure_names or leaf in seen_dims:
                     continue
                 seen_dims.add(leaf)
-                # I4: a field parameter is a UI selector, not a business
-                # dimension — label it as what it is instead of guessing a
-                # generic "grouping" definition for a name like "select".
-                is_field_param = is_field_selector(f, field_param_tables)
-                definition = ("A field selector that switches what the chart displays."
-                             if is_field_param else _dimension_definition(leaf))
-                terms.append(GlossaryTerm(term=leaf, plain_definition=definition))
+                # P2: a field parameter/system selector ("select", "select1")
+                # is UI mechanics, not business vocabulary — it has no place
+                # in a *business* glossary at all, regardless of how well it
+                # can be labelled. Excluding it here also keeps it out of
+                # ``_narrative_triples`` (critic/grounding never sees it), so
+                # a term with a fixed, always-correct definition can no
+                # longer be overwritten with an LLM's confused attempt to
+                # improve it (the observed leak: "Explain how or why the
+                # field selector changes the chart..." — an editing
+                # instruction, not a definition, that slipped past
+                # ``is_meta_commentary`` because it doesn't start with one
+                # of the banned directive verbs).
+                if is_field_selector(f, field_param_tables):
+                    continue
+                terms.append(GlossaryTerm(term=leaf, plain_definition=_dimension_definition(leaf)))
 
     human_terms = parse_human_glossary(human_glossary)
     if human_terms:

@@ -177,13 +177,16 @@ def find_human_claim_discrepancies(
 
     not_needed_match = _RLS_NOT_NEEDED_RE.search(security_notes)
     if not_needed_match and rls_role_count > 0:
+        from ..render._shared import pluralize  # lazy: avoids the agents<->render import cycle
+
+        role_word = pluralize("role", rls_role_count)
         discrepancies.append(HumanClaimDiscrepancy(
             field="security_notes",
             human_claim=security_notes.strip(),
-            model_finding=f"The model defines {rls_role_count} row-level security role(s).",
-            explanation="The intake form states RLS isn't needed/used, but the model actually "
-                        "defines role(s) — confirm whether they're stale/unused or whether this "
-                        "note is out of date.",
+            model_finding=f"The model defines {rls_role_count} row-level security {role_word}.",
+            explanation=f"The intake form states RLS isn't needed/used, but the model actually "
+                        f"defines {role_word} — confirm whether they're stale/unused or whether this "
+                        f"note is out of date.",
         ))
     return discrepancies
 
