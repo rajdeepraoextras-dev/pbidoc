@@ -210,6 +210,13 @@ def report_pages(model: SemanticModel) -> list[dict]:
         wireframe_svg = render_wireframe(
             p, measure_names=frozenset(measure_names), field_param_tables=frozenset(field_param_tables),
             visual_anchor_map=visual_anchor_map,
+            # Visible page names, in report order — the wireframe's page-tab
+            # bar (active page + linked sibling tabs, same ``#page-…`` anchor
+            # formula as the slicer links). Hidden pages are excluded the way
+            # Power BI's own tab strip hides them — and because the user
+            # guide (which embeds this same SVG) doesn't document them, a
+            # hidden-page tab would be a dead link there (I3).
+            sibling_pages=[pg.display_name for pg in model.pages if not pg.is_hidden],
         ) or None
         out.append({"name": p.display_name, "hidden": p.is_hidden, "drillthrough": p.is_drillthrough,
                     "visual_count": len(p.visuals), "visuals": visuals, "decorative_count": decorative,

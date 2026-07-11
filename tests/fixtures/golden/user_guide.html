@@ -664,21 +664,31 @@ details.collapsible > .code-block pre {
   margin-top: 4px;
   opacity: 0.8;
 }
-/* Page wireframe + lineage (v4, ISODATE) — a white "card" per node with
-   a colored top/left accent bar, tinted icon badge, and soft shadow. Hover
-   feedback lives entirely here (a .wf-node class) instead of a per-rect
-   style=/onmouseover= attribute. Fixed light hex (not shell CSS
+/* Page wireframe + lineage (v6 "Studio", ISODATE) — a white card per
+   node with a layered soft shadow, gradient icon chip, and hover-lift.
+   Hover feedback lives entirely here (a .wf-node class) instead of a
+   per-rect style=/onmouseover= attribute. Fixed light hex (not shell CSS
    variables) so wireframe/lineage cards never theme-flip in dark mode —
    same rule as the always-light canvas underneath them. */
 .wf-node {
   cursor: pointer;
-  transition: transform 0.18s ease, filter 0.18s ease;
-  filter: drop-shadow(0 1px 2px rgba(31,36,51,.08));
+  transition: transform 0.18s ease, filter 0.18s ease, opacity 0.18s ease;
+  filter: drop-shadow(0 1px 1.5px rgba(31,36,51,.06)) drop-shadow(0 2px 6px rgba(31,36,51,.05));
 }
 .wf-node:hover {
-  transform: translateY(-1.5px);
-  filter: drop-shadow(0 4px 10px rgba(31,36,51,.14));
+  transform: translateY(-2px);
+  filter: drop-shadow(0 2px 3px rgba(31,36,51,.08)) drop-shadow(0 8px 18px rgba(31,36,51,.12));
 }
+/* Lineage hover-connect: the shell script dims everything not connected to
+   the hovered node and thickens its own gradient edges. */
+.wf-node.dimmed { opacity: 0.22; }
+.lg-edge { transition: opacity 0.18s ease; }
+.lg-edge path { transition: stroke-width 0.18s ease, opacity 0.18s ease; }
+.lg-edge.dimmed { opacity: 0.08; }
+.lg-edge.hl path { opacity: 1; stroke-width: 2.4; }
+/* Wireframe page-tab bar: sibling-page ghost tabs tint on hover. */
+.wf-tab text { transition: fill 0.15s ease; }
+.wf-tab:hover text, a.wf-tab:focus-visible text { fill: #4f6ef7; }
 /* Hover/keyboard-focus border tint, per category — a fixed approximation
    of a 40% accent/edge blend (not CSS color-mix(), for older print/PDF
    engine safety). .wf-node:hover alone covers both linked (data/slicer,
@@ -1030,11 +1040,8 @@ details.collapsible > .code-block pre {
 <h2 id="sec3">3. Report Pages</h2>
 <div class="card-section" id="page-sales-overview">
 <h3>Sales Overview</h3>
-<div class="diagram"><svg viewBox="0 0 760 442" width="100%" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="wireframe-title-page1">
-<style>text { font-family: "Poppins", sans-serif !important; }</style><title id="wireframe-title-page1">Wireframe layout for page Sales Overview</title><defs>
-<pattern id="wf-grid-page1" width="24" height="24" patternUnits="userSpaceOnUse">
-  <rect width="24" height="24" fill="#f8fafc"/><path d="M24 0H0V24" fill="none" stroke="#e7ecf5" stroke-width="1"/>
-</pattern>
+<div class="diagram"><svg viewBox="0 0 760 488" width="100%" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="wireframe-title-page1">
+<style>text { font-family: "Poppins", sans-serif !important; }</style><title id="wireframe-title-page1">Wireframe layout for page Sales Overview</title><defs><pattern id="dg-dots-page1" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="1.2" cy="1.2" r="1" fill="#dfe5f0"/></pattern><linearGradient id="dg-canvas-page1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fdfefe"/><stop offset="1" stop-color="#f5f7fc"/></linearGradient><linearGradient id="dg-chip-data-page1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6b85f9"/><stop offset="1" stop-color="#3d5bf0"/></linearGradient><linearGradient id="dg-chip-slicer-page1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f7b23b"/><stop offset="1" stop-color="#e08c06"/></linearGradient><linearGradient id="dg-chip-nav-page1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2ec695"/><stop offset="1" stop-color="#0a9e6e"/></linearGradient><linearGradient id="dg-chip-decorative-page1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a37ef8"/><stop offset="1" stop-color="#7a48ec"/></linearGradient><linearGradient id="dg-sk-data-page1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4f6ef7" stop-opacity=".38"/><stop offset="1" stop-color="#4f6ef7" stop-opacity=".10"/></linearGradient><linearGradient id="dg-area-data-page1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4f6ef7" stop-opacity=".28"/><stop offset="1" stop-color="#4f6ef7" stop-opacity=".02"/></linearGradient><linearGradient id="dg-sk-slicer-page1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f59e0b" stop-opacity=".38"/><stop offset="1" stop-color="#f59e0b" stop-opacity=".10"/></linearGradient><linearGradient id="dg-area-slicer-page1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f59e0b" stop-opacity=".28"/><stop offset="1" stop-color="#f59e0b" stop-opacity=".02"/></linearGradient><linearGradient id="dg-sk-nav-page1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#10b981" stop-opacity=".38"/><stop offset="1" stop-color="#10b981" stop-opacity=".10"/></linearGradient><linearGradient id="dg-area-nav-page1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#10b981" stop-opacity=".28"/><stop offset="1" stop-color="#10b981" stop-opacity=".02"/></linearGradient><linearGradient id="dg-sk-decorative-page1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8b5cf6" stop-opacity=".38"/><stop offset="1" stop-color="#8b5cf6" stop-opacity=".10"/></linearGradient><linearGradient id="dg-area-decorative-page1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8b5cf6" stop-opacity=".28"/><stop offset="1" stop-color="#8b5cf6" stop-opacity=".02"/></linearGradient>
 <symbol id="wf-i-bars-page1" viewBox="0 0 24 24"><path d="M3 21h18M6 21V10M11 21V4M16 21v-9M21 21V7" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 <symbol id="wf-i-line-page1" viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-9" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 <symbol id="wf-i-combo-page1" viewBox="0 0 24 24"><path d="M3 21h4v-7H3zM10 21h4v-11h-4zM17 21h4v-5h-4M4 11l5-4 4 3 6-6" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
@@ -1048,7 +1055,11 @@ details.collapsible > .code-block pre {
 <symbol id="wf-i-image-page1" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke-width="1.7"/><circle cx="8.5" cy="8.5" r="1.5" fill="none" stroke-width="1.7"/><path d="M21 15l-5-5L5 21" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 <symbol id="wf-i-textbox-page1" viewBox="0 0 24 24"><path d="M4 7V4h16v3M9 20h6M12 4v16" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 <symbol id="wf-i-shape-page1" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3" fill="none" stroke-width="1.7"/></symbol>
-</defs><rect x="16" y="16" width="728" height="410" rx="12" fill="url(#wf-grid-page1)" stroke="#e7eaf3" stroke-width="1"/><a href="#visual-sales-overview-revenue-by-year"><title>Revenue by Year — Column chart (Year, Total Revenue)</title><g class="wf-node cat-data"><rect x="25.1" y="61.5" width="341.2" height="227.5" rx="8" class="wf-card-bg cat-data" fill="#4f6ef7" fill-opacity="0.05" stroke="#4f6ef7" stroke-opacity="0.55" stroke-width="1.4" stroke-dasharray="5 4"/><rect x="33.1" y="69.5" width="139.0" height="22" rx="11" fill="#4f6ef7"/><use href="#wf-i-bars-page1" x="41.1" y="73.5" width="14" height="14" fill="none" stroke="#ffffff"/><text x="61.1" y="84.5" font-size="12.5" font-weight="600" fill="#ffffff">Revenue by Year</text><text x="35.1" y="106.5" font-size="9.5" font-weight="600" letter-spacing="0.07em" fill="#4f6ef7" fill-opacity="0.85">COLUMN CHART</text></g></a><a href="#page-sales-overview"><title>Slicer — filters this page</title><g class="wf-node cat-slicer"><rect x="25.1" y="25.1" width="170.6" height="34.1" rx="8" class="wf-card-bg cat-slicer" fill="#f59e0b" fill-opacity="0.05" stroke="#f59e0b" stroke-opacity="0.55" stroke-width="1.4" stroke-dasharray="5 4"/><rect x="30.1" y="30.1" width="16" height="16" rx="4" fill="#f59e0b"/><use href="#wf-i-funnel-page1" x="33.1" y="33.1" width="10" height="10" fill="none" stroke="#ffffff"/><text x="52.1" y="42.1" font-size="11" font-weight="600" fill="#1f2433">Slicer</text></g></a><a href="#visual-sales-overview-revenue-breakdown"><title>Revenue Breakdown — Decomposition tree (Total Revenue, Region, Segment)</title><g class="wf-node cat-data"><rect x="380.0" y="61.5" width="341.2" height="227.5" rx="8" class="wf-card-bg cat-data" fill="#4f6ef7" fill-opacity="0.05" stroke="#4f6ef7" stroke-opacity="0.55" stroke-width="1.4" stroke-dasharray="5 4"/><rect x="388.0" y="69.5" width="152.2" height="22" rx="11" fill="#4f6ef7"/><use href="#wf-i-tree-page1" x="396.0" y="73.5" width="14" height="14" fill="none" stroke="#ffffff"/><text x="416.0" y="84.5" font-size="12.5" font-weight="600" fill="#ffffff">Revenue Breakdown</text><text x="390.0" y="106.5" font-size="9.5" font-weight="600" letter-spacing="0.07em" fill="#4f6ef7" fill-opacity="0.85">DECOMPOSITION TREE</text></g></a></svg><div class="legend legend--upper wf-legend"><span class="wf-chip"><i class="wf-chip-dot wf-chip-dot--data"></i>Data visual</span><span class="wf-chip"><i class="wf-chip-dot wf-chip-dot--slicer"></i>Slicer</span><span class="wf-chip"><i class="wf-chip-dot wf-chip-dot--nav"></i>Navigation</span><span class="wf-chip"><i class="wf-chip-dot wf-chip-dot--deco"></i>Decorative</span></div></div>
+<symbol id="wf-i-donut-page1" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke-width="2"/><path d="M12 4v5M12 12l5.5 5.5" fill="none" stroke-width="2" stroke-linecap="round"/></symbol>
+<symbol id="wf-i-gauge-page1" viewBox="0 0 24 24"><path d="M4 18a8.5 8.5 0 1116 0" fill="none" stroke-width="2" stroke-linecap="round"/><path d="M12 18l4-6" fill="none" stroke-width="2" stroke-linecap="round"/></symbol>
+<symbol id="wf-i-scatter-page1" viewBox="0 0 24 24"><path d="M4 20V4M4 20h16" fill="none" stroke-width="2" stroke-linecap="round"/><circle cx="10" cy="14" r="1.7" fill="none" stroke-width="1.7"/><circle cx="15" cy="9" r="1.7" fill="none" stroke-width="1.7"/><circle cx="19" cy="15" r="1.7" fill="none" stroke-width="1.7"/></symbol>
+<symbol id="wf-i-treemap-page1" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke-width="1.7"/><path d="M12 3v18M12 12h9" fill="none" stroke-width="1.7"/></symbol>
+</defs><rect x="16.0" y="16.0" width="728.0" height="409.5" rx="14" fill="url(#dg-canvas-page1)" stroke="#e2e7f2" stroke-width="1"/><rect x="16.0" y="16.0" width="728.0" height="409.5" rx="14" fill="url(#dg-dots-page1)" opacity=".55"/><line x1="30.0" y1="437.5" x2="730.0" y2="437.5" stroke="#e7eaf3" stroke-width="1"/><rect x="30.0" y="447.5" width="111.2" height="22" rx="7" fill="#ffffff" stroke="#e2e7f2"/><circle cx="42.0" cy="458.5" r="3" fill="#10b981"/><text x="51.0" y="462.0" font-size="9.5" font-weight="600" fill="#1f2433">Sales Overview</text><a href="#page-region-detail" class="wf-tab"><text x="159.2" y="462.0" font-size="9.5" font-weight="500" fill="#8a93a8">Region Detail</text></a><text x="730.0" y="462.0" font-size="8.5" font-weight="500" fill="#b6bdcf" text-anchor="end">1280 × 720</text><a href="#visual-sales-overview-revenue-by-year"><title>Revenue by Year — Column chart (Year, Total Revenue)</title><g class="wf-node cat-data"><rect x="25.1" y="61.5" width="341.2" height="227.5" rx="10" class="wf-card-bg cat-data" fill="#ffffff" stroke="#e2e7f2" stroke-width="1"/><rect x="35.1" y="71.5" width="20" height="20" rx="5.8" fill="url(#dg-chip-data-page1)"/><use href="#wf-i-bars-page1" x="39.1" y="75.5" width="12.0" height="12.0" fill="none" stroke="#ffffff"/><text x="63.1" y="82.5" font-size="11.5" font-weight="600" fill="#1f2433">Revenue by Year</text><text x="63.1" y="95.5" font-size="7.5" font-weight="600" letter-spacing=".08em" fill="#9aa3b8">COLUMN CHART</text><rect x="44.0" y="124.7" width="25.1" height="152.3" rx="2.5" fill="url(#dg-sk-data-page1)"/><rect x="78.8" y="157.5" width="25.1" height="119.5" rx="2.5" fill="url(#dg-sk-data-page1)"/><rect x="113.6" y="147.6" width="25.1" height="129.4" rx="2.5" fill="url(#dg-sk-data-page1)"/><rect x="148.4" y="171.4" width="25.1" height="105.6" rx="2.5" fill="url(#dg-sk-data-page1)"/><rect x="183.2" y="134.7" width="25.1" height="142.3" rx="2.5" fill="url(#dg-sk-data-page1)"/><rect x="218.0" y="161.5" width="25.1" height="115.5" rx="2.5" fill="url(#dg-sk-data-page1)"/><rect x="252.8" y="151.6" width="25.1" height="125.4" rx="2.5" fill="url(#dg-sk-data-page1)"/><rect x="287.6" y="167.4" width="25.1" height="109.6" rx="2.5" fill="url(#dg-sk-data-page1)"/><rect x="322.4" y="141.6" width="25.1" height="135.4" rx="2.5" fill="url(#dg-sk-data-page1)"/><line x1="37.1" y1="277.5" x2="354.4" y2="277.5" stroke="#e7eaf3" stroke-width="1"/></g></a><a href="#page-sales-overview"><title>Slicer — filters this page</title><g class="wf-node cat-slicer"><rect x="25.1" y="25.1" width="170.6" height="34.1" rx="8" class="wf-card-bg cat-slicer" fill="#ffffff" stroke="#e2e7f2" stroke-width="1"/><rect x="31.1" y="30.1" width="15" height="15" rx="4.3" fill="url(#dg-chip-slicer-page1)"/><use href="#wf-i-funnel-page1" x="34.1" y="33.1" width="9.0" height="9.0" fill="none" stroke="#ffffff"/><text x="52.1" y="41.1" font-size="10.5" font-weight="600" fill="#1f2433">Slicer</text><rect x="129.7" y="31.6" width="26" height="12" rx="6" fill="#f59e0b" fill-opacity=".14"/><rect x="159.7" y="31.6" width="26" height="12" rx="6" fill="#f59e0b" fill-opacity=".14"/></g></a><a href="#visual-sales-overview-revenue-breakdown"><title>Revenue Breakdown — Decomposition tree (Total Revenue, Region, Segment)</title><g class="wf-node cat-data"><rect x="380.0" y="61.5" width="341.2" height="227.5" rx="10" class="wf-card-bg cat-data" fill="#ffffff" stroke="#e2e7f2" stroke-width="1"/><rect x="390.0" y="71.5" width="20" height="20" rx="5.8" fill="url(#dg-chip-data-page1)"/><use href="#wf-i-tree-page1" x="394.0" y="75.5" width="12.0" height="12.0" fill="none" stroke="#ffffff"/><text x="418.0" y="82.5" font-size="11.5" font-weight="600" fill="#1f2433">Revenue Breakdown</text><text x="418.0" y="95.5" font-size="7.5" font-weight="600" letter-spacing=".08em" fill="#9aa3b8">DECOMPOSITION TREE</text><rect x="394.0" y="186.2" width="62.7" height="16.0" rx="5" fill="url(#dg-sk-data-page1)"/><path d="M 456.6 194.2 C 491.1 194.2, 491.1 138.0, 525.6 138.0" fill="none" stroke="#cdd4e2" stroke-width="1.4"/><rect x="525.6" y="131.0" width="50.1" height="14" rx="4.5" fill="#4f6ef7" fill-opacity=".16"/><path d="M 456.6 194.2 C 491.1 194.2, 491.1 194.2, 525.6 194.2" fill="none" stroke="#cdd4e2" stroke-width="1.4"/><rect x="525.6" y="187.2" width="50.1" height="14" rx="4.5" fill="#4f6ef7" fill-opacity=".16"/><path d="M 456.6 194.2 C 491.1 194.2, 491.1 250.5, 525.6 250.5" fill="none" stroke="#cdd4e2" stroke-width="1.4"/><rect x="525.6" y="243.5" width="50.1" height="14" rx="4.5" fill="#4f6ef7" fill-opacity=".16"/><path d="M 575.7 194.2 C 603.9 194.2, 603.9 167.8, 632.1 167.8" fill="none" stroke="#cdd4e2" stroke-width="1.4"/><rect x="632.1" y="161.8" width="40.7" height="12" rx="4" fill="#edf0f7"/><path d="M 575.7 194.2 C 603.9 194.2, 603.9 220.7, 632.1 220.7" fill="none" stroke="#cdd4e2" stroke-width="1.4"/><rect x="632.1" y="214.7" width="40.7" height="12" rx="4" fill="#edf0f7"/></g></a></svg><div class="legend legend--upper wf-legend"><span class="wf-chip"><i class="wf-chip-dot wf-chip-dot--data"></i>Data visual</span><span class="wf-chip"><i class="wf-chip-dot wf-chip-dot--slicer"></i>Slicer</span><span class="wf-chip"><i class="wf-chip-dot wf-chip-dot--nav"></i>Navigation</span><span class="wf-chip"><i class="wf-chip-dot wf-chip-dot--deco"></i>Decorative</span></div></div>
 <p>Presents 3 visual(s) — 1 column chart, 1 slicer, 1 decomposition tree. Key fields: Year, Total Revenue, Date, Region, Segment.</p>
 <p><strong>What to look at:</strong> Total Revenue</p>
 <table><thead><tr><th>Visual</th><th>What it shows</th></tr></thead><tbody><tr id="visual-sales-overview-revenue-by-year"><td>Revenue by Year</td><td>Shows Total Revenue broken down by Year.</td></tr><tr id="visual-sales-overview-revenue-breakdown"><td>Revenue Breakdown</td><td>A decomposition tree breaks a measure down one field at a time. Click the + on a node and pick a field to expand by; the tree shows which categories contribute most to the total.</td></tr></tbody></table>
@@ -1062,11 +1073,8 @@ details.collapsible > .code-block pre {
 </div>
 <div class="card-section" id="page-region-detail">
 <h3>Region Detail</h3>
-<div class="diagram"><svg viewBox="0 0 760 442" width="100%" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="wireframe-title-page2">
-<style>text { font-family: "Poppins", sans-serif !important; }</style><title id="wireframe-title-page2">Wireframe layout for page Region Detail</title><defs>
-<pattern id="wf-grid-page2" width="24" height="24" patternUnits="userSpaceOnUse">
-  <rect width="24" height="24" fill="#f8fafc"/><path d="M24 0H0V24" fill="none" stroke="#e7ecf5" stroke-width="1"/>
-</pattern>
+<div class="diagram"><svg viewBox="0 0 760 488" width="100%" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="wireframe-title-page2">
+<style>text { font-family: "Poppins", sans-serif !important; }</style><title id="wireframe-title-page2">Wireframe layout for page Region Detail</title><defs><pattern id="dg-dots-page2" width="22" height="22" patternUnits="userSpaceOnUse"><circle cx="1.2" cy="1.2" r="1" fill="#dfe5f0"/></pattern><linearGradient id="dg-canvas-page2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fdfefe"/><stop offset="1" stop-color="#f5f7fc"/></linearGradient><linearGradient id="dg-chip-data-page2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6b85f9"/><stop offset="1" stop-color="#3d5bf0"/></linearGradient><linearGradient id="dg-chip-slicer-page2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f7b23b"/><stop offset="1" stop-color="#e08c06"/></linearGradient><linearGradient id="dg-chip-nav-page2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2ec695"/><stop offset="1" stop-color="#0a9e6e"/></linearGradient><linearGradient id="dg-chip-decorative-page2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a37ef8"/><stop offset="1" stop-color="#7a48ec"/></linearGradient><linearGradient id="dg-sk-data-page2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4f6ef7" stop-opacity=".38"/><stop offset="1" stop-color="#4f6ef7" stop-opacity=".10"/></linearGradient><linearGradient id="dg-area-data-page2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4f6ef7" stop-opacity=".28"/><stop offset="1" stop-color="#4f6ef7" stop-opacity=".02"/></linearGradient><linearGradient id="dg-sk-slicer-page2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f59e0b" stop-opacity=".38"/><stop offset="1" stop-color="#f59e0b" stop-opacity=".10"/></linearGradient><linearGradient id="dg-area-slicer-page2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f59e0b" stop-opacity=".28"/><stop offset="1" stop-color="#f59e0b" stop-opacity=".02"/></linearGradient><linearGradient id="dg-sk-nav-page2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#10b981" stop-opacity=".38"/><stop offset="1" stop-color="#10b981" stop-opacity=".10"/></linearGradient><linearGradient id="dg-area-nav-page2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#10b981" stop-opacity=".28"/><stop offset="1" stop-color="#10b981" stop-opacity=".02"/></linearGradient><linearGradient id="dg-sk-decorative-page2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8b5cf6" stop-opacity=".38"/><stop offset="1" stop-color="#8b5cf6" stop-opacity=".10"/></linearGradient><linearGradient id="dg-area-decorative-page2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8b5cf6" stop-opacity=".28"/><stop offset="1" stop-color="#8b5cf6" stop-opacity=".02"/></linearGradient>
 <symbol id="wf-i-bars-page2" viewBox="0 0 24 24"><path d="M3 21h18M6 21V10M11 21V4M16 21v-9M21 21V7" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 <symbol id="wf-i-line-page2" viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-9" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 <symbol id="wf-i-combo-page2" viewBox="0 0 24 24"><path d="M3 21h4v-7H3zM10 21h4v-11h-4zM17 21h4v-5h-4M4 11l5-4 4 3 6-6" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
@@ -1080,7 +1088,11 @@ details.collapsible > .code-block pre {
 <symbol id="wf-i-image-page2" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke-width="1.7"/><circle cx="8.5" cy="8.5" r="1.5" fill="none" stroke-width="1.7"/><path d="M21 15l-5-5L5 21" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 <symbol id="wf-i-textbox-page2" viewBox="0 0 24 24"><path d="M4 7V4h16v3M9 20h6M12 4v16" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 <symbol id="wf-i-shape-page2" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3" fill="none" stroke-width="1.7"/></symbol>
-</defs><rect x="16" y="16" width="728" height="410" rx="12" fill="url(#wf-grid-page2)" stroke="#e7eaf3" stroke-width="1"/><a href="#visual-region-detail-revenue-by-region"><title>Revenue by Region — Map (Region, Total Revenue)</title><g class="wf-node cat-data"><rect x="25.1" y="25.1" width="705.2" height="386.8" rx="8" class="wf-card-bg cat-data" fill="#4f6ef7" fill-opacity="0.05" stroke="#4f6ef7" stroke-opacity="0.55" stroke-width="1.4" stroke-dasharray="5 4"/><rect x="33.1" y="33.1" width="152.2" height="22" rx="11" fill="#4f6ef7"/><use href="#wf-i-pin-page2" x="41.1" y="37.1" width="14" height="14" fill="none" stroke="#ffffff"/><text x="61.1" y="48.1" font-size="12.5" font-weight="600" fill="#ffffff">Revenue by Region</text><text x="35.1" y="70.1" font-size="9.5" font-weight="600" letter-spacing="0.07em" fill="#4f6ef7" fill-opacity="0.85">MAP</text></g></a></svg><div class="legend legend--upper wf-legend"><span class="wf-chip"><i class="wf-chip-dot wf-chip-dot--data"></i>Data visual</span><span class="wf-chip"><i class="wf-chip-dot wf-chip-dot--slicer"></i>Slicer</span><span class="wf-chip"><i class="wf-chip-dot wf-chip-dot--nav"></i>Navigation</span><span class="wf-chip"><i class="wf-chip-dot wf-chip-dot--deco"></i>Decorative</span></div></div>
+<symbol id="wf-i-donut-page2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke-width="2"/><path d="M12 4v5M12 12l5.5 5.5" fill="none" stroke-width="2" stroke-linecap="round"/></symbol>
+<symbol id="wf-i-gauge-page2" viewBox="0 0 24 24"><path d="M4 18a8.5 8.5 0 1116 0" fill="none" stroke-width="2" stroke-linecap="round"/><path d="M12 18l4-6" fill="none" stroke-width="2" stroke-linecap="round"/></symbol>
+<symbol id="wf-i-scatter-page2" viewBox="0 0 24 24"><path d="M4 20V4M4 20h16" fill="none" stroke-width="2" stroke-linecap="round"/><circle cx="10" cy="14" r="1.7" fill="none" stroke-width="1.7"/><circle cx="15" cy="9" r="1.7" fill="none" stroke-width="1.7"/><circle cx="19" cy="15" r="1.7" fill="none" stroke-width="1.7"/></symbol>
+<symbol id="wf-i-treemap-page2" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke-width="1.7"/><path d="M12 3v18M12 12h9" fill="none" stroke-width="1.7"/></symbol>
+</defs><rect x="16.0" y="16.0" width="728.0" height="409.5" rx="14" fill="url(#dg-canvas-page2)" stroke="#e2e7f2" stroke-width="1"/><rect x="16.0" y="16.0" width="728.0" height="409.5" rx="14" fill="url(#dg-dots-page2)" opacity=".55"/><line x1="30.0" y1="437.5" x2="730.0" y2="437.5" stroke="#e7eaf3" stroke-width="1"/><rect x="30.0" y="447.5" width="105.4" height="22" rx="7" fill="#ffffff" stroke="#e2e7f2"/><circle cx="42.0" cy="458.5" r="3" fill="#10b981"/><text x="51.0" y="462.0" font-size="9.5" font-weight="600" fill="#1f2433">Region Detail</text><a href="#page-sales-overview" class="wf-tab"><text x="153.4" y="462.0" font-size="9.5" font-weight="500" fill="#8a93a8">Sales Overview</text></a><text x="730.0" y="462.0" font-size="8.5" font-weight="500" fill="#b6bdcf" text-anchor="end">1280 × 720</text><a href="#visual-region-detail-revenue-by-region"><title>Revenue by Region — Map (Region, Total Revenue)</title><g class="wf-node cat-data"><rect x="25.1" y="25.1" width="705.2" height="386.8" rx="10" class="wf-card-bg cat-data" fill="#ffffff" stroke="#e2e7f2" stroke-width="1"/><rect x="35.1" y="35.1" width="20" height="20" rx="5.8" fill="url(#dg-chip-data-page2)"/><use href="#wf-i-pin-page2" x="39.1" y="39.1" width="12.0" height="12.0" fill="none" stroke="#ffffff"/><text x="63.1" y="46.1" font-size="11.5" font-weight="600" fill="#1f2433">Revenue by Region</text><text x="63.1" y="59.1" font-size="7.5" font-weight="600" letter-spacing=".08em" fill="#9aa3b8">MAP</text><path d="M 93.3 276.4 q 33.9 -110.4 135.5 -97.4 q 67.7 -58.5 176.1 -32.5 q 108.4 -39.0 189.6 13.0 q 94.8 6.5 67.7 71.4 q -27.1 77.9 -149.0 71.4 q -94.8 45.5 -203.2 19.5 q -135.5 19.5 -176.1 -26.0 z" fill="#4f6ef7" fill-opacity=".08" stroke="#4f6ef7" stroke-opacity=".18" stroke-width="1"/><circle cx="242.3" cy="211.5" r="9.4" fill="#4f6ef7" fill-opacity=".2"/><circle cx="242.3" cy="211.5" r="4.3" fill="#4f6ef7"/><circle cx="411.6" cy="172.5" r="11.4" fill="#4f6ef7" fill-opacity=".2"/><circle cx="411.6" cy="172.5" r="5.2" fill="#4f6ef7"/><circle cx="540.3" cy="276.4" r="7.1" fill="#4f6ef7" fill-opacity=".2"/><circle cx="540.3" cy="276.4" r="3.2" fill="#4f6ef7"/><circle cx="323.5" cy="295.9" r="4.7" fill="#4f6ef7" fill-opacity=".2"/><circle cx="323.5" cy="295.9" r="2.1" fill="#4f6ef7"/></g></a></svg><div class="legend legend--upper wf-legend"><span class="wf-chip"><i class="wf-chip-dot wf-chip-dot--data"></i>Data visual</span><span class="wf-chip"><i class="wf-chip-dot wf-chip-dot--slicer"></i>Slicer</span><span class="wf-chip"><i class="wf-chip-dot wf-chip-dot--nav"></i>Navigation</span><span class="wf-chip"><i class="wf-chip-dot wf-chip-dot--deco"></i>Decorative</span></div></div>
 <p>Presents 1 visual(s) — 1 map. Key fields: Region, Total Revenue. Drill-through detail page reached from other pages.</p>
 <p><strong>What to look at:</strong> Total Revenue</p>
 <table><thead><tr><th>Visual</th><th>What it shows</th></tr></thead><tbody><tr id="visual-region-detail-revenue-by-region"><td>Revenue by Region</td><td>A map plots values geographically. Bubble size or colour encodes the measure — compare regions visually and zoom for detail.</td></tr></tbody></table>
@@ -1280,7 +1292,13 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.diagram svg').forEach((svg) => {
     const vb = svg.viewBox.baseVal;
     const initial = { x: vb.x, y: vb.y, w: vb.width, h: vb.height };
-    let panning = false, lastX = 0, lastY = 0;
+    let panning = false, lastX = 0, lastY = 0, moved = false;
+
+    // A drag that started on a linked node must not fire the link on
+    // mouseup — suppress the click once the pointer has really moved.
+    svg.addEventListener('click', (e) => {
+      if (moved) { e.preventDefault(); e.stopPropagation(); }
+    }, true);
 
     svg.addEventListener('wheel', (e) => {
       e.preventDefault();
@@ -1297,16 +1315,44 @@ document.addEventListener('DOMContentLoaded', () => {
     }, { passive: false });
 
     svg.addEventListener('mousedown', (e) => {
-      panning = true; lastX = e.clientX; lastY = e.clientY;
+      panning = true; moved = false; lastX = e.clientX; lastY = e.clientY;
     });
     window.addEventListener('mousemove', (e) => {
       if (!panning) return;
+      if (Math.abs(e.clientX - lastX) + Math.abs(e.clientY - lastY) > 3) moved = true;
       const rect = svg.getBoundingClientRect();
       vb.x -= (e.clientX - lastX) * (vb.width / rect.width);
       vb.y -= (e.clientY - lastY) * (vb.height / rect.height);
       lastX = e.clientX; lastY = e.clientY;
     });
     window.addEventListener('mouseup', () => { panning = false; });
+
+    // Lineage hover-connect: hovering a node highlights its own edges,
+    // keeps its neighbors lit, and dims every unrelated node/edge. Nodes
+    // carry data-node, edge groups data-from/data-to (layer-prefixed
+    // slugs) — a no-op on diagrams without them (e.g. the wireframes).
+    const lgNodes = svg.querySelectorAll('[data-node]');
+    const lgEdges = svg.querySelectorAll('.lg-edge');
+    if (lgNodes.length && lgEdges.length) {
+      lgNodes.forEach((node) => {
+        const id = node.getAttribute('data-node');
+        node.addEventListener('mouseenter', () => {
+          const connected = new Set([id]);
+          lgEdges.forEach((ed) => {
+            const f = ed.getAttribute('data-from'), t = ed.getAttribute('data-to');
+            if (f === id || t === id) { ed.classList.add('hl'); connected.add(f); connected.add(t); }
+            else ed.classList.add('dimmed');
+          });
+          lgNodes.forEach((n) => {
+            if (!connected.has(n.getAttribute('data-node'))) n.classList.add('dimmed');
+          });
+        });
+        node.addEventListener('mouseleave', () => {
+          lgEdges.forEach((ed) => ed.classList.remove('hl', 'dimmed'));
+          lgNodes.forEach((n) => n.classList.remove('dimmed'));
+        });
+      });
+    }
 
     const nodes = svg.querySelectorAll('.dm-node');
     const dimEdges = svg.querySelectorAll('.dm-edge');

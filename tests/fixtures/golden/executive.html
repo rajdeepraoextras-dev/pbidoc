@@ -664,21 +664,31 @@ details.collapsible > .code-block pre {
   margin-top: 4px;
   opacity: 0.8;
 }
-/* Page wireframe + lineage (v4, ISODATE) — a white "card" per node with
-   a colored top/left accent bar, tinted icon badge, and soft shadow. Hover
-   feedback lives entirely here (a .wf-node class) instead of a per-rect
-   style=/onmouseover= attribute. Fixed light hex (not shell CSS
+/* Page wireframe + lineage (v6 "Studio", ISODATE) — a white card per
+   node with a layered soft shadow, gradient icon chip, and hover-lift.
+   Hover feedback lives entirely here (a .wf-node class) instead of a
+   per-rect style=/onmouseover= attribute. Fixed light hex (not shell CSS
    variables) so wireframe/lineage cards never theme-flip in dark mode —
    same rule as the always-light canvas underneath them. */
 .wf-node {
   cursor: pointer;
-  transition: transform 0.18s ease, filter 0.18s ease;
-  filter: drop-shadow(0 1px 2px rgba(31,36,51,.08));
+  transition: transform 0.18s ease, filter 0.18s ease, opacity 0.18s ease;
+  filter: drop-shadow(0 1px 1.5px rgba(31,36,51,.06)) drop-shadow(0 2px 6px rgba(31,36,51,.05));
 }
 .wf-node:hover {
-  transform: translateY(-1.5px);
-  filter: drop-shadow(0 4px 10px rgba(31,36,51,.14));
+  transform: translateY(-2px);
+  filter: drop-shadow(0 2px 3px rgba(31,36,51,.08)) drop-shadow(0 8px 18px rgba(31,36,51,.12));
 }
+/* Lineage hover-connect: the shell script dims everything not connected to
+   the hovered node and thickens its own gradient edges. */
+.wf-node.dimmed { opacity: 0.22; }
+.lg-edge { transition: opacity 0.18s ease; }
+.lg-edge path { transition: stroke-width 0.18s ease, opacity 0.18s ease; }
+.lg-edge.dimmed { opacity: 0.08; }
+.lg-edge.hl path { opacity: 1; stroke-width: 2.4; }
+/* Wireframe page-tab bar: sibling-page ghost tabs tint on hover. */
+.wf-tab text { transition: fill 0.15s ease; }
+.wf-tab:hover text, a.wf-tab:focus-visible text { fill: #4f6ef7; }
 /* Hover/keyboard-focus border tint, per category — a fixed approximation
    of a 40% accent/edge blend (not CSS color-mix(), for older print/PDF
    engine safety). .wf-node:hover alone covers both linked (data/slicer,
@@ -1252,7 +1262,13 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.diagram svg').forEach((svg) => {
     const vb = svg.viewBox.baseVal;
     const initial = { x: vb.x, y: vb.y, w: vb.width, h: vb.height };
-    let panning = false, lastX = 0, lastY = 0;
+    let panning = false, lastX = 0, lastY = 0, moved = false;
+
+    // A drag that started on a linked node must not fire the link on
+    // mouseup — suppress the click once the pointer has really moved.
+    svg.addEventListener('click', (e) => {
+      if (moved) { e.preventDefault(); e.stopPropagation(); }
+    }, true);
 
     svg.addEventListener('wheel', (e) => {
       e.preventDefault();
@@ -1269,16 +1285,44 @@ document.addEventListener('DOMContentLoaded', () => {
     }, { passive: false });
 
     svg.addEventListener('mousedown', (e) => {
-      panning = true; lastX = e.clientX; lastY = e.clientY;
+      panning = true; moved = false; lastX = e.clientX; lastY = e.clientY;
     });
     window.addEventListener('mousemove', (e) => {
       if (!panning) return;
+      if (Math.abs(e.clientX - lastX) + Math.abs(e.clientY - lastY) > 3) moved = true;
       const rect = svg.getBoundingClientRect();
       vb.x -= (e.clientX - lastX) * (vb.width / rect.width);
       vb.y -= (e.clientY - lastY) * (vb.height / rect.height);
       lastX = e.clientX; lastY = e.clientY;
     });
     window.addEventListener('mouseup', () => { panning = false; });
+
+    // Lineage hover-connect: hovering a node highlights its own edges,
+    // keeps its neighbors lit, and dims every unrelated node/edge. Nodes
+    // carry data-node, edge groups data-from/data-to (layer-prefixed
+    // slugs) — a no-op on diagrams without them (e.g. the wireframes).
+    const lgNodes = svg.querySelectorAll('[data-node]');
+    const lgEdges = svg.querySelectorAll('.lg-edge');
+    if (lgNodes.length && lgEdges.length) {
+      lgNodes.forEach((node) => {
+        const id = node.getAttribute('data-node');
+        node.addEventListener('mouseenter', () => {
+          const connected = new Set([id]);
+          lgEdges.forEach((ed) => {
+            const f = ed.getAttribute('data-from'), t = ed.getAttribute('data-to');
+            if (f === id || t === id) { ed.classList.add('hl'); connected.add(f); connected.add(t); }
+            else ed.classList.add('dimmed');
+          });
+          lgNodes.forEach((n) => {
+            if (!connected.has(n.getAttribute('data-node'))) n.classList.add('dimmed');
+          });
+        });
+        node.addEventListener('mouseleave', () => {
+          lgEdges.forEach((ed) => ed.classList.remove('hl', 'dimmed'));
+          lgNodes.forEach((n) => n.classList.remove('dimmed'));
+        });
+      });
+    }
 
     const nodes = svg.querySelectorAll('.dm-node');
     const dimEdges = svg.querySelectorAll('.dm-edge');

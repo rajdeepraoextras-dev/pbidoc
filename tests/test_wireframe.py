@@ -124,45 +124,45 @@ class RealCaseTextTest(unittest.TestCase):
         self.assertIn('class="legend legend--upper wf-legend"', svg)
 
 
-class BlueprintDesignTest(unittest.TestCase):
-    """v5 (2026-07-10) "Blueprint" direction, user-selected from three
-    proposed styles: each visual is a dashed, category-tinted region with a
-    solid pill label (white icon + real-case title) and, on big regions, a
-    small-caps friendly-type caption. No white cards, no ghost chart content,
-    no per-card dimension tag."""
+class StudioDesignTest(unittest.TestCase):
+    """v6 (2026-07-11) "Product mock" direction: every visual is a solid
+    white card (hairline stroke, shadow via the shell's .wf-node class) with
+    a gradient icon chip, real-case title + small-caps type caption, and a
+    per-type skeleton chart ghosted inside; decorative/nav objects render as
+    quieter dashed "ghost" cards. The sheet is the shared v6 gradient +
+    dot-grid canvas from ``_diagram_theme``."""
 
-    def test_region_is_dashed_and_tinted_in_the_category_accent(self):
+    def test_data_card_is_solid_white_with_a_skeleton_chart(self):
         page = _page([Visual(id="v1", type="columnChart", title="Revenue", x=0, y=0, z=0,
                              width=300, height=200, fields=["Sales.Revenue"])])
         svg = render_wireframe(page)
-        self.assertIn('class="wf-card-bg cat-data"', svg)
-        self.assertIn('stroke-dasharray="5 4"', svg)   # dashed outline
-        self.assertIn('stroke="#4f6ef7"', svg)          # data accent on the region
-        self.assertIn('fill="#4f6ef7"', svg)            # solid pill fill
+        self.assertIn('class="wf-card-bg cat-data" fill="#ffffff" stroke="#e2e7f2"', svg)
+        self.assertIn('url(#dg-chip-data-', svg)   # gradient icon chip
+        self.assertIn('url(#dg-sk-data-', svg)     # skeleton bar fill
 
-    def test_pill_shows_real_case_title_with_a_white_icon(self):
+    def test_header_shows_real_case_title_with_a_white_icon(self):
         page = _page([Visual(id="v1", type="columnChart", title="Revenue by Month", x=0, y=0, z=0,
                              width=300, height=200, fields=["Sales.Revenue"])])
         svg = render_wireframe(page)
-        self.assertIn(">Revenue by Month</text>", svg)  # real case, inside the pill
+        self.assertIn(">Revenue by Month</text>", svg)  # real case, in the header
         self.assertIn('stroke="#ffffff"', svg)           # icon knocked out white
 
-    def test_big_region_gets_a_small_caps_type_caption(self):
+    def test_big_card_gets_a_small_caps_type_caption(self):
         page = _page([Visual(id="v1", type="columnChart", title="Revenue by Month", x=0, y=0, z=0,
                              width=300, height=200, fields=["Sales.Revenue"])])
         svg = render_wireframe(page)
         self.assertIn(">COLUMN CHART</text>", svg)
 
-    def test_every_category_gets_its_own_accent(self):
+    def test_every_category_gets_its_own_gradient_chip(self):
         page = _page([
             Visual(id="v1", type="slicer", is_slicer=True, title="Region", x=0, y=0, z=0, width=150, height=100, fields=["Geo.Region"]),
             Visual(id="v2", type="actionButton", title="Go", x=160, y=0, z=0, width=150, height=90),
             Visual(id="v3", type="textbox", title="Note", x=320, y=0, z=0, width=150, height=90),
         ])
         svg = render_wireframe(page)
-        self.assertIn('fill="#f59e0b"', svg)  # slicer accent
-        self.assertIn('fill="#10b981"', svg)  # nav accent
-        self.assertIn('fill="#8b5cf6"', svg)  # decorative accent
+        self.assertIn('url(#dg-chip-slicer-', svg)
+        self.assertIn('url(#dg-chip-nav-', svg)
+        self.assertIn('url(#dg-chip-decorative-', svg)
 
     def test_every_category_gets_an_icon(self):
         # nav buttons and each decorative kind carry their own icon, not just
@@ -177,21 +177,64 @@ class BlueprintDesignTest(unittest.TestCase):
         self.assertIn("wf-i-image-", svg)
         self.assertIn("wf-i-textbox-", svg)
 
-    def test_no_ghost_content_or_dimension_tag(self):
-        # The Blueprint style dropped v4's schematic ghost charts and the
-        # hover dimension tag — a region is an outline + label, nothing more.
-        page = _page([Visual(id="v1", type="card", title="Total Revenue", x=0, y=0, z=0,
-                             width=277, height=123, fields=["Sales.Revenue"])])
+    def test_decorative_and_nav_cards_are_ghosts(self):
+        page = _page([
+            Visual(id="v1", type="actionButton", title="Go", x=0, y=0, z=0, width=150, height=90),
+            Visual(id="v2", type="columnChart", title="Revenue", x=160, y=0, z=0,
+                  width=300, height=200, fields=["Sales.Revenue"]),
+        ])
         svg = render_wireframe(page)
-        self.assertNotIn("▬", svg)             # no ghost KPI value
-        self.assertNotIn("wf-tag", svg)         # no per-card dimension tag
-        self.assertNotIn("wf-line-grad", svg)   # no ghost line gradient
-        self.assertNotIn("wf-dotbg", svg)       # no ghost dot-grid fill
+        self.assertIn('fill-opacity=".65"', svg)          # quiet ghost surface
+        self.assertIn('stroke-dasharray="4 3"', svg)      # dashed hairline
+        # ...but the data card itself is solid (only one dashed card here).
+        self.assertEqual(svg.count('stroke-dasharray="4 3"'), 1)
+
+    def test_skeletons_differ_by_type_and_are_deterministic(self):
+        line = _page([Visual(id="v1", type="lineChart", title="Trend", x=0, y=0, z=0,
+                             width=300, height=200, fields=["Sales.Revenue"])])
+        donut = _page([Visual(id="v1", type="donutChart", title="Mix", x=0, y=0, z=0,
+                              width=300, height=200, fields=["Sales.Revenue"])])
+        line_svg = render_wireframe(line)
+        self.assertIn('url(#dg-area-data-', line_svg)      # line chart: area fill under the line
+        self.assertIn("stroke-dasharray", render_wireframe(donut))  # donut: dashed ring arc
+        # Same input twice -> byte-identical output (golden-file stability).
+        self.assertEqual(line_svg, render_wireframe(line))
+
+    def test_canvas_is_the_shared_gradient_dot_grid(self):
+        page = _page([Visual(id="v1", type="columnChart", title="Revenue", x=0, y=0, z=0,
+                             width=300, height=200, fields=["Sales.Revenue"])])
+        svg = render_wireframe(page)
+        self.assertIn('url(#dg-canvas-', svg)
+        self.assertIn('url(#dg-dots-', svg)
 
     def test_no_legacy_swatch_modifier_classes_survive(self):
         page = _page([Visual(id="v1", type="columnChart", title="Revenue", x=0, y=0, z=0,
                              width=300, height=200, fields=["Sales.Revenue"])])
         self.assertNotIn("swatch--", render_wireframe(page))
+
+
+class PageTabBarTest(unittest.TestCase):
+    """v6: with ``sibling_pages`` supplied (report_pages() always does), the
+    sheet gains a Power BI-style page-tab strip — the active page as a pill,
+    every other page a linked ghost tab onto its ``#page-…`` anchor, plus
+    the true page pixel size."""
+
+    def test_tab_bar_lists_siblings_as_links_and_page_size(self):
+        page = _page([Visual(id="v1", type="columnChart", title="Revenue", x=0, y=0, z=0,
+                             width=300, height=200, fields=["Sales.Revenue"])])
+        svg = render_wireframe(page, sibling_pages=["IT Spend Trend", "Plan Variance Analysis", "Tooltip"])
+        self.assertIn(">IT Spend Trend</text>", svg)                       # active tab
+        self.assertIn('href="#page-plan-variance-analysis"', svg)          # sibling link
+        self.assertIn('href="#page-tooltip"', svg)
+        self.assertIn("1280 × 720", svg)                                   # true page size
+        self.assertNotIn('href="#page-it-spend-trend"', svg)               # active tab isn't a self-link
+
+    def test_no_sibling_pages_means_no_tab_bar(self):
+        page = _page([Visual(id="v1", type="columnChart", title="Revenue", x=0, y=0, z=0,
+                             width=300, height=200, fields=["Sales.Revenue"])])
+        svg = render_wireframe(page)
+        self.assertNotIn("wf-tab", svg)
+        self.assertNotIn("1280 × 720", svg)
 
 
 class VisualAnchorMapTest(unittest.TestCase):

@@ -1538,3 +1538,98 @@ is left." Billing left for later.
 Not started. See `docs/planning/GO_LIVE_PLAN.md` for the day-by-day breakdown.
 Billing plugs into `accounts.plan`/`set_plan`/`PLAN_LIMITS`, which Day 33
 already put in place as the seam.
+
+---
+
+## Day 34 (2026-07-11) — Diagram v6 "Studio": wireframe redesign + clickable lineage
+
+**Objective (from the user):** the lineage visual is liked but must be
+*actionable* ("if I click on a measure or anything it takes me to that
+section"); the v5 wireframe reads "bad, sloppy, not Poppins" — wants a
+state-of-the-art ("epic") design, PDF-print and external-dependency concerns
+explicitly waived, and all diagrams sharing one visual language.
+
+**Root-cause note:** the "not Poppins" complaint was *not* a font bug —
+`document.fonts.check('600 12px Poppins')` is true in the rendered doc (all
+five self-hosted weights load, incl. inside inline SVG). It was the v5
+design (dashed blueprint boxes + tiny solid-pill labels) reading as sloppy.
+Hand-rolled inline SVG was never the ceiling; the styling pass was. The v6
+redesign therefore **stays 100% inline-SVG/CSS/vanilla-JS — zero external
+dependencies**, preserving the air-gap/single-file guarantees despite the
+waiver.
+
+### What changed, concretely
+- **`render/_diagram_theme.py` (new)** — the shared "v6 Studio" design DNA:
+  gradient + dot-grid canvas, accent/deep-accent chip gradients, per-accent
+  skeleton fills, gradient icon-chip and legend builders. Both diagrams (and
+  any future reintroduced one: model diagram, measure-dep graph, nav map)
+  compose from it, so all visuals read as one family.
+- **`render/_wireframe.py` (v6 rewrite)** — every visual is now a real white
+  card (hairline stroke, layered shadow, hover-lift) with a gradient icon
+  chip, real-case Poppins title (the same reader-facing label its visuals-
+  table row uses) + small-caps type caption, and a **per-type skeleton
+  chart** ghosted inside: bars/hbars/line+area/combo/stacked-area/map
+  landmass+pins/matrix rows/KPI blocks/decomposition tree/donut/gauge/
+  scatter/treemap/funnel/slicer checklist/button pill/text lines/image
+  frame (deterministic per-visual CRC seeding — stable golden files).
+  Decorative/nav objects render as quieter dashed ghost cards. New **Power
+  BI-style page-tab bar** under the sheet: active page as a pill, visible
+  sibling pages as linked ghost tabs (`#page-…`, hidden pages excluded —
+  they aren't in PBI's own consumer tab strip, and the user guide doesn't
+  document them, so a tab for one would be a dead link there), plus the true
+  page pixel size. All v5 semantics kept: category accents, real x/y/w/h,
+  tiny-object dot, decorative-overflow collapse, I3 anchor resolution.
+- **`render/_lineage.py` (v6 rewrite)** — same card DNA (two-line cards:
+  title + informative sublabel — table column/measure counts, a measure's
+  home table, a page's visual count, a source's friendly kind + short
+  file/host name); column headers as white pill badges with true pre-cap
+  counts; edges are cubic Béziers stroked with **per-edge gradients running
+  source-layer-accent → target-layer-accent** (`userSpaceOnUse` with the
+  edge's own endpoints — objectBoundingBox collapses to invisible on a
+  perfectly horizontal path) plus endpoint dots. **Every node is now a deep
+  link** (source → its new §5 inventory-row anchor, table → `#table-…`,
+  measure → `#measure-…`, page → `#page-…`, "+N more" ghost card → its
+  section heading with a "view all in §N" sublabel). Nodes carry
+  `data-node`, edge groups `data-from`/`data-to` (layer-prefixed slugs so a
+  same-named table/measure can't cross-highlight). Layout engine (derived
+  geometry + native iterated-median crossing minimization) untouched.
+- **`render/_html_shell.py`** — v6 two-layer card shadows; `.dimmed`/`.hl`
+  hover-connect CSS; `.wf-tab` hover tint; script gains (a) generic
+  **hover-connect** for any diagram with `data-node`/`.lg-edge` markup
+  (highlight own edges + neighbors, dim the rest) and (b) a **drag-vs-click
+  guard** so panning that starts on a linked card no longer fires the link
+  on mouseup (>3px movement suppresses the click, capture-phase).
+- **`render/html.py`** — §5 data-source inventory rows now carry
+  `id="source-…"` anchors (dedupe_ids over the same `get_source_label`
+  formula the lineage names nodes with); inventory items expose `label`.
+- **`agents/report_facts.py`** — passes visible-page names into
+  `render_wireframe(sibling_pages=…)`.
+
+### Testing
+- `test_wireframe.py`: `BlueprintDesignTest` (v5) replaced by
+  `StudioDesignTest` (cards/chips/skeletons/ghosts/determinism/canvas) +
+  new `PageTabBarTest` (sibling links, active-tab-not-a-self-link, page
+  size, no-bar-without-siblings). `test_lineage.py`: new
+  `InteractiveNodesTest` (per-layer hrefs, hover-connect attributes,
+  `userSpaceOnUse` edge gradients, informative sublabels) and the overflow
+  test now asserts the ghost-card + `#sec6` link. Golden fixtures
+  regenerated (`PBICOMPASS_UPDATE_GOLDEN=1`). Full suite: **629 passed, 2
+  skipped**, only the 2 pre-existing (since Day 1) `test_render.py`
+  model-diagram failures remain — confirmed pre-existing by stash-run.
+- **Live browser verification** (Corporate Spend pbix layout parse +
+  SampleSales full model, served locally): v6 cards/skeletons/tab bar render
+  on real pages incl. the dense 20-visual Plan Variance Analysis; lineage
+  hover-connect dims/highlights correctly; clicking the *Total Revenue*
+  node navigates to `#measure-total-revenue`'s full DAX entry; the whole-
+  document dead-href test also guards every new anchor end-to-end.
+
+### Honest gaps
+- Local venv is Python 3.14 → `pbixray`'s `xpress9` wheel won't build, so a
+  .pbix parses layout-only here (tables/measures need the deployed service
+  or a .pbip). Corporate Spend v6 lineage was therefore verified via the
+  SampleSales fixture; wireframes verified on the real Corporate Spend
+  layout. The user's next real regen happens through the service.
+- The docx/markdown renderers still carry no diagrams (unchanged scope).
+- Model diagram + measure-dep graph + nav map remain disabled ("WIP");
+  they should be reintroduced *on top of* `_diagram_theme` so the family
+  stays consistent (roadmap §5 items, plus the 2 stale tests above).

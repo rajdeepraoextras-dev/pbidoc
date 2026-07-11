@@ -299,6 +299,10 @@ def render_html(
     ln = doc.lineage
     o.append(f'<h2 id="sec5">5. Data Sources{_header_badge(5)}</h2>')
     if ln.data_sources_inventory:
+        # Per-source row anchors, derived from the same label the lineage
+        # graph names each source with — its source cards deep-link here.
+        src_row_ids = dedupe_ids([f"source-{anchor_slug(item.get('label') or item.get('location') or item['type'])}"
+                                  for item in ln.data_sources_inventory])
         rows = []
         for item in ln.data_sources_inventory:
             type_cell = f"<code>{_e(item['type'])}</code>"
@@ -315,7 +319,7 @@ def render_html(
             
             rows.append([type_cell, loc_cell, fed_cell, mode_cell, auth_cell, flag_cell])
             
-        o.append(_table(["Source Type", "Location / Host", "Table(s) Fed", "Storage Mode", "Authentication", "Flag / Risk"], rows))
+        o.append(_table(["Source Type", "Location / Host", "Table(s) Fed", "Storage Mode", "Authentication", "Flag / Risk"], rows, row_ids=src_row_ids))
     else:
         o.append('<p class="muted">No external data sources detected.</p>')
     o.append("<h3>Power Query / ETL transformations</h3>")

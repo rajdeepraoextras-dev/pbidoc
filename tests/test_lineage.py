@@ -48,13 +48,13 @@ class RealNodeTextTest(unittest.TestCase):
         self.assertTrue(edges)
 
 
-class V4DesignSystemTest(unittest.TestCase):
-    """"Similar design" to the page wireframe (Day 13 addendum, Option A,
-    user-confirmed): the same v4 card language, with lineage's four
-    *layers* (source/table/measure/page) mapped onto the same four accent
-    colors the wireframe uses for its four *categories*."""
+class DesignSystemTest(unittest.TestCase):
+    """Same design DNA as the page wireframe (v6 "Studio", 2026-07-11 —
+    shared ``_diagram_theme``): lineage's four *layers*
+    (source/table/measure/page) carry the same four accent colors the
+    wireframe uses for its four *categories*, on the same card language."""
 
-    def test_all_four_layers_present_with_their_v4_accent(self):
+    def test_all_four_layers_present_with_their_accent(self):
         edges, svg = build_lineage_data(_model())
         self.assertIn('cat-source', svg)
         self.assertIn('cat-table', svg)
@@ -102,12 +102,47 @@ class V4DesignSystemTest(unittest.TestCase):
         self.assertLess(first_edge, first_card)
 
 
-class OverflowNodeTest(unittest.TestCase):
-    """8+ nodes in a layer collapse into one "+N more ..." card — shown
-    dashed/italic/uncolored (no accent bar or icon) instead of a normal card,
-    same convention the pre-v4 implementation already established."""
+class InteractiveNodesTest(unittest.TestCase):
+    """v6: every node is a deep link into the document (the user's ask:
+    "if I click on a measure or anything it takes me to that section"), and
+    nodes/edges carry the data attributes the shell's hover-connect script
+    keys on."""
 
-    def test_overflow_node_has_no_accent_bar_or_icon(self):
+    def test_every_layer_links_to_its_section_anchor(self):
+        edges, svg = build_lineage_data(_model())
+        self.assertIn('href="#source-sql-database-sql-prod-01-salesdw"', svg)
+        self.assertIn('href="#table-factsales"', svg)
+        self.assertIn('href="#measure-total-revenue"', svg)
+        self.assertIn('href="#page-executive-summary"', svg)
+
+    def test_nodes_and_edges_carry_hover_connect_attributes(self):
+        edges, svg = build_lineage_data(_model())
+        self.assertIn('data-node="t-factsales"', svg)
+        self.assertIn('data-node="m-total-revenue"', svg)
+        self.assertIn('class="lg-edge" data-from="t-factsales" data-to="m-total-revenue"', svg)
+
+    def test_edge_gradients_use_user_space_units(self):
+        # objectBoundingBox gradients collapse on a perfectly horizontal
+        # path (zero-height bbox) and the edge vanishes — every edge
+        # gradient must pin its own endpoints in user space.
+        edges, svg = build_lineage_data(_model())
+        self.assertIn('gradientUnits="userSpaceOnUse"', svg)
+        self.assertNotIn('stroke="#cdd4e2"', svg)  # no flat-gray v5 edges left
+
+    def test_cards_carry_informative_sublabels(self):
+        edges, svg = build_lineage_data(_model())
+        self.assertIn(">in FactSales</text>", svg)   # measure: its home table
+        self.assertIn(">1 visual</text>", svg)        # page: visual count
+        self.assertIn(">SQL Server</text>", svg)      # source: friendly kind
+        self.assertIn(">SalesDW</text>", svg)         # source title: db name, not the raw label
+
+
+class OverflowNodeTest(unittest.TestCase):
+    """8+ nodes in a layer collapse into one "+N more ..." card — a dashed
+    ghost card (no accent bar or icon) that links to the layer's own
+    document section instead of a single object."""
+
+    def test_overflow_node_is_a_ghost_card_linking_to_its_section(self):
         # Partition expressions must actually match a data source (server
         # substring) for a Source-to-Table edge to form at all — a bare
         # disconnected table never enters the graph.
@@ -124,9 +159,10 @@ class OverflowNodeTest(unittest.TestCase):
         )
         edges, svg = build_lineage_data(model)
         self.assertIn("more tables", svg)
-        # the overflow card renders centered italic text, not the
-        # icon-badge + accent-bar + two-line title/sublabel treatment
-        self.assertIn('font-style="italic"', svg)
+        # ghost treatment + a link to §6 (Data Model), not a bogus object row
+        self.assertIn('stroke-dasharray="4 3"', svg)
+        self.assertIn('href="#sec6"', svg)
+        self.assertIn("view all in §6", svg)
 
 
 class EmptyModelTest(unittest.TestCase):
