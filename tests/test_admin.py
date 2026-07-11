@@ -132,8 +132,8 @@ class AdminApiTest(unittest.TestCase):
         listed = self.client.get("/admin/api/accounts", headers=_h(self.token)).json()["accounts"]
         self.assertEqual(len(listed), 1)
         self.assertEqual(listed[0]["tenant"], "acme")
-        self.assertEqual(listed[0]["daily_limit"], 200)
-        self.assertEqual(listed[0]["used_today"], 0)
+        self.assertEqual(listed[0]["monthly_limit"], 10)
+        self.assertEqual(listed[0]["used_this_month"], 0)
 
     def test_create_requires_tenant(self):
         res = self.client.post("/admin/api/accounts", headers=_h(self.token), json={"tenant": ""})

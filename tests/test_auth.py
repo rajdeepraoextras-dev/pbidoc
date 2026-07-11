@@ -59,14 +59,14 @@ class AccountStoreTest(unittest.TestCase):
 
     def test_quota_increments_and_blocks(self):
         with mock.patch.dict("pbicompass.service.accounts.PLAN_LIMITS",
-                             {"free": 2, "pro": 200, "enterprise": 100000}, clear=True):
+                             {"free": 2, "pro": 200, "business": 100000}, clear=True):
             store = AccountStore(":memory:")
             self.addCleanup(store.close)
             store.create_account("t", plan="free")
             self.assertEqual(store.try_consume("t", "free"), (True, 1, 2))
             self.assertEqual(store.try_consume("t", "free"), (True, 2, 2))
             self.assertEqual(store.try_consume("t", "free"), (False, 2, 2))  # blocked
-            self.assertEqual(store.usage_today("t"), 2)
+            self.assertEqual(store.usage_this_month("t"), 2)
 
 
 @unittest.skipUnless(_HAVE_SERVICE, "service extras not installed")
@@ -75,8 +75,8 @@ class AuthApiTest(unittest.TestCase):
         self._root = tempfile.mkdtemp(prefix="pbicompass_authsb_")
         self.accounts = AccountStore(":memory:")
         self.addCleanup(self.accounts.close)
-        _, self.key_a = self.accounts.create_account("tenant-a", plan="enterprise")
-        _, self.key_b = self.accounts.create_account("tenant-b", plan="enterprise")
+        _, self.key_a = self.accounts.create_account("tenant-a", plan="business")
+        _, self.key_b = self.accounts.create_account("tenant-b", plan="business")
         self.client = TestClient(create_app(
             JobStore(), sandbox_root=self._root,
             account_store=self.accounts, require_auth=True,
@@ -107,7 +107,7 @@ class AuthApiTest(unittest.TestCase):
     def test_me_reports_plan_and_quota(self):
         me = self.client.get("/me", headers=_h(self.key_a)).json()
         self.assertEqual(me["tenant"], "tenant-a")
-        self.assertEqual(me["plan"], "enterprise")
+        self.assertEqual(me["plan"], "business")
         self.assertIn("remaining", me)
 
     def test_authenticated_flow(self):
@@ -129,7 +129,7 @@ class AuthApiTest(unittest.TestCase):
 
     def test_quota_returns_429(self):
         with mock.patch.dict("pbicompass.service.accounts.PLAN_LIMITS",
-                             {"free": 1, "pro": 200, "enterprise": 100000}, clear=True):
+                             {"free": 1, "pro": 200, "business": 100000}, clear=True):
             accounts = AccountStore(":memory:")
             self.addCleanup(accounts.close)
             _, key = accounts.create_account("lim", plan="free")
@@ -138,7 +138,7 @@ class AuthApiTest(unittest.TestCase):
             up = lambda: client.post("/jobs", files={"file": ("s.zip", _zip(), "application/zip")},
                                      data={"provider": "none"}, headers=_h(key))
             self.assertEqual(up().status_code, 200)
-            self.assertEqual(up().status_code, 429)  # daily quota of 1 exhausted
+            self.assertEqual(up().status_code, 429)  # monthly quota of 1 exhausted
 
 
 @unittest.skipUnless(_HAVE_SERVICE, "service extras not installed")

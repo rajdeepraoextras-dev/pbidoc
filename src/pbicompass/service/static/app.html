@@ -439,8 +439,8 @@
       </div>
 
       <div class="panel-card liquid-glass">
-        <h2>Usage today</h2>
-        <div class="usage-big"><span id="p-used">0</span><small> / <span id="p-limit">0</span> documents</small></div>
+        <h2>Usage this month</h2>
+        <div class="usage-big"><span id="p-used">0</span><small> / <span id="p-limit">0</span> reports</small></div>
         <div class="meter"><span id="p-meter"></span></div>
         <div class="muted" id="p-remaining"></div>
       </div>
@@ -506,7 +506,7 @@
           <div style="flex:1"></div>
           <button class="btn-ghost" onclick="loadAdmin()">Refresh</button>
         </div>
-        <p class="muted">Manage every account's plan and daily quota, and review activity across all tenants. Metadata only — no document content is ever stored.</p>
+        <p class="muted">Manage every account's plan and monthly quota, and review activity across all tenants. Metadata only — no document content is ever stored.</p>
         <div class="admin-stats" id="admin-stats"></div>
       </div>
 
@@ -516,7 +516,7 @@
         <div class="ok-text" id="admin-ok"></div>
         <div style="overflow-x:auto;">
           <table class="data-table" id="admin-accounts">
-            <thead><tr><th>Account</th><th>Plan</th><th>Usage today</th><th>Quota override</th></tr></thead>
+            <thead><tr><th>Account</th><th>Plan</th><th>Usage this month</th><th>Quota override</th></tr></thead>
             <tbody id="admin-accounts-body"></tbody>
           </table>
         </div>
@@ -551,7 +551,7 @@ const $ = s => document.getElementById(s);
 let supa = null;         // supabase-js client, created once /app/api/config resolves
 let accessToken = null;
 let cfg = {};
-let planLimits = { free: 10, pro: 200, enterprise: 100000 };
+let planLimits = { free: 1, pro: 10, business: 30 };
 let currentPlan = "free";
 
 /* ---------- helpers ---------- */
@@ -566,7 +566,7 @@ function escHtml(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", 
 function planLabel(p) { return p.charAt(0).toUpperCase() + p.slice(1); }
 function quotaText(p) {
   const n = planLimits[p];
-  return n >= 100000 ? "Unlimited documents / day" : n + " documents / day";
+  return n + (n === 1 ? " report / month" : " reports / month");
 }
 
 /* ---------- auth tab switching ---------- */
@@ -585,7 +585,7 @@ function showAuthTab(which) {
 /* ---------- plan pickers (signup + profile) ---------- */
 function renderPlanCards(container, selected, onPick) {
   container.innerHTML = "";
-  ["free", "pro", "enterprise"].forEach(p => {
+  ["free", "pro", "business"].forEach(p => {
     const card = document.createElement("div");
     card.className = "plan-card liquid-glass" + (p === selected ? " sel" : "");
     const note = p === "free" ? "Always free" : "Granted instantly · billing coming soon";
@@ -695,11 +695,11 @@ function fillProfile(me) {
   $("p-plan-badge").textContent = planLabel(me.plan) + " plan";
   $("p-verify").textContent = me.email_verified ? "Email verified" : "Email not verified";
   $("p-verify").className = "badge " + (me.email_verified ? "ok" : "warn");
-  $("p-used").textContent = me.used_today;
-  $("p-limit").textContent = me.daily_limit >= 100000 ? "∞" : me.daily_limit;
-  const pct = me.daily_limit ? Math.min(100, Math.round(100 * me.used_today / me.daily_limit)) : 0;
+  $("p-used").textContent = me.used_this_month;
+  $("p-limit").textContent = me.monthly_limit;
+  const pct = me.monthly_limit ? Math.min(100, Math.round(100 * me.used_this_month / me.monthly_limit)) : 0;
   $("p-meter").style.width = pct + "%";
-  $("p-remaining").textContent = (me.daily_limit >= 100000 ? "Unlimited" : me.remaining + " remaining") + " today";
+  $("p-remaining").textContent = me.remaining + " remaining this month";
   $("p-company").textContent = me.company || "—";
   $("p-role").textContent = me.role || "—";
   $("p-tenant").textContent = me.tenant || "—";
@@ -779,11 +779,11 @@ async function loadAdminAccounts() {
   const { accounts } = await r.json();
   // summary tiles
   const byPlan = accounts.reduce((m, a) => (m[a.plan] = (m[a.plan] || 0) + 1, m), {});
-  const usedToday = accounts.reduce((n, a) => n + (a.used_today || 0), 0);
+  const usedThisMonth = accounts.reduce((n, a) => n + (a.used_this_month || 0), 0);
   $("admin-stats").innerHTML =
     `<div class="admin-stat"><b>${accounts.length}</b><span>accounts</span></div>` +
     Object.keys(planLimits).map(p => `<div class="admin-stat"><b>${byPlan[p] || 0}</b><span>${planLabel(p)}</span></div>`).join("") +
-    `<div class="admin-stat"><b>${usedToday}</b><span>docs today</span></div>`;
+    `<div class="admin-stat"><b>${usedThisMonth}</b><span>docs this month</span></div>`;
 
   const body = $("admin-accounts-body"); body.innerHTML = "";
   const planOpts = Object.keys(planLimits);
@@ -792,12 +792,12 @@ async function loadAdminAccounts() {
     const sub = [a.company, a.role].filter(Boolean).map(escHtml).join(" · ");
     const options = planOpts.map(p =>
       `<option value="${p}"${p === a.plan ? " selected" : ""}>${planLabel(p)}</option>`).join("");
-    const limitTxt = a.daily_limit >= 100000 ? "∞" : a.daily_limit;
+    const limitTxt = a.monthly_limit;
     const tr = document.createElement("tr");
     tr.innerHTML =
       `<td><span class="admin-name">${who}</span>${sub ? `<br><span class="admin-sub">${sub}</span>` : ""}</td>
        <td><select data-acct="${a.id}" class="plan-sel">${options}</select></td>
-       <td>${a.used_today} / ${limitTxt}</td>
+       <td>${a.used_this_month} / ${limitTxt}</td>
        <td><input class="qbox" type="number" min="0" placeholder="—" value="${a.quota_override ?? ""}" data-acct="${a.id}"></td>`;
     tr.querySelector(".plan-sel").addEventListener("change", ev => adminSetPlan(a.id, ev.target.value));
     const q = tr.querySelector(".qbox");

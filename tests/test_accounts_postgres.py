@@ -127,8 +127,8 @@ class AccountStorePostgresBackendTest(unittest.TestCase):
             self.assertEqual([a.tenant for a in store.list_accounts()], ["acme"])
 
             allowed, used, limit = store.try_consume("acme", "pro")
-            self.assertEqual((allowed, used, limit), (True, 1, 200))
-            self.assertEqual(store.usage_today("acme"), 1)
+            self.assertEqual((allowed, used, limit), (True, 1, 10))
+            self.assertEqual(store.usage_this_month("acme"), 1)
 
             self.assertTrue(store.revoke_account(acct.id))
             self.assertIsNone(store.verify(key))
@@ -171,7 +171,7 @@ class AccountStorePostgresBackendTest(unittest.TestCase):
             store = AccountStore("postgres://user:pw@host/db")
             self.addCleanup(store.close)
             with patch.dict("pbicompass.service.accounts.PLAN_LIMITS",
-                            {"free": 1, "pro": 200, "enterprise": 100000}, clear=True):
+                            {"free": 1, "pro": 200, "business": 100000}, clear=True):
                 store.create_account("t", plan="free")
                 self.assertEqual(store.try_consume("t", "free"), (True, 1, 1))
                 self.assertEqual(store.try_consume("t", "free"), (False, 1, 1))
@@ -199,7 +199,7 @@ class AccountStorePostgresBackendTest(unittest.TestCase):
             restored.restore(snapshot)  # idempotent re-apply must not error/duplicate
 
             self.assertEqual(restored.verify(key).tenant, "acme")
-            self.assertEqual(restored.usage_today("acme"), 1)
+            self.assertEqual(restored.usage_this_month("acme"), 1)
             self.assertEqual(len(restored.list_accounts()), 1)
 
 

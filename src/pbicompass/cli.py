@@ -276,7 +276,7 @@ def main(argv: list[str] | None = None) -> int:
     p_ac = acct_sub.add_parser("create", help="Create an account and mint an API key")
     p_ac.add_argument("--tenant", required=True, help="Tenant identifier")
     p_ac.add_argument("--name", default="", help="Human-readable name")
-    p_ac.add_argument("--plan", default="free", help="Plan: free, pro, or enterprise")
+    p_ac.add_argument("--plan", default="free", help="Plan: free, pro, or business")
     p_ac.add_argument("--db", help="SQLite path (default: $PBICOMPASS_DB or pbicompass.db)")
     p_al = acct_sub.add_parser("list", help="List accounts")
     p_al.add_argument("--db", help="SQLite path (default: $PBICOMPASS_DB or pbicompass.db)")

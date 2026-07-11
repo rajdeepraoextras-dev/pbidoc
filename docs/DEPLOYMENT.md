@@ -48,7 +48,7 @@ That's it. No managed database, no message broker, no third-party auth provider.
 | `PBICOMPASS_MAX_UPLOAD_MB` | `100` | Max upload size. |
 | `PBICOMPASS_JOB_TIMEOUT_SECONDS` | `600` | Watchdog: force-fail a job stuck in "processing" longer than this (hung LLM call, oversized file). |
 | `PBICOMPASS_ADMIN_TOKEN` | _(off)_ | Enables the `/admin` panel (create/list/revoke accounts from the browser) **and** the `/metrics` endpoint (Day 20) — both gated by the same token. Unset = both disabled. |
-| `PBICOMPASS_UPLOAD_RATE_LIMIT` | `20` | Max `POST /jobs` requests per IP within the window below (Day 20). Independent of the per-plan daily quota — applies even to the unauthenticated `public` tenant. |
+| `PBICOMPASS_UPLOAD_RATE_LIMIT` | `20` | Max `POST /jobs` requests per IP within the window below (Day 20). Independent of the per-plan monthly quota — applies even to the unauthenticated `public` tenant. |
 | `PBICOMPASS_UPLOAD_RATE_WINDOW_SECONDS` | `60` | Trailing window (seconds) the upload rate limit is measured over. |
 | `SUPABASE_URL` | — | Enables Supabase Auth (Day 26-32) — signup/login/"Sign in with Microsoft" via Supabase, not this app. Unset = API-key-only, no new dependency pulled in. Install the `auth` extra too. |
 | `SUPABASE_ANON_KEY` | — | The project's public/browser key — safe to expose, handed to the frontend via `GET /app/api/config`. |
@@ -268,9 +268,9 @@ pbicompass account list      # shows id, tenant, plan, name
 pbicompass account revoke --id <id>
 ```
 
-Plans and daily quotas: `free` 10, `pro` 200, `enterprise` 100k docs/day. Users
-paste their key into the web UI's "Account API Key" field, or send it as a
-header to the API. Tenants only ever see their own jobs.
+Plans and monthly quotas, mirroring `/#pricing`: `free` 1, `pro` 10, `business`
+30 docs/month. Users paste their key into the web UI's "Account API Key"
+field, or send it as a header to the API. Tenants only ever see their own jobs.
 
 **Securing the admin token:** treat it like a root password — it's a single
 shared secret with no per-admin identity. Generate a long random value (32+
@@ -535,7 +535,7 @@ instances itself.
 `PBICOMPASS_UPLOAD_RATE_LIMIT` requests per `PBICOMPASS_UPLOAD_RATE_WINDOW_SECONDS`
 per client IP (defaults: 20 per 60s), checked *before* auth/quota — so it
 also protects an open (`PBICOMPASS_REQUIRE_AUTH` unset) deployment, which has
-no per-plan daily quota to fall back on. A client over the limit gets a 429
+no per-plan monthly quota to fall back on. A client over the limit gets a 429
 (counted separately from quota 429s in `/metrics` as `rate_limited_total`
 vs. `quota_rejected_total`).
 

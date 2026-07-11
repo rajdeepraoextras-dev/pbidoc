@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0f1a15">
+<title>Privacy Policy — PBICompass</title>
+<meta name="robots" content="index, follow">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Source+Serif+4:ital,opsz,wght@1,8..60,300;1,8..60,400;1,8..60,500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/theme.css">
+<style>
+.legal-nav { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 22px 24px; }
+.legal-wrap { width: 100%; max-width: 780px; margin: 0 auto; padding: 20px 24px 80px; }
+.legal-card { border-radius: 28px; padding: 40px 44px; }
+.legal-card h1 { font-size: clamp(1.7rem, 4vw, 2.3rem); letter-spacing: -.03em; color: #fff; margin-bottom: 6px; }
+.legal-updated { font-size: .78rem; color: hsl(0 0% 100% / .62); margin-bottom: 28px; }
+.legal-card h2 { font-size: 1rem; font-weight: 600; color: #fff; margin: 30px 0 10px; letter-spacing: -.01em; }
+.legal-card h2:first-of-type { margin-top: 0; }
+.legal-card p { font-size: .88rem; line-height: 1.75; color: hsl(0 0% 100% / .82); font-weight: 300; margin-bottom: 10px; }
+.legal-card ul { margin: 10px 0 14px 20px; }
+.legal-card li { font-size: .88rem; line-height: 1.75; color: hsl(0 0% 100% / .82); font-weight: 300; margin-bottom: 4px; }
+.legal-card a { color: #fff; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: hsl(0 0% 100% / .35); }
+.legal-crosslinks { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 34px; padding-top: 22px; border-top: 1px solid hsl(0 0% 100% / .1); font-size: .82rem; }
+.back-home { display: inline-flex; align-items: center; gap: 8px; font-size: .82rem; color: hsl(0 0% 100% / .82); }
+.back-home:hover { color: #fff; }
+</style>
+</head>
+<body>
+
+<div class="bg-base" aria-hidden="true"></div>
+<div class="bg-grain" aria-hidden="true"></div>
+
+<div class="page">
+  <nav class="legal-nav">
+    <a class="brand" href="/" aria-label="PBICompass home">
+      <svg class="brand-mark" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="M15 42V8h10a13 13 0 0 1 0 26h-6" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M33 14.5 19.5 20.6l6 2.7 2.7 6z" fill="currentColor" stroke="none"/>
+      </svg>
+      <span class="brand-name">PBI<span>Compass</span></span>
+    </a>
+    <a class="back-home" href="/">&larr; Back to home</a>
+  </nav>
+
+  <div class="legal-wrap">
+    <div class="legal-card liquid-glass-strong">
+      <h1>Privacy Policy</h1>
+      <div class="legal-updated">Effective 11 July 2026</div>
+
+      <p>This Privacy Policy explains what PBICompass ("PBICompass", "we", "us") collects when you use pbicompass.com and the PBICompass application (the "Service"), and how that information is used. If anything here is unclear, email <a href="mailto:rajdeepraoextras@gmail.com">rajdeepraoextras@gmail.com</a>.</p>
+
+      <h2>1. The core commitment: metadata only, zero retention</h2>
+      <p>When you upload a .pbix or .pbip file, PBICompass extracts <b>semantic-model metadata only</b> — table and column names, measures, relationships, DAX expressions, RLS role definitions, and similar structural information. Row-level data inside your file is never read, extracted, or transmitted. Your uploaded file is processed inside an isolated per-job sandbox and is shredded immediately once your documents are rendered — it is never written to persistent storage and never retained after your job completes.</p>
+
+      <h2>2. Information we collect</h2>
+      <ul>
+        <li><b>Account information</b> — the email address, and any optional profile fields (name, company, role) you provide when you create an account via Supabase Auth.</li>
+        <li><b>API keys</b> — if you generate a PBICompass API key, we store a salted hash of it, never the raw key after it's first shown to you.</li>
+        <li><b>Job metadata</b> — for each documentation job: timestamps, status, document types requested, output format, and tenant/account association. This is stored in our database so your job history and dashboard work. It does not include your file's contents.</li>
+        <li><b>Billing information</b> — if you subscribe to a paid plan, billing is handled entirely by our payment processor, Paddle.com Market Limited ("Paddle"). We do not receive or store your card number or full billing details; Paddle acts as merchant of record for your purchase. See Paddle's own privacy policy for how it handles payment data.</li>
+        <li><b>Usage &amp; log data</b> — standard operational logs (request IDs, timestamps, error traces) used for reliability and abuse prevention, which do not contain file contents.</li>
+      </ul>
+
+      <h2>3. Optional third-party AI providers</h2>
+      <p>PBICompass can generate documentation using a fully offline, deterministic engine that requires no external calls. If you choose to enable AI-assisted narrative generation, you supply your own API key for a provider of your choice (e.g. Claude, Gemini, Cohere, or others via MeshAPI). In that case, the extracted metadata (never row-level data) for that job is sent to your chosen provider to generate prose. Your key is used only for that job and is not stored by us. Use of a third-party AI provider is subject to that provider's own terms and privacy policy.</p>
+
+      <h2>4. How we use information</h2>
+      <ul>
+        <li>To operate, maintain, and secure the Service, including enforcing per-plan usage quotas.</li>
+        <li>To communicate with you about your account, billing, or changes to the Service.</li>
+        <li>To respond to support requests.</li>
+      </ul>
+      <p>We do not sell your personal information, and we do not use your uploaded model's structure or content for advertising.</p>
+
+      <h2>5. Data retention</h2>
+      <p>Job metadata is retained for as long as your account is active so your dashboard and job history remain usable. Rendered documentation output and uploaded source files are held in memory only for the duration of processing and are discarded immediately after — they are not written to disk and are not retained. You can request deletion of your account and associated job metadata at any time (see Section 7).</p>
+
+      <h2>6. Cookies &amp; sign-in</h2>
+      <p>We use the minimum cookies/local storage needed to keep you signed in via Supabase Auth. We do not use third-party advertising or tracking cookies.</p>
+
+      <h2>7. Your rights</h2>
+      <p>You may request access to, correction of, or deletion of your account information and associated job metadata at any time by emailing <a href="mailto:rajdeepraoextras@gmail.com">rajdeepraoextras@gmail.com</a>. We will respond within a reasonable time.</p>
+
+      <h2>8. Children's privacy</h2>
+      <p>The Service is not directed to, and is not intended for use by, children under 16.</p>
+
+      <h2>9. Changes to this policy</h2>
+      <p>We may update this Privacy Policy from time to time. Material changes will be reflected by updating the effective date above.</p>
+
+      <h2>10. Contact</h2>
+      <p>Questions about this policy: <a href="mailto:rajdeepraoextras@gmail.com">rajdeepraoextras@gmail.com</a>.</p>
+
+      <div class="legal-crosslinks">
+        <a href="/terms">Terms of Service</a>
+        <a href="/refund">Refund Policy</a>
+        <a href="/#pricing">Pricing</a>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

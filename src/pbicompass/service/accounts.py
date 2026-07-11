@@ -2,10 +2,11 @@
 
 This is the multi-tenancy layer: each account belongs to a ``tenant`` and holds
 a hashed API key and a plan. Jobs are tagged with the caller's tenant so users
-only ever see their own work. Per-plan daily quotas implement the freemium tier.
+only ever see their own work. Per-plan monthly quotas implement the freemium
+tier, matching the billing periods Paddle bills on.
 
-Only account metadata and per-day usage *counts* are stored — never customer
-report metadata, preserving the zero-retention guarantee.
+Only account metadata and per-billing-period usage *counts* are stored — never
+customer report metadata, preserving the zero-retention guarantee.
 
 Keys are high-entropy random tokens, so a fast SHA-256 hash is sufficient (no
 slow password KDF needed). The raw key is shown once at creation and never
@@ -47,18 +48,25 @@ from typing import Optional
 # ``is_postgres_url`` from this module.
 from .db import _Connection, is_postgres_url  # noqa: F401  (re-exported)
 
-# Daily document quota per plan (jobs accepted per UTC day).
-PLAN_LIMITS = {"free": 10, "pro": 200, "enterprise": 100_000}
-# Monthly list price per plan (USD) — powers the admin portal's *estimated*
-# MRR panel (Day 35). Placeholder economics until Stripe billing lands and
-# supplies real figures; adjust freely. Free is 0.
-PLAN_PRICES = {"free": 0, "pro": 49, "enterprise": 299}
+# Monthly document quota per plan (jobs accepted per calendar month, UTC).
+# Mirrors the tiers shown at /#pricing on the marketing site exactly — keep
+# these two in sync any time pricing changes.
+PLAN_LIMITS = {"free": 1, "pro": 10, "business": 30}
+# Monthly list price per plan (USD), matching /#pricing — powers the admin
+# portal's *estimated* MRR panel (Day 35) and Paddle checkout. Free is 0.
+PLAN_PRICES = {"free": 0, "pro": 20, "business": 50}
 KEY_PREFIX = "pbicompass_sk_"
 MAX_API_KEYS_PER_ACCOUNT = 20             # soft cap so a dashboard user can't mint keys unbounded
 
 
 def _hash_key(raw: str) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _current_period() -> str:
+    """The current UTC billing period key, e.g. ``"2026-07"``. Quotas reset
+    when this rolls over to the next calendar month."""
+    return date.today().strftime("%Y-%m")
 
 
 @dataclass
@@ -118,6 +126,11 @@ class AccountStore:
                     count INTEGER NOT NULL DEFAULT 0,
                     PRIMARY KEY (tenant, day)
                 );
+                -- NOTE: the "day" column holds a billing-*period* key
+                -- (``_current_period()``, "YYYY-MM") rather than a calendar
+                -- day. Column kept as "day" (not renamed to "period") to
+                -- avoid a migration; only the Python-level meaning changed
+                -- when quotas moved from daily to monthly (Day 35/36).
                 CREATE TABLE IF NOT EXISTS api_keys (
                     id TEXT PRIMARY KEY,
                     account_id TEXT NOT NULL,
@@ -408,13 +421,13 @@ class AccountStore:
             ).fetchone()
         return row["user_id"] if row else None
 
-    def total_usage_today(self) -> int:
-        """Documents generated across every tenant today — for the admin
-        dashboard's headline number."""
+    def total_usage_this_month(self) -> int:
+        """Documents generated across every tenant this billing period — for
+        the admin dashboard's headline number."""
         with self._lock:
             row = self._conn.execute(
                 "SELECT COALESCE(SUM(count), 0) AS c FROM usage WHERE day = ?",
-                (date.today().isoformat(),),
+                (_current_period(),),
             ).fetchone()
         return int(row["c"])
 
@@ -440,26 +453,26 @@ class AccountStore:
             return override
         return PLAN_LIMITS.get(plan, PLAN_LIMITS["free"])
 
-    def usage_today(self, tenant: str) -> int:
+    def usage_this_month(self, tenant: str) -> int:
         with self._lock:
             row = self._conn.execute(
                 "SELECT count FROM usage WHERE tenant = ? AND day = ?",
-                (tenant, date.today().isoformat()),
+                (tenant, _current_period()),
             ).fetchone()
         return row["count"] if row else 0
 
     def try_consume(self, tenant: str, plan: str, override: Optional[int] = None) -> tuple[bool, int, int]:
-        """Atomically check and increment today's usage.
+        """Atomically check and increment this billing period's usage.
 
         Returns (allowed, used_after, limit). When not allowed, ``used_after``
         is the unchanged current count. ``override`` is an account's
         ``quota_override`` (Day 28, admin manual override) if it has one.
         """
         limit = self.limit_for(plan, override)
-        day = date.today().isoformat()
+        period = _current_period()
         with self._lock:
             row = self._conn.execute(
-                "SELECT count FROM usage WHERE tenant = ? AND day = ?", (tenant, day)
+                "SELECT count FROM usage WHERE tenant = ? AND day = ?", (tenant, period)
             ).fetchone()
             current = row["count"] if row else 0
             if current >= limit:
@@ -467,7 +480,7 @@ class AccountStore:
             self._conn.execute(
                 "INSERT INTO usage (tenant, day, count) VALUES (?,?,1) "
                 "ON CONFLICT(tenant, day) DO UPDATE SET count = count + 1",
-                (tenant, day),
+                (tenant, period),
             )
             self._conn.commit()
             return True, current + 1, limit
@@ -481,8 +494,8 @@ class AccountStore:
         documented in DEPLOYMENT.md alongside whatever automated snapshotting
         a managed Postgres provider already does at the infrastructure
         level. Content-free by construction — this store never holds
-        anything but account metadata, a hashed API key, and per-day usage
-        counts, never report data."""
+        anything but account metadata, a hashed API key, and per-billing-
+        period usage counts, never report data."""
         with self._lock:
             accounts = [dict(r) for r in self._conn.execute(
                 "SELECT id, tenant, name, key_hash, plan, created_at, quota_override, "

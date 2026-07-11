@@ -423,12 +423,13 @@ extracted metadata is ever logged or persisted.
 Off by default (open `public` tenant, no limits) — ideal for self-hosting.
 Enable with `PBICOMPASS_REQUIRE_AUTH=1`. Then every request needs
 `Authorization: Bearer <key>` (or `X-API-Key`). Jobs are isolated per tenant
-(another tenant's key gets `404`). Per-plan daily quotas: `free` 10, `pro` 200,
-`enterprise` 100k → `429` when exhausted (`accounts.py`).
+(another tenant's key gets `404`). Per-plan monthly quotas, mirroring
+`/#pricing`: `free` 1, `pro` 10, `business` 30 → `429` when exhausted
+(`accounts.py`).
 
-Accounts, keys, and per-day usage **counts** are stored in SQLite by default, or
-managed Postgres via `PBICOMPASS_DB=postgres://...` + the `postgres` extra. Only
-account metadata and usage counts — never report metadata.
+Accounts, keys, and per-billing-period usage **counts** are stored in SQLite by
+default, or managed Postgres via `PBICOMPASS_DB=postgres://...` + the `postgres`
+extra. Only account metadata and usage counts — never report metadata.
 
 ### Admin panel
 
@@ -461,7 +462,7 @@ CPU-throttling failure class. A watchdog force-fails jobs stuck longer than
 ### Rate limiting, logging, observability
 
 - **Rate limits** (`ratelimit.py`): per-IP budgets on `POST /jobs` and on
-  `POST /auth/*`, independent of and ahead of the per-plan daily quota.
+  `POST /auth/*`, independent of and ahead of the per-plan monthly quota.
 - **Logging** (`logging_config.py`): structured JSON logs to stdout, content-free
   (only an exception's type name — never report content or raw exception text).
 - **Backups** (`db_backup.py`): snapshot/restore accounts/keys/quotas (see the

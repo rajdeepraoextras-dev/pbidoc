@@ -388,11 +388,11 @@ def create_app(
         accounts = []
         for acct in account_store.list_accounts():
             limit = account_store.limit_for(acct.plan)
-            used = account_store.usage_today(acct.tenant)
+            used = account_store.usage_this_month(acct.tenant)
             accounts.append({
                 "id": acct.id, "tenant": acct.tenant, "name": acct.name,
                 "plan": acct.plan, "created_at": acct.created_at,
-                "used_today": used, "daily_limit": limit,
+                "used_this_month": used, "monthly_limit": limit,
             })
         return {"accounts": accounts}
 
@@ -465,7 +465,7 @@ def create_app(
             checks["jobs_db"] = False
         if account_store is not None:
             try:
-                account_store.usage_today("__healthz_probe__")
+                account_store.usage_this_month("__healthz_probe__")
                 checks["accounts_db"] = True
             except Exception:
                 log.warning("healthz: accounts_db check failed")
@@ -492,8 +492,8 @@ def create_app(
         tenant, plan = resolve_tenant(request)
         out = {"tenant": tenant, "plan": plan, "auth_required": require_auth}
         if account_store and tenant != "public":
-            used, limit = account_store.usage_today(tenant), account_store.limit_for(plan)
-            out.update(used_today=used, daily_limit=limit, remaining=max(0, limit - used))
+            used, limit = account_store.usage_this_month(tenant), account_store.limit_for(plan)
+            out.update(used_this_month=used, monthly_limit=limit, remaining=max(0, limit - used))
         return out
 
     # -- Account dashboard API (Day 24, §7.6; Day 29 -- Supabase-JWT-authenticated) -------
@@ -518,7 +518,7 @@ def create_app(
     @app.get("/app/api/me")
     def app_me(request: Request) -> dict:
         claims, acct = _require_user(request)
-        used = account_store.usage_today(acct.tenant)
+        used = account_store.usage_this_month(acct.tenant)
         limit = account_store.limit_for(acct.plan, acct.quota_override)
         return {
             "email": claims.email,
@@ -527,8 +527,8 @@ def create_app(
             "plan": acct.plan,
             "company": acct.company,
             "role": acct.role,
-            "used_today": used,
-            "daily_limit": limit,
+            "used_this_month": used,
+            "monthly_limit": limit,
             "remaining": max(0, limit - used),
             "is_admin": account_store.is_admin(claims.sub),
             "blocked": acct.blocked,
@@ -602,8 +602,8 @@ def create_app(
             "company": a.company, "role": a.role, "plan": a.plan,
             "quota_override": a.quota_override, "created_at": a.created_at,
             "blocked": a.blocked, "monthly_price": PLAN_PRICES.get(a.plan, 0),
-            "used_today": account_store.usage_today(a.tenant),
-            "daily_limit": account_store.limit_for(a.plan, a.quota_override),
+            "used_this_month": account_store.usage_this_month(a.tenant),
+            "monthly_limit": account_store.limit_for(a.plan, a.quota_override),
             "user_id": user_id,
             "is_admin": bool(user_id) and account_store.is_admin(user_id),
         }
@@ -636,7 +636,7 @@ def create_app(
             "by_plan": by_plan,
             "plan_prices": PLAN_PRICES,
             "estimated_mrr": mrr,
-            "docs_today": account_store.total_usage_today(),
+            "docs_this_month": account_store.total_usage_this_month(),
             "docs_all_time": account_store.total_usage_all_time(),
         }
 
@@ -765,7 +765,7 @@ def create_app(
     ) -> dict:
         # Per-IP rate limit (Day 20, §9) — independent of and ahead of auth/
         # quota: protects the endpoint from a single address hammering it
-        # even when unauthenticated (the "public" tenant has no daily quota
+        # even when unauthenticated (the "public" tenant has no monthly quota
         # to fall back on otherwise).
         if not upload_rate_limiter.allow(_client_ip(request)):
             metrics.record_rate_limited()
@@ -789,7 +789,7 @@ def create_app(
                 metrics.record_quota_rejected()
                 raise HTTPException(
                     status_code=429,
-                    detail=f"Daily quota reached ({limit}/{limit} on the '{plan}' plan). Try again tomorrow or upgrade.",
+                    detail=f"Monthly quota reached ({limit}/{limit} on the '{plan}' plan). Try again next month or upgrade.",
                 )
 
         job = app.state.store.create(file.filename or f"upload{suffix}", tenant=tenant)

@@ -272,7 +272,7 @@ class DashboardApiTest(unittest.TestCase):
         self.assertEqual(body["supabase_url"], self._URL)
         self.assertIn("byok_enabled", body)
         # Day 33: the plan picker reads real quota numbers from here
-        self.assertEqual(body["plan_limits"]["free"], 10)
+        self.assertEqual(body["plan_limits"]["free"], 1)
         self.assertIn("pro", body["plan_limits"])
 
     def test_app_page_is_served(self):
@@ -288,7 +288,7 @@ class DashboardApiTest(unittest.TestCase):
         self.assertEqual(body["email"], "dash@example.com")
         self.assertEqual(body["plan"], "free")
         self.assertIn("remaining", body)
-        self.assertEqual(body["used_today"], 0)
+        self.assertEqual(body["used_this_month"], 0)
         # Day 33: profile fields are always present (empty when not supplied)
         self.assertEqual(body["company"], "")
         self.assertEqual(body["role"], "")
@@ -305,7 +305,7 @@ class DashboardApiTest(unittest.TestCase):
         self.assertEqual(body["role"], "Head of BI")
         self.assertEqual(body["plan"], "pro")  # trust-based plan grant, no billing
         # Pro quota is reflected in the usage limit, not just the label
-        self.assertEqual(body["daily_limit"], 200)
+        self.assertEqual(body["monthly_limit"], 10)
 
     def test_unknown_plan_in_metadata_falls_back_to_free(self):
         headers = self._headers(
@@ -336,7 +336,7 @@ class DashboardApiTest(unittest.TestCase):
         self.assertEqual(res.json()["plan"], "pro")
         after = self.client.get("/app/api/me", headers=headers).json()
         self.assertEqual(after["plan"], "pro")
-        self.assertEqual(after["daily_limit"], 200)
+        self.assertEqual(after["monthly_limit"], 10)
 
     def test_change_plan_rejects_unknown_plan(self):
         headers = self._headers("bad@example.com", sub="u-plan-2")
@@ -434,8 +434,8 @@ class DashboardApiTest(unittest.TestCase):
         admin = self._make_admin()
         accounts = self.client.get("/app/api/admin/accounts", headers=admin).json()["accounts"]
         self.assertGreaterEqual(len(accounts), 3)  # u1, u2, admin
-        self.assertIn("used_today", accounts[0])
-        self.assertIn("daily_limit", accounts[0])
+        self.assertIn("used_this_month", accounts[0])
+        self.assertIn("monthly_limit", accounts[0])
 
     def test_admin_changes_another_accounts_plan(self):
         me = self.client.get("/app/api/me", headers=self._headers("target@example.com", sub="tgt")).json()
@@ -444,12 +444,12 @@ class DashboardApiTest(unittest.TestCase):
         target = next(a for a in accounts if a["tenant"] == me["tenant"])
         self.assertEqual(target["plan"], "free")
         res = self.client.post(f"/app/api/admin/accounts/{target['id']}/plan",
-                               json={"plan": "enterprise"}, headers=admin)
+                               json={"plan": "business"}, headers=admin)
         self.assertEqual(res.status_code, 200, res.text)
         after = self.client.get("/app/api/admin/accounts", headers=admin).json()["accounts"]
         changed = next(a for a in after if a["id"] == target["id"])
-        self.assertEqual(changed["plan"], "enterprise")
-        self.assertEqual(changed["daily_limit"], 100000)
+        self.assertEqual(changed["plan"], "business")
+        self.assertEqual(changed["monthly_limit"], 30)
 
     def test_admin_plan_change_rejects_unknown_plan_and_missing_account(self):
         admin = self._make_admin()
@@ -465,7 +465,7 @@ class DashboardApiTest(unittest.TestCase):
         self.client.post(f"/app/api/admin/accounts/{acct['id']}/quota",
                          json={"quota_override": 5}, headers=admin)
         after = self.client.get("/app/api/admin/accounts", headers=admin).json()["accounts"]
-        self.assertEqual(next(a for a in after if a["id"] == acct["id"])["daily_limit"], 5)
+        self.assertEqual(next(a for a in after if a["id"] == acct["id"])["monthly_limit"], 5)
         # clearing reverts to the plan default
         self.client.post(f"/app/api/admin/accounts/{acct['id']}/quota",
                          json={"quota_override": None}, headers=admin)
@@ -511,19 +511,19 @@ class DashboardApiTest(unittest.TestCase):
         self.assertFalse(target["blocked"])
 
     def test_admin_stats_reports_counts_and_estimated_mrr(self):
-        # one pro, one enterprise, plus the admin (free)
+        # one pro, one business, plus the admin (free)
         p = self.client.get("/app/api/me", headers=self._headers("pro@x.com", sub="pro-1",
                             user_metadata={"plan": "pro"})).json()
-        self.client.get("/app/api/me", headers=self._headers("ent@x.com", sub="ent-1",
-                        user_metadata={"plan": "enterprise"}))
+        self.client.get("/app/api/me", headers=self._headers("biz@x.com", sub="biz-1",
+                        user_metadata={"plan": "business"}))
         admin = self._make_admin()
         stats = self.client.get("/app/api/admin/stats", headers=admin).json()
         self.assertEqual(stats["total_accounts"], 3)
         self.assertEqual(stats["by_plan"]["pro"], 1)
-        self.assertEqual(stats["by_plan"]["enterprise"], 1)
-        # MRR = pro price + enterprise price (admin is free = 0)
+        self.assertEqual(stats["by_plan"]["business"], 1)
+        # MRR = pro price + business price (admin is free = 0)
         self.assertEqual(stats["estimated_mrr"],
-                         stats["plan_prices"]["pro"] + stats["plan_prices"]["enterprise"])
+                         stats["plan_prices"]["pro"] + stats["plan_prices"]["business"])
 
     def test_admin_can_block_and_it_reflects_in_target_me(self):
         me = self.client.get("/app/api/me", headers=self._headers("target@x.com", sub="tgt-1")).json()

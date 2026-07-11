@@ -57,7 +57,7 @@ _FRIENDLY = {
 
 # Cost policy (owner decision, 2026-07-07, §4.0): best output, token cost is
 # not a concern. Reasoning depth is never clamped by plan — every tier runs
-# at whatever ``effort`` the caller asked for. The daily job quota
+# at whatever ``effort`` the caller asked for. The monthly job quota
 # (``PLAN_LIMITS`` in accounts.py) is the only cost guardrail; a prior
 # per-plan effort ceiling was removed here.
 

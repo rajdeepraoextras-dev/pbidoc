@@ -25,7 +25,7 @@ class AccountStoreDumpRestoreTest(unittest.TestCase):
         store = AccountStore(":memory:")
         self.addCleanup(store.close)
         with mock.patch.dict("pbicompass.service.accounts.PLAN_LIMITS",
-                             {"free": 5, "pro": 200, "enterprise": 100000}, clear=True):
+                             {"free": 5, "pro": 200, "business": 100000}, clear=True):
             acct, key = store.create_account("acme", name="Acme BI", plan="pro")
             store.try_consume("acme", "pro")
             store.try_consume("acme", "pro")
@@ -46,7 +46,7 @@ class AccountStoreDumpRestoreTest(unittest.TestCase):
             self.assertIsNotNone(restored)
             self.assertEqual(restored.tenant, "acme")
             self.assertEqual(restored.plan, "pro")
-            self.assertEqual(fresh.usage_today("acme"), 2)
+            self.assertEqual(fresh.usage_this_month("acme"), 2)
 
     def test_restore_is_idempotent(self):
         store = AccountStore(":memory:")
@@ -104,7 +104,7 @@ class FileBackupRestoreDrillTest(unittest.TestCase):
 
             self.assertEqual(scratch.verify(key_a).tenant, "tenant-a")
             self.assertEqual(scratch.verify(key_b).tenant, "tenant-b")
-            self.assertEqual(scratch.usage_today("tenant-a"), 1)
+            self.assertEqual(scratch.usage_this_month("tenant-a"), 1)
             self.assertEqual(len(scratch.list_accounts()), 2)
 
 

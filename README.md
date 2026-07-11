@@ -40,7 +40,7 @@ The foundation is in place and tested (182 tests passing):
   async jobs via a queue-agnostic worker (Celery-ready), zip-slip guard, no
   customer metadata persisted ([src/pbicompass/service](src/pbicompass/service)).
 - **Auth & multi-tenancy** — optional API-key auth (SQLite-backed accounts —
-  **no new dependency**), per-tenant job isolation, and per-plan freemium daily
+  **no new dependency**), per-tenant job isolation, and per-plan freemium monthly
   quotas (HTTP 429 when exceeded). Off by default (self-hosted/local); enable
   with `PBICOMPASS_REQUIRE_AUTH=1`
   ([src/pbicompass/service/accounts.py](src/pbicompass/service/accounts.py)).

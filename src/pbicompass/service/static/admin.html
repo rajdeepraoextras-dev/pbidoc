@@ -164,7 +164,7 @@ tr.blocked-row { opacity: .55; }
         <div class="ok-text" id="users-ok"></div>
         <div style="overflow-x:auto;">
           <table class="data-table">
-            <thead><tr><th>User</th><th>Plan</th><th>Usage today</th><th>Quota override</th><th>Role</th><th>Status</th><th></th></tr></thead>
+            <thead><tr><th>User</th><th>Plan</th><th>Usage this month</th><th>Quota override</th><th>Role</th><th>Status</th><th></th></tr></thead>
             <tbody id="users-body"></tbody>
           </table>
         </div>
@@ -258,11 +258,11 @@ async function loadStats() {
   const r = await api("/app/api/admin/stats");
   if (!r.ok) return;
   const s = await r.json();
-  const plans = Object.keys(s.plan_prices || { free: 0, pro: 0, enterprise: 0 });
+  const plans = Object.keys(s.plan_prices || { free: 0, pro: 0, business: 0 });
   const tiles = [
     { b: s.total_accounts, s: "Users", sm: `${s.active_accounts} active` },
     { b: money(s.estimated_mrr), s: "Est. MRR", sm: "projected", hero: true },
-    { b: s.docs_today, s: "Docs today", sm: `${s.docs_all_time} all-time` },
+    { b: s.docs_this_month, s: "Docs this month", sm: `${s.docs_all_time} all-time` },
     { b: s.blocked_accounts, s: "Suspended", sm: "" },
   ];
   plans.forEach(p => tiles.push({ b: (s.by_plan && s.by_plan[p]) || 0, s: planLabel(p), sm: money(s.plan_prices[p]) + "/mo" }));
@@ -283,7 +283,7 @@ async function loadUsers() {
 function renderUsers() {
   const q = $("user-search").value.trim().toLowerCase();
   const hideBlocked = $("hide-blocked").checked;
-  const planOpts = ["free", "pro", "enterprise"];
+  const planOpts = ["free", "pro", "business"];
   let rows = allUsers;
   if (hideBlocked) rows = rows.filter(u => !u.blocked);
   if (q) rows = rows.filter(u => [u.email, u.company, u.tenant, u.name].some(v => (v || "").toLowerCase().includes(q)));
@@ -292,13 +292,13 @@ function renderUsers() {
   rows.forEach(u => {
     const sub = [u.company, u.role].filter(Boolean).map(escHtml).join(" · ");
     const options = planOpts.map(p => `<option value="${p}"${p === u.plan ? " selected" : ""}>${planLabel(p)}</option>`).join("");
-    const limit = u.daily_limit >= 100000 ? "∞" : u.daily_limit;
+    const limit = u.monthly_limit;
     const tr = document.createElement("tr");
     if (u.blocked) tr.className = "blocked-row";
     tr.innerHTML =
       `<td><span class="u-name">${escHtml(u.email || u.name || u.tenant)}</span>${sub ? `<br><span class="u-sub">${sub}</span>` : ""}<br><span class="u-sub">${escHtml(u.tenant)}</span></td>
        <td><select data-act="plan">${options}</select></td>
-       <td>${u.used_today} / ${limit}</td>
+       <td>${u.used_this_month} / ${limit}</td>
        <td><input class="qbox" type="number" min="0" placeholder="—" value="${u.quota_override ?? ""}" data-act="quota"></td>
        <td><button class="mini${u.is_admin ? " on" : ""}" data-act="admin">${u.is_admin ? "Admin" : "Make admin"}</button></td>
        <td>${u.blocked ? '<span class="badge warn">Suspended</span>' : '<span class="badge ok">Active</span>'}</td>

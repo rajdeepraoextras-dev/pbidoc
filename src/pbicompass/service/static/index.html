@@ -856,6 +856,45 @@ button[type=submit] .spin {
 }
 
 /* ==============================================================
+   PRICING
+   ============================================================== */
+.pricing-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; align-items: stretch; }
+@media (max-width: 900px) { .pricing-grid { grid-template-columns: 1fr; max-width: 420px; margin: 0 auto; } }
+.price-card {
+  border-radius: 28px; padding: 32px 28px; display: flex; flex-direction: column;
+  transition: transform .3s var(--ease);
+}
+.price-card:hover { transform: translateY(-4px); }
+.price-card.featured { padding-top: 44px; }
+.price-badge {
+  align-self: flex-start; margin-bottom: 14px; padding: 5px 14px; border-radius: 100px;
+  font-size: .66rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+  background: #fff; color: #000;
+}
+.price-name { font-size: 1.05rem; font-weight: 500; color: #fff; letter-spacing: -.02em; }
+.price-amt { display: flex; align-items: baseline; gap: 4px; margin: 14px 0 4px; }
+.price-amt b { font-size: clamp(2.1rem, 4vw, 2.6rem); font-weight: 600; color: #fff; letter-spacing: -.03em; }
+.price-amt span { font-size: .84rem; color: hsl(0 0% 100% / .68); }
+.price-quota { font-size: .82rem; font-weight: 500; color: hsl(0 0% 100% / .88); margin-bottom: 22px; }
+.price-features { list-style: none; display: flex; flex-direction: column; gap: 11px; margin-bottom: 26px; flex: 1; }
+.price-features li { position: relative; padding-left: 24px; font-size: .82rem; line-height: 1.5; color: hsl(0 0% 100% / .82); }
+.price-features li::before {
+  content: ""; position: absolute; left: 0; top: 5px; width: 13px; height: 7px;
+  border-left: 2px solid #fff; border-bottom: 2px solid #fff; transform: rotate(-45deg);
+}
+.price-cta {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 13px; border-radius: 100px; text-align: center;
+  background: hsl(0 0% 100% / .1); color: #fff; font-size: .86rem; font-weight: 500;
+  transition: transform .3s var(--ease), background .2s;
+}
+.price-cta:hover { transform: scale(1.02); background: hsl(0 0% 100% / .16); }
+.price-card.featured .price-cta { background: #fff; color: #000; }
+.price-card.featured .price-cta:hover { background: hsl(0 0% 100% / .88); }
+.price-note { text-align: center; margin-top: 26px; font-size: .8rem; color: hsl(0 0% 100% / .68); }
+.price-note a { color: hsl(0 0% 100% / .92); text-decoration: underline; text-underline-offset: 3px; }
+
+/* ==============================================================
    CTA PANEL (replaces the old functional console — the uploader
    now lives at /app behind sign-in)
    ============================================================== */
@@ -961,6 +1000,7 @@ button[type=submit] .spin {
           <a href="#dax">DAX, translated <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></a>
           <a href="#documents">The documents <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></a>
           <a href="#security">Security <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></a>
+          <a href="#pricing">Pricing <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></a>
           <a href="#faq">FAQ <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></a>
           <a href="#generate">Generate documentation <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></a>
           <a href="/app">Dashboard &amp; API keys <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></a>
@@ -1383,6 +1423,61 @@ button[type=submit] .spin {
   </div>
 </section>
 
+<!-- ==================== PRICING ==================== -->
+<section class="pricing" id="pricing">
+  <div class="wrap-wide">
+    <div class="sec-head">
+      <span class="sec-eyebrow liquid-glass reveal">Simple, predictable pricing</span>
+      <h2 class="sec-title reveal d1">Pick a plan, <em>start documenting.</em></h2>
+      <p class="sec-sub reveal d2">Reports are counted per generation job. Change or cancel your plan anytime.</p>
+    </div>
+
+    <div class="pricing-grid">
+      <div class="price-card liquid-glass reveal">
+        <div class="price-name">Free</div>
+        <div class="price-amt"><b>$0</b><span>/ month</span></div>
+        <div class="price-quota">1 report / month</div>
+        <ul class="price-features">
+          <li>Technical, Audit, Executive &amp; Business docs</li>
+          <li>Markdown · HTML · DOCX · PDF · JSON</li>
+          <li>Deterministic offline engine, no AI key needed</li>
+          <li>Metadata only · zero retention</li>
+        </ul>
+        <a class="price-cta" href="/app">Get started</a>
+      </div>
+
+      <div class="price-card liquid-glass-strong featured reveal d1">
+        <span class="price-badge">Most popular</span>
+        <div class="price-name">Pro</div>
+        <div class="price-amt"><b>$20</b><span>/ month</span></div>
+        <div class="price-quota">10 reports / month</div>
+        <ul class="price-features">
+          <li>Everything in Free</li>
+          <li>10 reports every month</li>
+          <li>Bring your own AI key (Claude, Gemini, Cohere &amp; more)</li>
+          <li>Priority processing</li>
+        </ul>
+        <a class="price-cta" href="/app">Start with Pro</a>
+      </div>
+
+      <div class="price-card liquid-glass reveal d2">
+        <div class="price-name">Business</div>
+        <div class="price-amt"><b>$50</b><span>/ month</span></div>
+        <div class="price-quota">30 reports / month</div>
+        <ul class="price-features">
+          <li>Everything in Pro</li>
+          <li>30 reports every month</li>
+          <li>Highest self-serve monthly volume</li>
+          <li>Priority support</li>
+        </ul>
+        <a class="price-cta" href="/app">Start with Business</a>
+      </div>
+    </div>
+
+    <p class="price-note reveal d3">Need more than 30 reports a month, SSO, or a custom deployment? <a href="mailto:rajdeepraoextras@gmail.com">Contact us</a> about Enterprise. See our <a href="/refund">Refund Policy</a>.</p>
+  </div>
+</section>
+
 <!-- ==================== FAQ ==================== -->
 <section class="faq" id="faq">
   <div class="wrap-wide">
@@ -1475,11 +1570,19 @@ button[type=submit] .spin {
       <a href="#dax">DAX, translated</a>
       <a href="#documents">Documents</a>
       <a href="#security">Security</a>
+      <a href="#pricing">Pricing</a>
       <a href="#faq">FAQ</a>
       <a href="#generate">Generate</a>
       <a href="/app">Dashboard</a>
       <a href="/healthz">Status</a>
       <a href="https://github.com/rajdeepraoextras-dev/pbidoc">GitHub</a>
+    </nav>
+  </div>
+  <div class="foot-row" style="margin-top:14px;">
+    <nav class="foot-links" aria-label="Legal">
+      <a href="/privacy">Privacy Policy</a>
+      <a href="/terms">Terms of Service</a>
+      <a href="/refund">Refund Policy</a>
     </nav>
   </div>
   <div class="foot-copy">AI Documentation &amp; Governance for Power BI · metadata only · zero retention · © 2026 PBICompass</div>
