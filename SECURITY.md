@@ -26,14 +26,18 @@ report a problem.
 - **Accounts store the minimum.** When auth is enabled, the SQLite accounts
   database holds a hashed API key, tenant, plan, and per-day usage *counts*
   only (`service/accounts.py`) — never anything about a customer's report.
-- **Admin panel is a single shared secret, not a user system.** `/admin`
-  (`service/admin.py`) is gated by one operator-held token
-  (`PBICOMPASS_ADMIN_TOKEN`) compared in constant time, with a per-client
-  lockout (8 failures / 5 min window -> 15 min block) to blunt brute-forcing.
-  It is disabled entirely (503 on every `/admin/api/*` call) unless that
-  token is set — there's no default/blank-password state. It mints and
-  revokes tenant API keys but has no other privileges (no code execution, no
-  filesystem access, no visibility into report content).
+- **Admin access is scoped, not a shared superuser.** The hosted SaaS gates
+  its `/app` admin dashboard (stats, plan/quota overrides, suspend/delete) by
+  an `is_admin` flag on a signed-in Supabase account — no separate credential
+  to leak, and admins can't self-revoke their own admin flag or delete their
+  own account. Self-hosters who skip Supabase entirely can still use the
+  original single-token `/admin` page (`service/admin.py`, gated by
+  `PBICOMPASS_ADMIN_TOKEN`, compared in constant time, with a per-client
+  lockout — 8 failures / 5 min window -> 15 min block); it's disabled
+  entirely (503 on every `/admin/api/*` call) unless that token is set. Either
+  path mints/revokes tenant API keys and manages accounts, but has no other
+  privileges (no code execution, no filesystem access, no visibility into
+  report content).
 
 ## Deploying safely
 

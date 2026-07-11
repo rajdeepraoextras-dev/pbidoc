@@ -15,15 +15,19 @@ parse/generate/test workflow.
 ## Running tests
 
 ```bash
-# PowerShell
-$env:PYTHONPATH = "src"; python -m unittest discover -s tests -v
-
-# bash
-PYTHONPATH=src python -m unittest discover -s tests -v
+pip install -e ".[dev,service,agents]"
+pytest -v
 ```
 
-All 182 tests should pass with `pip install -e ".[dev]"` alone (the LLM path
-is tested via an in-process fake client — no API key needed). Please add a
+725 of the 729 collected tests pass (the LLM path is tested via an in-process
+fake client — no API key needed); 2 pre-existing failures around the
+in-progress model-diagram feature are tracked in
+`docs/planning/ROADMAP_PROGRESS.md`, plus 2 skipped. With a bare
+`pip install -e ".[dev]"` (no `service`/`agents` extras) the service- and
+provider-specific tests skip cleanly instead of running — see any test file's
+module docstring for the pattern. Note: `pytest` is required rather than
+plain `unittest discover` — `tests/conftest.py` carries an autouse fixture
+(disabling the LLM cache between tests) that only pytest loads. Please add a
 test alongside any behavioral change; there's a synthetic fixture at
 `tests/fixtures/SampleSales` that exercises every parser code path.
 

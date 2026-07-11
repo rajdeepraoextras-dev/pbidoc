@@ -575,12 +575,14 @@ fixture exercising every code path (including the LLM path via an in-process fak
 client). Run it:
 
 ```bash
-# PowerShell
-$env:PYTHONPATH = "src"; python -m unittest discover -s tests -v
-
-# bash
-PYTHONPATH=src python -m unittest discover -s tests -v
+pip install -e ".[dev,service,agents]"
+pytest -v
 ```
+
+Use `pytest`, not plain `unittest discover` — `tests/conftest.py` carries an
+autouse fixture (forcing the LLM cache off between tests) that only pytest
+loads; running via `unittest discover` skips it and produces spurious
+failures from cache bleed between tests.
 
 Golden-HTML tests (`tests/test_golden_html.py`) compare rendered HTML against
 fixtures in `tests/fixtures/golden/`.
