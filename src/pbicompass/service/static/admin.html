@@ -3,257 +3,388 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0f1a15">
 <meta name="robots" content="noindex, nofollow">
-<title>PBICompass — Admin</title>
-<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<title>Admin — PBICompass</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Cpath d='M15 42V8h10a13 13 0 0 1 0 26h-6' fill='none' stroke='white' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M32.5 15.5 20 21l5.5 2.5L28 29z' fill='white'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Source+Serif+4:ital,opsz,wght@1,8..60,300;1,8..60,400;1,8..60,500&display=swap" rel="stylesheet">
+<!-- Same shared design system as / and /app (Day 35) — one visual product -->
+<link rel="stylesheet" href="/theme.css">
+<script src="/vendor/supabase.js"></script>
 <style>
-  :root {
-    --bg: #060606; --panel: #0e0c07; --glass: rgba(255,255,255,.035);
-    --border: rgba(255,255,255,.09); --border-strong: rgba(255,255,255,.16);
-    --gold: #f2c811; --gold-light: #ffe066; --ink: #171204;
-    --text: #f7f5ee; --muted: #bdb6a4; --dim: #8a8372;
-    --success: #34d399; --danger: #fb7185;
-    --grad: linear-gradient(120deg, #ffe066 0%, #f2c811 50%, #c9971b 100%);
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: 'Poppins', -apple-system, BlinkMacSystemFont, sans-serif;
-    background: var(--bg); color: var(--text); min-height: 100vh;
-    padding: 32px 20px 80px;
-  }
-  .wrap { max-width: 880px; margin: 0 auto; }
-  header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; }
-  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 1.15rem; }
-  .brand .dot { width: 10px; height: 10px; border-radius: 3px; background: var(--grad); }
-  a.back { color: var(--dim); text-decoration: none; font-size: .88rem; }
-  a.back:hover { color: var(--text); }
-  h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: 4px; }
-  p.sub { color: var(--muted); font-size: .92rem; margin-bottom: 24px; }
-  .card {
-    background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
-    padding: 22px; margin-bottom: 20px;
-  }
-  label { display: block; font-size: .82rem; color: var(--muted); margin-bottom: 6px; font-weight: 600; }
-  input, select {
-    width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border);
-    background: var(--glass); color: var(--text); font-family: inherit; font-size: .92rem;
-    outline: none;
-  }
-  input:focus, select:focus { border-color: var(--gold); }
-  .row { display: grid; grid-template-columns: 1fr; gap: 14px; }
-  @media (min-width: 620px) { .row.cols-3 { grid-template-columns: 2fr 2fr 1fr; } }
-  .field { margin-bottom: 14px; }
-  button {
-    font-family: inherit; font-weight: 700; font-size: .9rem; border: none;
-    border-radius: 9px; padding: 11px 20px; cursor: pointer; transition: transform .15s, opacity .15s;
-  }
-  button:hover { transform: translateY(-1px); }
-  button:disabled { opacity: .5; cursor: not-allowed; transform: none; }
-  .btn-gold { background: var(--grad); color: var(--ink); }
-  .btn-ghost { background: var(--glass); color: var(--text); border: 1px solid var(--border); }
-  .btn-danger { background: rgba(251,113,133,.14); color: var(--danger); border: 1px solid rgba(251,113,133,.35); }
-  .btn-danger:hover { background: rgba(251,113,133,.22); }
-  .msg { font-size: .86rem; margin-top: 10px; padding: 10px 12px; border-radius: 8px; display: none; }
-  .msg.show { display: block; }
-  .msg.err { background: rgba(251,113,133,.1); color: var(--danger); border: 1px solid rgba(251,113,133,.3); }
-  .msg.ok { background: rgba(52,211,153,.1); color: var(--success); border: 1px solid rgba(52,211,153,.3); }
-  .key-box {
-    margin-top: 14px; padding: 14px; border-radius: 10px; background: rgba(242,200,17,.08);
-    border: 1px solid rgba(242,200,17,.35); display: none;
-  }
-  .key-box.show { display: block; }
-  .key-box .label { font-size: .78rem; color: var(--gold-light); font-weight: 700; margin-bottom: 6px; }
-  .key-box code {
-    display: block; font-family: 'Consolas', monospace; font-size: .88rem; word-break: break-all;
-    color: var(--text); background: rgba(0,0,0,.3); padding: 10px; border-radius: 6px; margin-bottom: 10px;
-  }
-  table { width: 100%; border-collapse: collapse; font-size: .88rem; }
-  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); }
-  th { color: var(--dim); font-weight: 600; font-size: .76rem; text-transform: uppercase; letter-spacing: .04em; }
-  td.plan { text-transform: capitalize; }
-  .empty { color: var(--dim); font-size: .88rem; padding: 20px 0; text-align: center; }
-  .gate { max-width: 420px; margin: 12vh auto 0; text-align: center; }
-  .gate h1 { font-size: 1.3rem; margin-bottom: 8px; }
-  .gate p { color: var(--muted); font-size: .9rem; margin-bottom: 20px; }
-  .gate .card { text-align: left; }
-  #dash { display: none; }
-  .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.wrap { width: 100%; max-width: 1180px; margin: 0 auto; padding: 0 24px; }
+.appbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 26px 0 18px; }
+.appbar .brand-name { font-size: 1.3rem; }
+.appbar-right { display: inline-flex; align-items: center; gap: 12px; }
+.appbar-email { font-size: .82rem; color: hsl(0 0% 100% / .82); }
+.admin-tag { font-size: .6rem; font-weight: 600; letter-spacing: .18em; text-transform: uppercase;
+  color: #000; background: #fff; padding: 3px 8px; border-radius: 100px; margin-left: 6px; vertical-align: middle; }
+
+/* gate (sign in / not-admin) */
+.gate-shell { max-width: 440px; margin: 6vh auto; }
+.auth-card { border-radius: 26px; padding: 30px 30px 34px; }
+.auth-head { text-align: center; margin-bottom: 22px; }
+.auth-head h1 { font-size: 1.6rem; letter-spacing: -.03em; color: #fff; margin-bottom: 8px; }
+.auth-head p { color: hsl(0 0% 100% / .74); font-size: .88rem; font-weight: 300; }
+
+/* nav */
+.shell-nav { display: flex; gap: 6px; padding: 6px; border-radius: 100px; margin: 8px 0 24px; width: max-content; max-width: 100%; overflow-x: auto; }
+.nav-btn { display: inline-flex; align-items: center; gap: 8px; background: none; border: none; cursor: pointer; white-space: nowrap;
+  color: hsl(0 0% 100% / .78); padding: 10px 20px; border-radius: 100px; font-family: inherit; font-size: .84rem; font-weight: 500; transition: color .2s, background .25s; }
+.nav-btn:hover { color: #fff; }
+.nav-btn.active { color: #000; background: #fff; }
+.nav-btn svg { width: 15px; height: 15px; }
+.view { display: none; }
+.view.active { display: block; animation: fadeUp .35s var(--ease); }
+
+/* stat tiles */
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; }
+.stat { border-radius: 20px; padding: 20px 22px; }
+.stat b { display: block; font-size: 2rem; font-weight: 600; letter-spacing: -.03em; color: #fff; line-height: 1.1; }
+.stat span { font-size: .72rem; text-transform: uppercase; letter-spacing: .12em; color: hsl(0 0% 100% / .6); }
+.stat small { font-size: .72rem; color: hsl(0 0% 100% / .5); }
+.stat.hero b { font-size: 2.4rem; }
+
+/* users table */
+.tbl-tools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.tbl-tools input[type=text] { max-width: 260px; padding: 9px 14px; }
+.data-table select { padding: 6px 10px; font-size: .8rem; }
+.data-table .qbox { width: 82px; padding: 6px 8px; font-size: .8rem; }
+.u-name { font-weight: 500; color: #fff; }
+.u-sub { font-size: .72rem; color: hsl(0 0% 100% / .58); }
+.row-actions { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.mini { padding: 6px 12px; font-size: .74rem; border-radius: 100px; cursor: pointer; border: none; font-family: inherit; font-weight: 500;
+  background: hsl(0 0% 100% / .1); color: #fff; transition: background .2s, color .2s; }
+.mini:hover { background: hsl(0 0% 100% / .18); }
+.mini.warn:hover { background: var(--status-warn, #e0a03a); color: #000; }
+.mini.danger:hover { background: var(--status-err, #e5484d); color: #fff; }
+.mini.on { background: #fff; color: #000; }
+tr.blocked-row { opacity: .55; }
+.err-text { color: var(--status-err); font-size: .84rem; min-height: 1.1rem; }
+.ok-text { color: var(--status-ok); font-size: .84rem; min-height: 1.1rem; }
+.site-foot-mini { text-align: center; padding: 26px 0 40px; color: hsl(0 0% 100% / .5); font-size: .74rem; }
+.site-foot-mini a { color: hsl(0 0% 100% / .7); }
+.hidden { display: none !important; }
 </style>
 </head>
 <body>
+<div class="bg-base" aria-hidden="true"></div>
+<div class="bg-grain" aria-hidden="true"></div>
+
+<div class="page">
 <div class="wrap">
-  <header>
-    <div class="brand"><span class="dot"></span> PBICompass Admin</div>
-    <a class="back" href="/">‹ Back to app</a>
-  </header>
 
-  <div id="gate" class="gate">
-    <h1>Admin access</h1>
-    <p>Enter the operator token (<code>PBICOMPASS_ADMIN_TOKEN</code>) to manage accounts and API keys.</p>
-    <div class="card">
-      <div class="field">
-        <label for="token">Admin token</label>
-        <input type="password" id="token" autocomplete="off" placeholder="Paste the admin token...">
-      </div>
-      <button class="btn-gold" id="unlock" style="width:100%">Unlock</button>
-      <div class="msg err" id="gate-msg"></div>
+  <div class="appbar">
+    <a class="brand" href="/app" aria-label="PBICompass">
+      <svg class="brand-mark" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+        <path d="M15 42V8h10a13 13 0 0 1 0 26h-6" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M33 14.5 19.5 20.6l6 2.7 2.7 6z" fill="currentColor" stroke="none"/>
+      </svg>
+      <span class="brand-name">PBI<span>Compass</span><span class="admin-tag">Admin</span></span>
+    </a>
+    <div class="appbar-right" id="appbar-right">
+      <a class="account-btn liquid-glass scale-hover" href="/app">← Back to app</a>
     </div>
   </div>
 
-  <div id="dash">
-    <h1>Accounts</h1>
-    <p class="sub">Create and manage API keys tenants use to authenticate against PBICompass.</p>
-
-    <div class="card">
-      <div class="row cols-3">
-        <div class="field">
-          <label for="c-tenant">Tenant</label>
-          <input type="text" id="c-tenant" placeholder="e.g. acme">
+  <!-- ===== GATE: sign in / not-admin ===== -->
+  <section id="gate" class="gate-shell hidden">
+    <div class="auth-card liquid-glass-strong">
+      <div id="gate-signin">
+        <div class="auth-head">
+          <h1>Admin sign in</h1>
+          <p>Sign in with your admin account to manage users, usage and revenue.</p>
         </div>
-        <div class="field">
-          <label for="c-name">Name</label>
-          <input type="text" id="c-name" placeholder="e.g. Acme BI">
-        </div>
-        <div class="field">
-          <label for="c-plan">Plan</label>
-          <select id="c-plan">
-            <option value="free">Free (10/day)</option>
-            <option value="pro">Pro (200/day)</option>
-            <option value="enterprise">Enterprise (100k/day)</option>
-          </select>
-        </div>
+        <form id="login-form">
+          <div class="form-group"><label>Email</label><input type="email" name="email" autocomplete="email" required></div>
+          <div class="form-group"><label>Password</label><input type="password" name="password" autocomplete="current-password" required></div>
+          <div class="err-text" id="login-err"></div>
+          <button type="submit" class="btn-primary"><span class="spin" id="login-spin"></span><span>Sign in</span></button>
+        </form>
       </div>
-      <button class="btn-gold" id="create">Create account</button>
-      <div class="msg err" id="create-msg"></div>
-      <div class="key-box" id="key-box">
-        <div class="label">API key — shown once, copy it now</div>
-        <code id="key-value"></code>
-        <button class="btn-ghost" id="copy-key">Copy</button>
+      <div id="gate-denied" class="hidden" style="text-align:center;">
+        <div class="auth-head">
+          <h1>Not an admin</h1>
+          <p id="denied-msg">This account doesn't have admin access.</p>
+        </div>
+        <a class="btn-primary" href="/app" style="display:block; text-align:center; text-decoration:none;">Go to your workspace</a>
+        <button class="btn-ghost" id="denied-signout" style="width:100%; margin-top:10px;">Sign out</button>
+      </div>
+    </div>
+    <p class="site-foot-mini">Admin access is granted to an existing admin or the PBICOMPASS_BOOTSTRAP_ADMIN_EMAIL. <a href="/app">Back to app →</a></p>
+  </section>
+
+  <!-- ===== PORTAL ===== -->
+  <section id="portal" style="display:none">
+    <nav class="shell-nav liquid-glass" role="tablist">
+      <button class="nav-btn active" data-view="overview">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+        Overview
+      </button>
+      <button class="nav-btn" data-view="users">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0M17 11l2 2 4-4"/></svg>
+        Users
+      </button>
+      <button class="nav-btn" data-view="jobs">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+        Jobs
+      </button>
+    </nav>
+
+    <!-- OVERVIEW -->
+    <div class="view active" id="view-overview">
+      <div class="panel-card liquid-glass-strong">
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px;">
+          <h2 style="margin:0;">Overview</h2>
+          <div style="flex:1"></div>
+          <button class="btn-ghost" onclick="loadStats()">Refresh</button>
+        </div>
+        <div class="stat-grid" id="stat-grid"></div>
+        <p class="muted" style="margin-top:14px;">MRR is an <b>estimate</b> — plan list price × active accounts — until Stripe billing lands and supplies real figures. No document content is ever stored; these are counts only.</p>
       </div>
     </div>
 
-    <div class="card">
-      <div class="toolbar">
-        <strong>Existing accounts</strong>
-        <button class="btn-ghost" id="refresh">Refresh</button>
+    <!-- USERS -->
+    <div class="view" id="view-users">
+      <div class="panel-card liquid-glass-strong">
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:6px;">
+          <h2 style="margin:0;">Users</h2>
+          <div style="flex:1"></div>
+          <button class="btn-ghost" onclick="loadUsers()">Refresh</button>
+        </div>
+        <div class="tbl-tools">
+          <input type="text" id="user-search" placeholder="Search email, company, tenant…" oninput="renderUsers()">
+          <label class="muted" style="display:inline-flex; align-items:center; gap:6px; font-size:.8rem;">
+            <input type="checkbox" id="hide-blocked" onchange="renderUsers()" style="width:15px;height:15px;"> hide suspended
+          </label>
+        </div>
+        <div class="err-text" id="users-err"></div>
+        <div class="ok-text" id="users-ok"></div>
+        <div style="overflow-x:auto;">
+          <table class="data-table">
+            <thead><tr><th>User</th><th>Plan</th><th>Usage today</th><th>Quota override</th><th>Role</th><th>Status</th><th></th></tr></thead>
+            <tbody id="users-body"></tbody>
+          </table>
+        </div>
+        <div class="muted" id="users-empty" style="margin-top:10px;"></div>
       </div>
-      <div id="table-wrap"></div>
     </div>
-  </div>
-</div>
+
+    <!-- JOBS -->
+    <div class="view" id="view-jobs">
+      <div class="panel-card liquid-glass-strong">
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:6px;">
+          <h2 style="margin:0;">Jobs (all tenants)</h2>
+          <div style="flex:1"></div>
+          <input type="text" id="jobs-filter" placeholder="filter by tenant…" style="max-width:200px; padding:8px 12px;"
+                 onkeydown="if(event.key==='Enter')loadJobs()">
+          <button class="btn-ghost" onclick="loadJobs()">Refresh</button>
+        </div>
+        <p class="muted" style="margin-bottom:12px;">Status &amp; timestamps only — generated documents are never retained.</p>
+        <div style="overflow-x:auto;">
+          <table class="data-table"><thead><tr><th>Tenant</th><th>File</th><th>Status</th><th>Created</th></tr></thead>
+            <tbody id="jobs-body"></tbody></table>
+        </div>
+        <div class="muted" id="jobs-empty" style="margin-top:10px;"></div>
+      </div>
+    </div>
+  </section>
+
+  <p class="site-foot-mini" id="portal-foot" style="display:none;">PBICompass admin · metadata only · zero retention · <a href="/app">workspace →</a></p>
+
+</div><!-- /wrap -->
+</div><!-- /page -->
 
 <script>
-const $ = id => document.getElementById(id);
-let TOKEN = sessionStorage.getItem("pbicompass_admin_token") || "";
+const $ = s => document.getElementById(s);
+let supa = null, accessToken = null, cfg = {};
+let allUsers = [];
 
-function headers() { return { "X-Admin-Token": TOKEN, "Content-Type": "application/json" }; }
-
-function showGate() { $("gate").style.display = "block"; $("dash").style.display = "none"; }
-function showDash() { $("gate").style.display = "none"; $("dash").style.display = "block"; }
-
-async function tryUnlock(silent) {
-  if (!TOKEN) { if (!silent) flash("gate-msg", "Enter a token."); showGate(); return; }
-  let res;
-  try { res = await fetch("/admin/api/verify", { method: "POST", headers: headers() }); }
-  catch { showGate(); if (!silent) flash("gate-msg", "Connection failed."); return; }
-  if (res.ok) {
-    showDash();
-    loadAccounts();
-  } else {
-    sessionStorage.removeItem("pbicompass_admin_token");
-    TOKEN = "";
-    showGate();
-    if (!silent) {
-      const j = await res.json().catch(() => ({}));
-      flash("gate-msg", j.detail || ("Error " + res.status));
-    }
-  }
+async function api(path, opts = {}) {
+  opts.headers = Object.assign({}, opts.headers);
+  if (accessToken) opts.headers["Authorization"] = "Bearer " + accessToken;
+  if (opts.method && opts.method !== "GET") opts.headers["Content-Type"] = "application/json";
+  return fetch(path, opts);
 }
+function fmtDate(ts) { return ts ? new Date(ts * 1000).toLocaleString() : "—"; }
+function escHtml(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+function planLabel(p) { return p.charAt(0).toUpperCase() + p.slice(1); }
+function money(n) { return "$" + Number(n || 0).toLocaleString(); }
 
-function flash(id, text) {
-  const el = $(id);
-  el.textContent = text;
-  el.classList.add("show");
-  setTimeout(() => el.classList.remove("show"), 6000);
+/* ---- nav ---- */
+function showView(name) {
+  document.querySelectorAll(".nav-btn").forEach(b => b.classList.toggle("active", b.dataset.view === name));
+  document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === "view-" + name));
 }
+document.querySelectorAll(".nav-btn").forEach(b => b.addEventListener("click", () => showView(b.dataset.view)));
 
-$("unlock").addEventListener("click", () => {
-  TOKEN = $("token").value.trim();
-  sessionStorage.setItem("pbicompass_admin_token", TOKEN);
-  tryUnlock(false);
+/* ---- sign in ---- */
+$("login-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const f = e.target; $("login-err").textContent = "";
+  $("login-spin").style.display = "inline-block";
+  const { error } = await supa.auth.signInWithPassword({ email: f.email.value, password: f.password.value });
+  $("login-spin").style.display = "none";
+  if (error) $("login-err").textContent = error.message || "Sign-in failed.";
 });
-$("token").addEventListener("keydown", e => { if (e.key === "Enter") $("unlock").click(); });
+$("denied-signout").addEventListener("click", async () => { await supa.auth.signOut(); location.reload(); });
 
-$("create").addEventListener("click", async () => {
-  const tenant = $("c-tenant").value.trim();
-  const name = $("c-name").value.trim();
-  const plan = $("c-plan").value;
-  if (!tenant) { flash("create-msg", "Tenant is required."); return; }
-  $("create").disabled = true;
-  let res;
-  try {
-    res = await fetch("/admin/api/accounts", {
-      method: "POST", headers: headers(),
-      body: JSON.stringify({ tenant, name, plan }),
-    });
-  } catch { flash("create-msg", "Connection failed."); $("create").disabled = false; return; }
-  $("create").disabled = false;
-  if (!res.ok) {
-    const j = await res.json().catch(() => ({}));
-    flash("create-msg", j.detail || ("Error " + res.status));
+/* ---- gate routing ---- */
+function showGate(mode, msg) {
+  $("portal").style.display = "none";
+  $("portal-foot").style.display = "none";
+  $("gate").classList.remove("hidden");
+  $("gate-signin").classList.toggle("hidden", mode !== "signin");
+  $("gate-denied").classList.toggle("hidden", mode !== "denied");
+  if (msg) $("denied-msg").textContent = msg;
+  $("appbar-right").innerHTML = '<a class="account-btn liquid-glass scale-hover" href="/app">← Back to app</a>';
+}
+
+async function enterPortal(me) {
+  $("gate").classList.add("hidden");
+  $("portal").style.display = "block";
+  $("portal-foot").style.display = "block";
+  $("appbar-right").innerHTML =
+    `<span class="appbar-email">${escHtml(me.email || "")}</span>
+     <button class="btn-ghost" id="logout-btn">Sign out</button>`;
+  $("logout-btn").onclick = async () => { await supa.auth.signOut(); location.reload(); };
+  await Promise.all([loadStats(), loadUsers(), loadJobs()]);
+}
+
+/* ---- overview ---- */
+async function loadStats() {
+  const r = await api("/app/api/admin/stats");
+  if (!r.ok) return;
+  const s = await r.json();
+  const plans = Object.keys(s.plan_prices || { free: 0, pro: 0, enterprise: 0 });
+  const tiles = [
+    { b: s.total_accounts, s: "Users", sm: `${s.active_accounts} active` },
+    { b: money(s.estimated_mrr), s: "Est. MRR", sm: "projected", hero: true },
+    { b: s.docs_today, s: "Docs today", sm: `${s.docs_all_time} all-time` },
+    { b: s.blocked_accounts, s: "Suspended", sm: "" },
+  ];
+  plans.forEach(p => tiles.push({ b: (s.by_plan && s.by_plan[p]) || 0, s: planLabel(p), sm: money(s.plan_prices[p]) + "/mo" }));
+  $("stat-grid").innerHTML = tiles.map(t =>
+    `<div class="stat liquid-glass${t.hero ? " hero" : ""}"><b>${escHtml(t.b)}</b><span>${escHtml(t.s)}</span>${t.sm ? `<br><small>${escHtml(t.sm)}</small>` : ""}</div>`
+  ).join("");
+}
+
+/* ---- users ---- */
+async function loadUsers() {
+  $("users-err").textContent = ""; $("users-ok").textContent = "";
+  const r = await api("/app/api/admin/accounts");
+  if (!r.ok) { $("users-err").textContent = "Could not load users."; return; }
+  allUsers = (await r.json()).accounts || [];
+  renderUsers();
+}
+
+function renderUsers() {
+  const q = $("user-search").value.trim().toLowerCase();
+  const hideBlocked = $("hide-blocked").checked;
+  const planOpts = ["free", "pro", "enterprise"];
+  let rows = allUsers;
+  if (hideBlocked) rows = rows.filter(u => !u.blocked);
+  if (q) rows = rows.filter(u => [u.email, u.company, u.tenant, u.name].some(v => (v || "").toLowerCase().includes(q)));
+
+  const body = $("users-body"); body.innerHTML = "";
+  rows.forEach(u => {
+    const sub = [u.company, u.role].filter(Boolean).map(escHtml).join(" · ");
+    const options = planOpts.map(p => `<option value="${p}"${p === u.plan ? " selected" : ""}>${planLabel(p)}</option>`).join("");
+    const limit = u.daily_limit >= 100000 ? "∞" : u.daily_limit;
+    const tr = document.createElement("tr");
+    if (u.blocked) tr.className = "blocked-row";
+    tr.innerHTML =
+      `<td><span class="u-name">${escHtml(u.email || u.name || u.tenant)}</span>${sub ? `<br><span class="u-sub">${sub}</span>` : ""}<br><span class="u-sub">${escHtml(u.tenant)}</span></td>
+       <td><select data-act="plan">${options}</select></td>
+       <td>${u.used_today} / ${limit}</td>
+       <td><input class="qbox" type="number" min="0" placeholder="—" value="${u.quota_override ?? ""}" data-act="quota"></td>
+       <td><button class="mini${u.is_admin ? " on" : ""}" data-act="admin">${u.is_admin ? "Admin" : "Make admin"}</button></td>
+       <td>${u.blocked ? '<span class="badge warn">Suspended</span>' : '<span class="badge ok">Active</span>'}</td>
+       <td><div class="row-actions">
+         <button class="mini warn" data-act="block">${u.blocked ? "Unsuspend" : "Suspend"}</button>
+         <button class="mini danger" data-act="delete">Delete</button>
+       </div></td>`;
+    tr.querySelector('[data-act=plan]').addEventListener("change", ev => userAction(u, "plan", ev.target.value));
+    const qb = tr.querySelector('[data-act=quota]');
+    qb.addEventListener("change", () => userAction(u, "quota", qb.value));
+    tr.querySelector('[data-act=admin]').addEventListener("click", () => userAction(u, "admin", !u.is_admin));
+    tr.querySelector('[data-act=block]').addEventListener("click", () => userAction(u, "block", !u.blocked));
+    tr.querySelector('[data-act=delete]').addEventListener("click", () => userAction(u, "delete"));
+    body.appendChild(tr);
+  });
+  $("users-empty").textContent = rows.length ? "" : "No users match.";
+}
+
+async function userAction(u, action, value) {
+  $("users-err").textContent = ""; $("users-ok").textContent = "";
+  let r, okMsg;
+  if (action === "plan") {
+    r = await api(`/app/api/admin/accounts/${u.id}/plan`, { method: "POST", body: JSON.stringify({ plan: value }) });
+    okMsg = `${u.email || u.tenant} → ${planLabel(value)} plan.`;
+  } else if (action === "quota") {
+    const quota_override = value === "" ? null : Number(value);
+    r = await api(`/app/api/admin/accounts/${u.id}/quota`, { method: "POST", body: JSON.stringify({ quota_override }) });
+    okMsg = quota_override === null ? "Quota override cleared." : `Quota override → ${quota_override}.`;
+  } else if (action === "admin") {
+    r = await api(`/app/api/admin/accounts/${u.id}/admin`, { method: "POST", body: JSON.stringify({ is_admin: value }) });
+    okMsg = value ? `${u.email || u.tenant} is now an admin.` : `Admin revoked for ${u.email || u.tenant}.`;
+  } else if (action === "block") {
+    if (value && !confirm(`Suspend ${u.email || u.tenant}? They won't be able to generate documents.`)) return;
+    r = await api(`/app/api/admin/accounts/${u.id}/block`, { method: "POST", body: JSON.stringify({ blocked: value }) });
+    okMsg = value ? "Account suspended." : "Account reactivated.";
+  } else if (action === "delete") {
+    if (!confirm(`Delete ${u.email || u.tenant}? This removes the account and all its API keys. This cannot be undone.`)) return;
+    r = await api(`/app/api/admin/accounts/${u.id}`, { method: "DELETE" });
+    okMsg = "Account deleted.";
+  }
+  if (!r.ok) { const e = await r.json().catch(() => ({})); $("users-err").textContent = e.detail || "Action failed."; await loadUsers(); return; }
+  $("users-ok").textContent = okMsg;
+  await Promise.all([loadUsers(), loadStats()]);
+}
+
+/* ---- jobs ---- */
+async function loadJobs() {
+  const filter = $("jobs-filter").value.trim();
+  const r = await api("/app/api/admin/jobs" + (filter ? "?tenant=" + encodeURIComponent(filter) : ""));
+  if (!r.ok) { $("jobs-empty").textContent = "Could not load jobs."; return; }
+  const { jobs } = await r.json();
+  const body = $("jobs-body"); body.innerHTML = "";
+  jobs.forEach(j => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td><span class="u-sub">${escHtml(j.tenant)}</span></td>
+      <td>${escHtml(j.filename || "—")}</td>
+      <td><span class="badge">${escHtml(j.status)}</span></td>
+      <td>${fmtDate(j.created_at)}</td>`;
+    body.appendChild(tr);
+  });
+  $("jobs-empty").textContent = jobs.length ? "" : "No jobs yet.";
+}
+
+/* ---- auth state → route ---- */
+async function onAuthState(session) {
+  accessToken = session ? session.access_token : null;
+  if (!accessToken) { showGate("signin"); return; }
+  const r = await api("/app/api/me");
+  if (!r.ok) { showGate("signin"); return; }
+  const me = await r.json();
+  if (me.is_admin) enterPortal(me);
+  else showGate("denied", `${me.email || "This account"} isn't an admin. Ask an existing admin to grant access, or set PBICOMPASS_BOOTSTRAP_ADMIN_EMAIL.`);
+}
+
+(async function init() {
+  cfg = await api("/app/api/config").then(r => r.json()).catch(() => ({}));
+  if (!cfg.supabase_enabled) {
+    showGate("denied", "Sign-in isn't configured on this deployment (Supabase disabled). Use the token-gated operator tools instead.");
+    $("gate-signin").classList.add("hidden");
     return;
   }
-  const data = await res.json();
-  $("key-value").textContent = data.api_key;
-  $("key-box").classList.add("show");
-  $("c-tenant").value = ""; $("c-name").value = "";
-  loadAccounts();
-});
-
-$("copy-key").addEventListener("click", async () => {
-  try { await navigator.clipboard.writeText($("key-value").textContent); $("copy-key").textContent = "Copied!"; }
-  catch { $("copy-key").textContent = "Select & copy manually"; }
-  setTimeout(() => $("copy-key").textContent = "Copy", 2000);
-});
-
-$("refresh").addEventListener("click", loadAccounts);
-
-async function loadAccounts() {
-  const res = await fetch("/admin/api/accounts", { headers: headers() });
-  if (!res.ok) { if (res.status === 401) showGate(); return; }
-  const { accounts } = await res.json();
-  const wrap = $("table-wrap");
-  if (!accounts.length) { wrap.innerHTML = '<div class="empty">No accounts yet.</div>'; return; }
-  const rows = accounts.map(a => `
-    <tr>
-      <td>${escapeHtml(a.tenant)}</td>
-      <td>${escapeHtml(a.name || "—")}</td>
-      <td class="plan">${escapeHtml(a.plan)}</td>
-      <td>${new Date(a.created_at * 1000).toLocaleDateString()}</td>
-      <td>${a.used_today} / ${a.daily_limit}</td>
-      <td><button class="btn-danger" data-id="${a.id}">Revoke</button></td>
-    </tr>`).join("");
-  wrap.innerHTML = `<table>
-    <thead><tr><th>Tenant</th><th>Name</th><th>Plan</th><th>Created</th><th>Usage today</th><th></th></tr></thead>
-    <tbody>${rows}</tbody>
-  </table>`;
-  wrap.querySelectorAll("button[data-id]").forEach(btn => {
-    btn.addEventListener("click", () => revoke(btn.dataset.id));
-  });
-}
-
-async function revoke(id) {
-  if (!confirm("Revoke this account? Its API key stops working immediately.")) return;
-  const res = await fetch("/admin/api/accounts/" + id, { method: "DELETE", headers: headers() });
-  if (res.ok) loadAccounts();
-}
-
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-}
-
-showGate();
-if (TOKEN) { tryUnlock(true); }
+  supa = supabase.createClient(cfg.supabase_url, cfg.supabase_anon_key);
+  supa.auth.onAuthStateChange((_e, session) => onAuthState(session));
+  const { data: { session } } = await supa.auth.getSession();
+  await onAuthState(session);
+})();
 </script>
 </body>
 </html>

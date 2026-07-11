@@ -162,8 +162,8 @@ class AccountStorePostgresBackendTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 store.set_plan(acct.id, "not-a-plan")
 
-            # v4 snapshot carries the new columns
-            self.assertEqual(store.dump()["version"], 4)
+            # v5 snapshot carries the new columns (company/role + email/blocked)
+            self.assertEqual(store.dump()["version"], 5)
 
     def test_quota_upsert_blocks_over_the_postgres_branch(self):
         fake_module, _ = _install_fake_psycopg()

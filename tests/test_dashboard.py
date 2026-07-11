@@ -150,16 +150,20 @@ class OnboardingProfileStoreTest(unittest.TestCase):
     def test_set_plan_on_missing_account_returns_false(self):
         self.assertFalse(self.store.set_plan("nonexistent", "pro"))
 
-    def test_v4_snapshot_round_trips_company_and_role(self):
-        acct, _ = self.store.create_account("acme", company="Acme", role="Lead")
+    def test_v5_snapshot_round_trips_profile_and_admin_fields(self):
+        acct, _ = self.store.create_account("acme", company="Acme", role="Lead",
+                                            email="ops@acme.com")
+        self.store.set_blocked(acct.id, True)
         snap = self.store.dump()
-        self.assertEqual(snap["version"], 4)
+        self.assertEqual(snap["version"], 5)
         restored = AccountStore(":memory:")
         self.addCleanup(restored.close)
         restored.restore(snap)
         got = restored.list_accounts()[0]
         self.assertEqual(got.company, "Acme")
         self.assertEqual(got.role, "Lead")
+        self.assertEqual(got.email, "ops@acme.com")
+        self.assertTrue(got.blocked)
 
     def test_restore_tolerates_a_v3_snapshot_without_profile_fields(self):
         # A snapshot taken before Day 33 has no company/role keys — restore
@@ -494,6 +498,84 @@ class DashboardApiTest(unittest.TestCase):
             # a different email is never auto-promoted
             other = client.get("/app/api/me", headers=self._headers("other@example.com", sub="other-1")).json()
             self.assertFalse(other["is_admin"])
+
+    # -- full SaaS admin portal (Day 35) ------------------------------------
+    def test_admin_accounts_list_includes_email_and_price(self):
+        self.client.get("/app/api/me", headers=self._headers("who@acme.com", sub="who-1"))
+        admin = self._make_admin()
+        accounts = self.client.get("/app/api/admin/accounts", headers=admin).json()["accounts"]
+        target = next(a for a in accounts if a["email"] == "who@acme.com")
+        self.assertIn("monthly_price", target)
+        self.assertIn("blocked", target)
+        self.assertIn("user_id", target)
+        self.assertFalse(target["blocked"])
+
+    def test_admin_stats_reports_counts_and_estimated_mrr(self):
+        # one pro, one enterprise, plus the admin (free)
+        p = self.client.get("/app/api/me", headers=self._headers("pro@x.com", sub="pro-1",
+                            user_metadata={"plan": "pro"})).json()
+        self.client.get("/app/api/me", headers=self._headers("ent@x.com", sub="ent-1",
+                        user_metadata={"plan": "enterprise"}))
+        admin = self._make_admin()
+        stats = self.client.get("/app/api/admin/stats", headers=admin).json()
+        self.assertEqual(stats["total_accounts"], 3)
+        self.assertEqual(stats["by_plan"]["pro"], 1)
+        self.assertEqual(stats["by_plan"]["enterprise"], 1)
+        # MRR = pro price + enterprise price (admin is free = 0)
+        self.assertEqual(stats["estimated_mrr"],
+                         stats["plan_prices"]["pro"] + stats["plan_prices"]["enterprise"])
+
+    def test_admin_can_block_and_it_reflects_in_target_me(self):
+        me = self.client.get("/app/api/me", headers=self._headers("target@x.com", sub="tgt-1")).json()
+        self.assertFalse(me["blocked"])
+        admin = self._make_admin()
+        acct = next(a for a in self.client.get("/app/api/admin/accounts", headers=admin).json()["accounts"]
+                    if a["tenant"] == me["tenant"])
+        res = self.client.post(f"/app/api/admin/accounts/{acct['id']}/block",
+                               json={"blocked": True}, headers=admin)
+        self.assertEqual(res.status_code, 200, res.text)
+        # the target's own dashboard now shows suspended
+        after = self.client.get("/app/api/me", headers=self._headers("target@x.com", sub="tgt-1")).json()
+        self.assertTrue(after["blocked"])
+        # unblock restores it
+        self.client.post(f"/app/api/admin/accounts/{acct['id']}/block", json={"blocked": False}, headers=admin)
+        self.assertFalse(self.client.get("/app/api/me", headers=self._headers("target@x.com", sub="tgt-1")).json()["blocked"])
+
+    def test_admin_can_grant_and_revoke_admin_on_another_account(self):
+        me = self.client.get("/app/api/me", headers=self._headers("promote@x.com", sub="promote-1")).json()
+        admin = self._make_admin()
+        acct = next(a for a in self.client.get("/app/api/admin/accounts", headers=admin).json()["accounts"]
+                    if a["tenant"] == me["tenant"])
+        self.assertFalse(acct["is_admin"])
+        self.client.post(f"/app/api/admin/accounts/{acct['id']}/admin", json={"is_admin": True}, headers=admin)
+        self.assertTrue(self.client.get("/app/api/me", headers=self._headers("promote@x.com", sub="promote-1")).json()["is_admin"])
+        self.client.post(f"/app/api/admin/accounts/{acct['id']}/admin", json={"is_admin": False}, headers=admin)
+        self.assertFalse(self.client.get("/app/api/me", headers=self._headers("promote@x.com", sub="promote-1")).json()["is_admin"])
+
+    def test_admin_cannot_revoke_own_admin_or_delete_own_account(self):
+        admin = self._make_admin(email="self@x.com", sub="self-1")
+        own = next(a for a in self.client.get("/app/api/admin/accounts", headers=admin).json()["accounts"]
+                   if a["user_id"] == "self-1")
+        self.assertEqual(self.client.post(f"/app/api/admin/accounts/{own['id']}/admin",
+                                          json={"is_admin": False}, headers=admin).status_code, 400)
+        self.assertEqual(self.client.delete(f"/app/api/admin/accounts/{own['id']}", headers=admin).status_code, 400)
+
+    def test_admin_can_delete_another_account(self):
+        me = self.client.get("/app/api/me", headers=self._headers("doomed@x.com", sub="doomed-1")).json()
+        admin = self._make_admin()
+        acct = next(a for a in self.client.get("/app/api/admin/accounts", headers=admin).json()["accounts"]
+                    if a["tenant"] == me["tenant"])
+        res = self.client.delete(f"/app/api/admin/accounts/{acct['id']}", headers=admin)
+        self.assertEqual(res.status_code, 200, res.text)
+        remaining = [a["tenant"] for a in self.client.get("/app/api/admin/accounts", headers=admin).json()["accounts"]]
+        self.assertNotIn(me["tenant"], remaining)
+
+    def test_admin_routes_forbidden_for_non_admin_extended(self):
+        headers = self._headers("na2@x.com", sub="na2-1")
+        self.client.get("/app/api/me", headers=headers)
+        for path in ("/app/api/admin/stats",):
+            self.assertEqual(self.client.get(path, headers=headers).status_code, 403, path)
+        self.assertEqual(self.client.delete("/app/api/admin/accounts/whatever", headers=headers).status_code, 403)
 
 
 if __name__ == "__main__":

@@ -49,6 +49,10 @@ from .db import _Connection, is_postgres_url  # noqa: F401  (re-exported)
 
 # Daily document quota per plan (jobs accepted per UTC day).
 PLAN_LIMITS = {"free": 10, "pro": 200, "enterprise": 100_000}
+# Monthly list price per plan (USD) — powers the admin portal's *estimated*
+# MRR panel (Day 35). Placeholder economics until Stripe billing lands and
+# supplies real figures; adjust freely. Free is 0.
+PLAN_PRICES = {"free": 0, "pro": 49, "enterprise": 299}
 KEY_PREFIX = "pbicompass_sk_"
 MAX_API_KEYS_PER_ACCOUNT = 20             # soft cap so a dashboard user can't mint keys unbounded
 
@@ -67,6 +71,8 @@ class Account:
     quota_override: Optional[int] = None  # admin manual override (Day 28); None = use PLAN_LIMITS[plan]
     company: str = ""   # onboarding profile field (Day 33), shown on the Profile page
     role: str = ""       # onboarding profile field (Day 33), shown on the Profile page
+    email: str = ""      # Supabase email, persisted so the admin user list can show who's who (Day 35)
+    blocked: bool = False  # admin suspension (Day 35): a blocked account is refused at resolve_tenant
 
 
 @dataclass
@@ -140,6 +146,10 @@ class AccountStore:
             # idempotent-ALTER pattern as quota_override above.
             self._ensure_column("accounts", "company", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column("accounts", "role", "TEXT NOT NULL DEFAULT ''")
+            # Admin portal (Day 35): persisted Supabase email (for the user
+            # list) and an admin suspension flag, same idempotent-ALTER pattern.
+            self._ensure_column("accounts", "email", "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column("accounts", "blocked", "INTEGER NOT NULL DEFAULT 0")
             # Day 24: ``api_keys`` is the single source of truth for
             # ``verify()``, enabling per-key create/revoke from the account
             # dashboard. Backfill every existing account's primary key into
@@ -177,20 +187,20 @@ class AccountStore:
 
     # -- accounts -----------------------------------------------------------
     def create_account(self, tenant: str, name: str = "", plan: str = "free",
-                        company: str = "", role: str = "") -> tuple[Account, str]:
+                        company: str = "", role: str = "", email: str = "") -> tuple[Account, str]:
         """Create an account and return (account, raw_api_key). Key shown once."""
         if plan not in PLAN_LIMITS:
             raise ValueError(f"Unknown plan '{plan}'. Choose from {sorted(PLAN_LIMITS)}.")
         raw_key = KEY_PREFIX + secrets.token_urlsafe(24)
         acct = Account(id=uuid.uuid4().hex, tenant=tenant, name=name, plan=plan,
-                       created_at=time.time(), company=company, role=role)
+                       created_at=time.time(), company=company, role=role, email=email)
         key_hash = _hash_key(raw_key)
         with self._lock:
             self._conn.execute(
-                "INSERT INTO accounts (id, tenant, name, key_hash, plan, created_at, company, role) "
-                "VALUES (?,?,?,?,?,?,?,?)",
+                "INSERT INTO accounts (id, tenant, name, key_hash, plan, created_at, company, role, email) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
                 (acct.id, acct.tenant, acct.name, key_hash, acct.plan, acct.created_at,
-                 acct.company, acct.role),
+                 acct.company, acct.role, acct.email),
             )
             # The account's first key is a managed api_keys row too (labeled
             # "Default"), so it shows up in the dashboard and can be revoked
@@ -287,7 +297,9 @@ class AccountStore:
                        plan=row["plan"], created_at=row["created_at"],
                        quota_override=row["quota_override"] if "quota_override" in keys else None,
                        company=row["company"] if "company" in keys else "",
-                       role=row["role"] if "role" in keys else "")
+                       role=row["role"] if "role" in keys else "",
+                       email=row["email"] if "email" in keys else "",
+                       blocked=bool(row["blocked"]) if "blocked" in keys else False)
 
     # -- accounts for Supabase-authenticated callers (Day 28) ---------------
     def get_or_create_account_for_supabase_user(self, user_id: str, email: str,
@@ -313,11 +325,19 @@ class AccountStore:
                 (user_id,),
             ).fetchone()
         if row is not None:
-            return self._row_to_account(row)
+            acct = self._row_to_account(row)
+            # Keep the persisted email fresh (it's what the admin user list
+            # shows) without disturbing the other JIT-once fields.
+            if email and acct.email != email:
+                with self._lock:
+                    self._conn.execute("UPDATE accounts SET email = ? WHERE id = ?", (email, acct.id))
+                    self._conn.commit()
+                acct.email = email
+            return acct
         acct, _raw_key = self.create_account(
             tenant="u-" + secrets.token_hex(8), name=name or email,
             plan=plan if plan in PLAN_LIMITS else "free",
-            company=company, role=role,
+            company=company, role=role, email=email,
         )
         with self._lock:
             self._conn.execute(
@@ -364,6 +384,44 @@ class AccountStore:
             cur = self._conn.execute("DELETE FROM admin_users WHERE user_id = ?", (user_id,))
             self._conn.commit()
             return cur.rowcount > 0
+
+    def set_blocked(self, account_id: str, blocked: bool) -> bool:
+        """Admin suspension (Day 35). A blocked account is refused at
+        ``resolve_tenant`` (can't upload) though its record is kept. Returns
+        True if the account existed."""
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE accounts SET blocked = ? WHERE id = ?",
+                (1 if blocked else 0, account_id),
+            )
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    def primary_user_id(self, account_id: str) -> Optional[str]:
+        """The Supabase user id that owns an account (its earliest
+        ``account_users`` mapping) — what the admin portal grants/revokes admin
+        against. None for an API-key-only account with no Supabase user."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT user_id FROM account_users WHERE account_id = ? ORDER BY created_at LIMIT 1",
+                (account_id,),
+            ).fetchone()
+        return row["user_id"] if row else None
+
+    def total_usage_today(self) -> int:
+        """Documents generated across every tenant today — for the admin
+        dashboard's headline number."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COALESCE(SUM(count), 0) AS c FROM usage WHERE day = ?",
+                (date.today().isoformat(),),
+            ).fetchone()
+        return int(row["c"])
+
+    def total_usage_all_time(self) -> int:
+        with self._lock:
+            row = self._conn.execute("SELECT COALESCE(SUM(count), 0) AS c FROM usage").fetchone()
+        return int(row["c"])
 
     def set_quota_override(self, account_id: str, limit: Optional[int]) -> bool:
         """Admin manual override of an account's quota (``None`` clears it,
@@ -428,7 +486,7 @@ class AccountStore:
         with self._lock:
             accounts = [dict(r) for r in self._conn.execute(
                 "SELECT id, tenant, name, key_hash, plan, created_at, quota_override, "
-                "company, role FROM accounts"
+                "company, role, email, blocked FROM accounts"
             ).fetchall()]
             usage = [dict(r) for r in self._conn.execute(
                 "SELECT tenant, day, count FROM usage"
@@ -447,7 +505,7 @@ class AccountStore:
                 "SELECT user_id, granted_at FROM admin_users"
             ).fetchall()]
         return {
-            "version": 4, "accounts": accounts, "usage": usage, "api_keys": api_keys,
+            "version": 5, "accounts": accounts, "usage": usage, "api_keys": api_keys,
             "account_users": account_users, "admin_users": admin_users,
         }
 
@@ -461,14 +519,15 @@ class AccountStore:
             for a in snapshot.get("accounts", []):
                 self._conn.execute(
                     "INSERT INTO accounts (id, tenant, name, key_hash, plan, created_at, "
-                    "quota_override, company, role) "
-                    "VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
+                    "quota_override, company, role, email, blocked) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET "
                     "tenant=excluded.tenant, name=excluded.name, key_hash=excluded.key_hash, "
                     "plan=excluded.plan, created_at=excluded.created_at, "
                     "quota_override=excluded.quota_override, company=excluded.company, "
-                    "role=excluded.role",
+                    "role=excluded.role, email=excluded.email, blocked=excluded.blocked",
                     (a["id"], a["tenant"], a["name"], a["key_hash"], a["plan"], a["created_at"],
-                     a.get("quota_override"), a.get("company", ""), a.get("role", "")),
+                     a.get("quota_override"), a.get("company", ""), a.get("role", ""),
+                     a.get("email", ""), a.get("blocked", 0)),
                 )
             for u in snapshot.get("usage", []):
                 self._conn.execute(

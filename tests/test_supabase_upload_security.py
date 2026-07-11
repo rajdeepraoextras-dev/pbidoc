@@ -209,6 +209,19 @@ class SupabaseUploadTest(unittest.TestCase):
         res = self._upload(client=strict, headers=headers)
         self.assertEqual(res.status_code, 200, res.text)
 
+    def test_suspended_account_is_refused_at_upload(self):
+        # Day 35: an admin-blocked account is refused (403) at resolve_tenant,
+        # even with a valid signed-in token — it can't consume the service.
+        headers = self._headers("suspended@example.com", sub="susp-1")
+        self.assertEqual(self._upload(headers=headers).status_code, 200)  # works first
+        # find and block that account
+        acct = next(a for a in self.accounts.list_accounts()
+                    if a.email == "suspended@example.com" or a.name == "suspended@example.com")
+        self.assertTrue(self.accounts.set_blocked(acct.id, True))
+        blocked = self._upload(headers=self._headers("suspended@example.com", sub="susp-1"))
+        self.assertEqual(blocked.status_code, 403)
+        self.assertIn("suspended", blocked.json()["detail"].lower())
+
     # -- tenant isolation, extended from API keys to Supabase users ----------
     def test_another_users_jwt_cannot_see_this_users_job(self):
         a_headers = self._headers("a@example.com")

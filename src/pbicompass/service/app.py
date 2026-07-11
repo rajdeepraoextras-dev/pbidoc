@@ -28,7 +28,7 @@ from fastapi import (BackgroundTasks, FastAPI, File, Form, HTTPException, Query,
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
 
 from . import supabase_auth
-from .accounts import PLAN_LIMITS, AccountStore
+from .accounts import PLAN_LIMITS, PLAN_PRICES, AccountStore
 from .admin import AdminGuard, verify_admin_token
 from .supabase_auth import SupabaseAuthConfig
 from .jobs import JobStatus, JobStore
@@ -192,6 +192,11 @@ def create_app(
     index_html = (_STATIC / "index.html").read_text(encoding="utf-8")
     admin_html = (_STATIC / "admin.html").read_text(encoding="utf-8")
     app_html = (_STATIC / "app.html").read_text(encoding="utf-8")
+    # Legal pages required to link Paddle billing (Day 35): read-once-into-
+    # memory, same pattern as the other static pages above.
+    privacy_html = (_STATIC / "privacy.html").read_text(encoding="utf-8")
+    terms_html = (_STATIC / "terms.html").read_text(encoding="utf-8")
+    refund_html = (_STATIC / "refund.html").read_text(encoding="utf-8")
     # Shared design system (Day 33) — one stylesheet for / and /app so they
     # render as one product instead of two visually unrelated pages. Same
     # read-once-into-memory pattern as the HTML pages above.
@@ -232,6 +237,15 @@ def create_app(
         response.headers["X-Request-Id"] = rid
         return response
 
+    def _reject_if_blocked(acct) -> None:
+        """A suspended account (admin-blocked, Day 35) is refused service —
+        403, so it reads as 'not allowed' rather than a transient error. Its
+        record and sign-in still work (so it can see it's suspended); it just
+        can't consume the service."""
+        if getattr(acct, "blocked", False):
+            raise HTTPException(status_code=403,
+                                detail="This account has been suspended. Contact support.")
+
     def resolve_tenant(request: Request) -> tuple[str, str]:
         """Return ``(tenant, plan)``. Raises 401 when auth is required and
         absent. ``Authorization: Bearer <value>`` (or ``X-API-Key``) is
@@ -255,10 +269,12 @@ def create_app(
                     acct = account_store.get_or_create_account_for_supabase_user(
                         claims.sub, claims.email or "", **_onboarding_fields(claims)
                     )
+                    _reject_if_blocked(acct)
                     return acct.tenant, acct.plan
             else:
                 acct = account_store.verify(key)
                 if acct:
+                    _reject_if_blocked(acct)
                     return acct.tenant, acct.plan
             # Falls through to the require_auth/public floor below, same as
             # an unrecognized API key always has — see the module docstring.
@@ -338,6 +354,18 @@ def create_app(
     @app.get("/admin", response_class=HTMLResponse)
     def admin_page() -> str:
         return admin_html
+
+    @app.get("/privacy", response_class=HTMLResponse)
+    def privacy_page() -> str:
+        return privacy_html
+
+    @app.get("/terms", response_class=HTMLResponse)
+    def terms_page() -> str:
+        return terms_html
+
+    @app.get("/refund", response_class=HTMLResponse)
+    def refund_page() -> str:
+        return refund_html
 
     @app.get("/app", response_class=HTMLResponse)
     def app_page() -> str:
@@ -503,6 +531,7 @@ def create_app(
             "daily_limit": limit,
             "remaining": max(0, limit - used),
             "is_admin": account_store.is_admin(claims.sub),
+            "blocked": acct.blocked,
         }
 
     @app.post("/app/api/plan")
@@ -566,19 +595,94 @@ def create_app(
     # from the same UI and never types the break-glass PBICOMPASS_ADMIN_TOKEN
     # in a browser. The token-gated /admin/api/* routes stay as the
     # out-of-band operator fallback.
+    def _admin_account_dict(a) -> dict:
+        user_id = account_store.primary_user_id(a.id)
+        return {
+            "id": a.id, "tenant": a.tenant, "name": a.name, "email": a.email,
+            "company": a.company, "role": a.role, "plan": a.plan,
+            "quota_override": a.quota_override, "created_at": a.created_at,
+            "blocked": a.blocked, "monthly_price": PLAN_PRICES.get(a.plan, 0),
+            "used_today": account_store.usage_today(a.tenant),
+            "daily_limit": account_store.limit_for(a.plan, a.quota_override),
+            "user_id": user_id,
+            "is_admin": bool(user_id) and account_store.is_admin(user_id),
+        }
+
     @app.get("/app/api/admin/accounts")
     def app_admin_accounts(request: Request) -> dict:
         _require_admin_user(request)
-        out = []
-        for a in account_store.list_accounts():
-            out.append({
-                "id": a.id, "tenant": a.tenant, "name": a.name,
-                "company": a.company, "role": a.role, "plan": a.plan,
-                "quota_override": a.quota_override, "created_at": a.created_at,
-                "used_today": account_store.usage_today(a.tenant),
-                "daily_limit": account_store.limit_for(a.plan, a.quota_override),
-            })
-        return {"accounts": out}
+        return {"accounts": [_admin_account_dict(a) for a in account_store.list_accounts()]}
+
+    @app.get("/app/api/admin/stats")
+    def app_admin_stats(request: Request) -> dict:
+        """Portal overview: user/plan counts, activity, and *estimated* MRR
+        (plan list price x active, non-blocked accounts — a projection until
+        Stripe billing supplies real numbers)."""
+        _require_admin_user(request)
+        accounts = account_store.list_accounts()
+        by_plan = {p: 0 for p in PLAN_LIMITS}
+        mrr = 0
+        blocked = 0
+        for a in accounts:
+            by_plan[a.plan] = by_plan.get(a.plan, 0) + 1
+            if a.blocked:
+                blocked += 1
+            else:
+                mrr += PLAN_PRICES.get(a.plan, 0)
+        return {
+            "total_accounts": len(accounts),
+            "blocked_accounts": blocked,
+            "active_accounts": len(accounts) - blocked,
+            "by_plan": by_plan,
+            "plan_prices": PLAN_PRICES,
+            "estimated_mrr": mrr,
+            "docs_today": account_store.total_usage_today(),
+            "docs_all_time": account_store.total_usage_all_time(),
+        }
+
+    @app.post("/app/api/admin/accounts/{account_id}/block")
+    async def app_admin_block(account_id: str, request: Request) -> dict:
+        _require_admin_user(request)
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        blocked = bool(body.get("blocked", True)) if isinstance(body, dict) else True
+        if not account_store.set_blocked(account_id, blocked):
+            raise HTTPException(status_code=404, detail="Account not found.")
+        return {"account_id": account_id, "blocked": blocked}
+
+    @app.post("/app/api/admin/accounts/{account_id}/admin")
+    async def app_admin_toggle_admin(account_id: str, request: Request) -> dict:
+        """Grant/revoke admin on the account's owning Supabase user."""
+        claims, _acct = _require_admin_user(request)
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        make_admin = bool(body.get("is_admin", True)) if isinstance(body, dict) else True
+        user_id = account_store.primary_user_id(account_id)
+        if not user_id:
+            raise HTTPException(status_code=404,
+                                detail="Account has no Supabase user to grant admin to.")
+        if not make_admin and user_id == claims.sub:
+            raise HTTPException(status_code=400, detail="You can't revoke your own admin access.")
+        if make_admin:
+            account_store.grant_admin(user_id)
+        else:
+            account_store.revoke_admin(user_id)
+        return {"account_id": account_id, "is_admin": make_admin}
+
+    @app.delete("/app/api/admin/accounts/{account_id}")
+    def app_admin_delete_account(account_id: str, request: Request) -> dict:
+        claims, _acct = _require_admin_user(request)
+        # Guard against an admin deleting their own account out from under
+        # themselves mid-session.
+        if account_store.primary_user_id(account_id) == claims.sub:
+            raise HTTPException(status_code=400, detail="You can't delete your own account here.")
+        if not account_store.revoke_account(account_id):
+            raise HTTPException(status_code=404, detail="Account not found.")
+        return {"account_id": account_id, "deleted": True}
 
     @app.post("/app/api/admin/accounts/{account_id}/plan")
     async def app_admin_set_plan(account_id: str, request: Request) -> dict:
