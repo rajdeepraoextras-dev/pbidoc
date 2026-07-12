@@ -268,8 +268,8 @@ def render_markdown(doc: AuditDocument) -> str:
     if getattr(doc, "requirements_gaps", None):
         out.append("\n### Requirements gaps\n")
         out.append(f"_{pluralize('Business requirement', len(doc.requirements_gaps))} with nothing in the "
-                   "report satisfying them (Requirements Traceability Matrix — see the technical "
-                   "document's §3):_\n")
+                   "report satisfying them (Requirements Traceability Matrix — see Section 3 of the "
+                   "technical document):_\n")
         for g in doc.requirements_gaps:
             priority = f"[{g['priority']}] " if g.get("priority") else ""
             out.append(f"- {priority}{g['text']}")
@@ -454,7 +454,7 @@ def render_html(
         o.append('<h3>Requirements gaps</h3>')
         o.append(f'<p class="muted">{_e(pluralize("Business requirement", len(doc.requirements_gaps)))} '
                  'with nothing in the report satisfying them '
-                 '(Requirements Traceability Matrix — see the technical document\'s §3):</p>')
+                 '(Requirements Traceability Matrix — see Section 3 of the technical document):</p>')
         o.append('<ul>')
         for g in doc.requirements_gaps:
             priority = f'<span class="pill high">{_e(g["priority"])}</span> ' if g.get("priority") else ""
@@ -625,8 +625,8 @@ def render_docx(doc: AuditDocument, out_path) -> Path:
     if getattr(doc, "requirements_gaps", None):
         d.heading(2, "Requirements gaps")
         d.para([d._run(f"{pluralize('Business requirement', len(doc.requirements_gaps))} with nothing in "
-                       "the report satisfying them (Requirements Traceability Matrix — see the technical "
-                       "document's §3):", italic=True)])
+                       "the report satisfying them (Requirements Traceability Matrix — see Section 3 of "
+                       "the technical document):", italic=True)])
         for g in doc.requirements_gaps:
             prefix = f"[{g['priority']}] " if g.get("priority") else ""
             d.bullet(f"{prefix}{g['text']}")

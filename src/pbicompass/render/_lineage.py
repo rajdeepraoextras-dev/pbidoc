@@ -54,8 +54,8 @@ _LAYER_PLURAL = ["SOURCES", "TABLES", "MEASURES", "PAGES"]
 # The chip-gradient category name each layer borrows (see _diagram_theme:
 # the four accent hues are shared between wireframe categories and layers).
 _LAYER_CHIP_CAT = ["decorative", "data", "slicer", "nav"]
-# Section each layer's "+N more" overflow card links to.
-_LAYER_SECTION = [("sec5", "§5"), ("sec6", "§6"), ("sec7", "§7"), ("sec8", "§8")]
+# Section anchor each layer's "+N more" overflow card links to.
+_LAYER_SECTION_ID = ["sec5", "sec6", "sec7", "sec8"]
 
 _LEGEND = legend([("source", "Source"), ("table", "Table"),
                   ("measure", "Measure"), ("page", "Page")])
@@ -284,8 +284,8 @@ def build_lineage_data(model: SemanticModel) -> tuple[list[dict[str, str]], str]
     def _node_meta(name: str, ci: int) -> tuple[str, str, str, str]:
         """-> (title, sublabel, href, tooltip)"""
         if name.startswith("+"):
-            sec_id, sec_label = _LAYER_SECTION[ci]
-            return name, f"view all in {sec_label}", f"#{sec_id}", name
+            sec_id = _LAYER_SECTION_ID[ci]
+            return name, f"view all in {_LAYER_PLURAL[ci].title()}", f"#{sec_id}", name
         if ci == 0:
             title, sub = _source_title_sub(name)
             return title, sub, f"#source-{anchor_slug(name)}", name

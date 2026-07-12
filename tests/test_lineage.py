@@ -159,10 +159,10 @@ class OverflowNodeTest(unittest.TestCase):
         )
         edges, svg = build_lineage_data(model)
         self.assertIn("more tables", svg)
-        # ghost treatment + a link to §6 (Data Model), not a bogus object row
+        # ghost treatment + a link to the Data Model section, not a bogus object row
         self.assertIn('stroke-dasharray="4 3"', svg)
         self.assertIn('href="#sec6"', svg)
-        self.assertIn("view all in §6", svg)
+        self.assertIn("view all in Tables", svg)
 
 
 class EmptyModelTest(unittest.TestCase):
