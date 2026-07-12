@@ -146,11 +146,10 @@
 .progress-fill.done { background: #fff; }
 .progress-text { margin-top: 9px; text-align: center; font-size: .68rem; letter-spacing: .05em; color: hsl(0 0% 100% / .72); }
 
-#job-warnings, #job-notes { margin-top: 12px; padding: 13px 16px; border-radius: 16px; display: none; font-size: .8rem; line-height: 1.55; text-align: left; background: hsl(0 0% 100% / .05); }
+#job-warnings { margin-top: 12px; padding: 13px 16px; border-radius: 16px; display: none; font-size: .8rem; line-height: 1.55; text-align: left; background: hsl(0 0% 100% / .05); }
 #job-warnings { color: var(--status-warn); }
-#job-notes { color: hsl(0 0% 100% / .9); }
-#job-warnings.show, #job-notes.show { display: block; }
-#job-warnings ul, #job-notes ul { margin: 6px 0 0 18px; }
+#job-warnings.show { display: block; }
+#job-warnings ul { margin: 6px 0 0 18px; }
 
 #downloads { display: flex; flex-direction: column; margin-top: 6px; }
 .dl-group { margin-top: 16px; }
@@ -449,7 +448,6 @@
 
         <div id="status" class="status-line" role="status" aria-live="polite"></div>
         <div id="job-warnings"></div>
-        <div id="job-notes"></div>
         <div id="progress-wrap" style="display:none">
           <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
           <div id="progress-text" class="progress-text"></div>
@@ -1082,19 +1080,20 @@ function setStatus(msg, cls) { const s = $("status"); s.textContent = msg; s.cla
 const FALLBACK_MARKERS = ["LLM call failed", "AI narrative unavailable", "malformed response", "provider unavailable"];
 function isFallbackWarning(w) { return FALLBACK_MARKERS.some(m => w.includes(m)); }
 function renderWarnings(warnings) {
-  const fb = $("job-warnings"), nb = $("job-notes");
+  const fb = $("job-warnings");
   if (!Array.isArray(warnings) || !warnings.length) {
-    fb.classList.remove("show"); fb.innerHTML = ""; nb.classList.remove("show"); nb.innerHTML = ""; return;
+    fb.classList.remove("show"); fb.innerHTML = ""; return;
   }
-  const fallback = warnings.filter(isFallbackWarning), notes = warnings.filter(w => !isFallbackWarning(w));
+  // Only the fallback/degradation warnings are user-facing — internal QA-pass
+  // notes (grounding/consistency corrections) are useful for us, not for a
+  // customer reading "the AI needed correcting" out of context, so those are
+  // dropped here rather than shown (they're still in job.warnings for anyone
+  // inspecting the API response directly).
+  const fallback = warnings.filter(isFallbackWarning);
   if (fallback.length) {
     fb.innerHTML = `<strong>Some sections used the offline engine instead of the selected AI engine:</strong><ul>${fallback.map(w => `<li>${escHtml(w)}</li>`).join("")}</ul>`;
     fb.classList.add("show");
   } else { fb.classList.remove("show"); fb.innerHTML = ""; }
-  if (notes.length) {
-    nb.innerHTML = `<strong>Notes from this run (the AI engine ran normally):</strong><ul>${notes.map(w => `<li>${escHtml(w)}</li>`).join("")}</ul>`;
-    nb.classList.add("show");
-  } else { nb.classList.remove("show"); nb.innerHTML = ""; }
 }
 function setBusy(busy) {
   $("gen-submit").disabled = busy;
@@ -1160,9 +1159,7 @@ async function poll(jobId) {
     if (job.status === "done") {
       const warnings = Array.isArray(job.warnings) ? job.warnings : [];
       const hasFallback = warnings.some(isFallbackWarning);
-      const hasNotes = warnings.some(w => !isFallbackWarning(w));
       setStatus(hasFallback ? "Documentation compiled — with fallback notes below."
-        : hasNotes ? "Documentation compiled — with review notes below."
         : "Documentation compiled successfully!", hasFallback ? "warn" : "ok");
       renderWarnings(job.warnings);
       finishProgress(true);
