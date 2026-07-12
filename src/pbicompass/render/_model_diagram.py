@@ -176,9 +176,24 @@ def _grandalf_layout(
 
 # -- Rendering ------------------------------------------------------------------
 
+def _rect_exit(cx: float, cy: float, dx: float, dy: float) -> tuple[float, float]:
+    """Point where a ray from a card's center (cx, cy) heading (dx, dy)
+    crosses the card's border — so lines and glyphs start at the edge of
+    the card instead of underneath it."""
+    tx = (_BOX_W / 2) / abs(dx) if dx else math.inf
+    ty = (_BOX_H / 2) / abs(dy) if dy else math.inf
+    t = min(tx, ty)
+    return cx + dx * t, cy + dy * t
+
+
 def _edge_endpoints(p1: tuple[float, float], p2: tuple[float, float]) -> tuple[float, float, float, float]:
-    x1, y1 = p1[0] + _BOX_W / 2, p1[1] + _BOX_H / 2
-    x2, y2 = p2[0] + _BOX_W / 2, p2[1] + _BOX_H / 2
+    c1x, c1y = p1[0] + _BOX_W / 2, p1[1] + _BOX_H / 2
+    c2x, c2y = p2[0] + _BOX_W / 2, p2[1] + _BOX_H / 2
+    dx, dy = c2x - c1x, c2y - c1y
+    if not dx and not dy:
+        return c1x, c1y, c2x, c2y
+    x1, y1 = _rect_exit(c1x, c1y, dx, dy)
+    x2, y2 = _rect_exit(c2x, c2y, -dx, -dy)
     return x1, y1, x2, y2
 
 
@@ -248,9 +263,19 @@ def render_model_diagram_svg(tables: list[dict[str, Any]], edges: list[dict[str,
             svg.append(f'<title>{html_e(join)}</title>')
         svg.append(f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" '
                    f'stroke="{stroke}" stroke-width="1.4"{dash}/>')
-        frac_a, frac_b = 0.16, 0.84
-        ax, ay = x1 + (x2 - x1) * frac_a, y1 + (y2 - y1) * frac_a
-        bx, by = x1 + (x2 - x1) * frac_b, y1 + (y2 - y1) * frac_b
+        # Glyphs sit a fixed distance outside each card edge (the line is
+        # already clipped to card borders), so they never land on a card no
+        # matter how short the center-to-center distance is. On very short
+        # visible segments fall back to fractions of what's visible.
+        seg = math.hypot(x2 - x1, y2 - y1)
+        off = 16.0
+        if seg > 3 * off:
+            ux, uy = (x2 - x1) / seg, (y2 - y1) / seg
+            ax, ay = x1 + ux * off, y1 + uy * off
+            bx, by = x2 - ux * off, y2 - uy * off
+        else:
+            ax, ay = x1 + (x2 - x1) * 0.25, y1 + (y2 - y1) * 0.25
+            bx, by = x1 + (x2 - x1) * 0.75, y1 + (y2 - y1) * 0.75
         from_sym = "1" if e.get("from_card") == "one" else "*"
         to_sym = "1" if e.get("to_card") == "one" else "*"
         svg.append(_cardinality_glyph(ax, ay, from_sym))
