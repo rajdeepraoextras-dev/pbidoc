@@ -382,6 +382,95 @@ class ApplyLlmPassGroundingTest(unittest.TestCase):
         self.assertTrue(any("Requirements Traceability" in w for w in warnings))
 
 
+class SelfNamedDowngradeProtectionTest(unittest.TestCase):
+    """RF-11 (2026-07 production regression): the LLM verdict pass
+    silently overwrote target.status with no floor check, so an AI
+    judgment of "Gap" could erase a self-named canonical-dimension match
+    (Department[Department] for "monitor spend by department") even
+    though _deterministic_verdict's own tiering rule says that evidence
+    can never fall below "Partial". Real Corporate Spend fixture, real
+    requirement text — not a synthetic model — since the defect is about
+    whether the self-named signal build_candidates actually computes here
+    reaches the AI-merge loop's protection check."""
+
+    def test_ai_gap_verdict_is_rejected_when_deterministic_found_a_self_named_column(self):
+        model = _cs_model()
+        # Confirm the fixture actually has the regression's shape before
+        # asserting the fix: a self-named Department[Department] column
+        # must be the deterministic match for this requirement, or this
+        # test would pass vacuously.
+        candidates = build_candidates(model)
+        matched = match_candidates("Monitor total corporate spend by department", candidates)
+        self.assertTrue(any(c.get("self_named") for c in matched),
+                         "fixture must still contain a self-named dimension match for this requirement")
+
+        client = FakeTraceabilityClient([
+            {"requirement": "Monitor total corporate spend by department", "status": "Gap",
+             "evidence": [], "rationale": "Fabricated AI downgrade."},
+        ])
+        matrix = build_requirements_matrix(
+            model, "[Must] Monitor total corporate spend by department", client,
+        )
+        self.assertEqual(len(matrix), 1)
+        self.assertNotEqual(matrix[0].status, "Gap",
+                             "RF-11 regression: AI verdict erased a self-named dimension match into a false Gap")
+        self.assertTrue(matrix[0].evidence, "deterministic evidence must survive the rejected AI downgrade")
+
+    def test_ai_may_still_upgrade_a_self_named_match_to_covered(self):
+        # The protection is one-directional — it must not also block a
+        # legitimate AI *improvement* of the same requirement.
+        model = _cs_model()
+        candidates = build_candidates(model)
+        matched = match_candidates("Monitor total corporate spend by department", candidates)
+        dept_anchor = next(c["anchor"] for c in matched if c.get("self_named"))
+        measure_anchor = next(c["anchor"] for c in candidates if c["kind"] == "measure")
+
+        client = FakeTraceabilityClient([
+            {"requirement": "Monitor total corporate spend by department", "status": "Covered",
+             "evidence": [dept_anchor, measure_anchor], "rationale": "Paired with a real measure."},
+        ])
+        matrix = build_requirements_matrix(
+            model, "[Must] Monitor total corporate spend by department", client,
+        )
+        self.assertEqual(matrix[0].status, "Covered")
+
+    def test_ai_gap_verdict_is_accepted_when_no_self_named_match_exists(self):
+        # The protection is scoped to the self-named signal specifically —
+        # an AI Gap verdict for a requirement whose deterministic match was
+        # only ever weak/generic evidence must still be allowed through.
+        model = _cs_model()
+        client = FakeTraceabilityClient([
+            {"requirement": "Identify top vendors by expenditure", "status": "Gap",
+             "evidence": [], "rationale": "No vendor dimension exists."},
+        ])
+        matrix = build_requirements_matrix(
+            model, "[Must] Identify top vendors by expenditure", client,
+        )
+        self.assertEqual(matrix[0].status, "Gap")
+
+
+class DeterministicPartialEvidencePrefersColumnsTest(unittest.TestCase):
+    """A specific dimension column is stronger, more legible evidence than
+    a generic page name that only ranks #1 by raw keyword-overlap count —
+    _deterministic_verdict's Partial tier must surface the column."""
+
+    def test_column_beats_higher_scoring_page_as_partial_evidence(self):
+        matched = [
+            {"kind": "page", "name": "Some Page", "anchor": "page-some-page", "score": 5},
+            {"kind": "column", "name": "Cost Element[Cost element name]",
+             "anchor": "column-cost-element-name", "score": 2},
+        ]
+        status, evidence = _deterministic_verdict(matched)
+        self.assertEqual(status, "Partial")
+        self.assertEqual(evidence[0]["kind"], "column")
+
+    def test_falls_back_to_top_match_when_no_column_present(self):
+        matched = [{"kind": "page", "name": "Some Page", "anchor": "page-some-page", "score": 3}]
+        status, evidence = _deterministic_verdict(matched)
+        self.assertEqual(status, "Partial")
+        self.assertEqual(evidence[0]["kind"], "page")
+
+
 class TechnicalGeneratorWiringTest(unittest.TestCase):
     """Day 4 "done when": the 5-requirement fixture, run through the real
     ``generate_document`` pipeline, renders a matrix with exactly one gap

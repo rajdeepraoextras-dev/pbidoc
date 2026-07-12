@@ -112,6 +112,12 @@ body {
   line-height: 1.6;
   display: flex;
   min-height: 100vh;
+  /* D3 (mobile 390px, no horizontal page scroll): narrative prose can
+     legitimately embed a long unbreakable token — a hardcoded file path,
+     a URL — inherited onto every descendant so a single sentence with a
+     literal Dropbox path can't force the whole page wider than the
+     viewport the way normal word-wrapping text never would. */
+  overflow-wrap: break-word;
 }
 
 .visually-hidden {
@@ -403,12 +409,20 @@ li {
   box-shadow: 0 1px 3px rgba(0,0,0,0.02);
 }
 
-/* Tables */
+/* Tables — wrapped in .table-scroll at runtime (see _SCRIPT) so a wide
+   table (long file paths, unbroken DAX in a cell) scrolls within its own
+   box instead of forcing the whole page wider than the viewport. Table
+   layout is auto (browser sizes columns to content), so the table itself
+   can't self-limit to its 100% width without this outer scroll boundary. */
+.table-scroll {
+  overflow-x: auto;
+  margin: 16px 0 24px;
+}
 table {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
-  margin: 16px 0 24px;
+  margin: 0;
   border: 1px solid var(--border-color);
   border-radius: 8px;
   overflow: hidden;
@@ -1128,7 +1142,7 @@ details.collapsible > .code-block pre {
   h2:first-of-type {
     page-break-before: avoid;
   }
-  pre, table, .measure, .diagram, .card-section {
+  pre, table, .table-scroll, .measure, .diagram, .card-section {
     page-break-inside: avoid;
   }
   /* No-JS fallback: force every collapsed <details> open for print, even
@@ -1294,6 +1308,19 @@ delete window.__spz_require;
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
+  // D3 (mobile 390px): tables use the browser's automatic column-sizing
+  // algorithm, so a wide cell (a long file path, an unwrapped DAX
+  // expression) can force a table past its 100% width instead of
+  // shrinking to fit — wrapping every table in its own horizontal-scroll
+  // box keeps that overflow local instead of widening the whole page.
+  document.querySelectorAll('table').forEach((table) => {
+    if (table.parentElement && table.parentElement.classList.contains('table-scroll')) return;
+    const wrapper = document.createElement('div');
+    wrapper.className = 'table-scroll';
+    table.parentNode.insertBefore(wrapper, table);
+    wrapper.appendChild(table);
+  });
+
   const links = document.querySelectorAll('.toc-link');
   const sections = document.querySelectorAll('h2[id]');
 
@@ -1496,13 +1523,40 @@ document.addEventListener('DOMContentLoaded', () => {
   const panZoomInstances = [];
   document.querySelectorAll('.diagram svg').forEach((svg) => {
     if (typeof svgPanZoom !== 'function') return; // vendor script failed to parse — degrade to static, never throw
+    // svg-pan-zoom drives pan/zoom via an explicit pixel width/height that
+    // it reads once at init and then bakes in (it discards the original
+    // viewBox-driven auto-sizing entirely). Without an explicit height set
+    // *before* init, the SVG's pre-init intrinsic height is the UA's
+    // replaced-element default (150px, since width="100%" leaves no
+    // intrinsic ratio for the browser to size height from) — and pan-zoom
+    // permanently fits/centers the diagram into that sliver. Compute the
+    // real height from the diagram's own viewBox aspect ratio and its
+    // current rendered width before handing control to svg-pan-zoom, and
+    // keep recomputing it on resize/print so every viewport gets a
+    // correctly proportioned diagram, not just the one active at load.
+    const vb = svg.viewBox && svg.viewBox.baseVal;
+    function sizeToAspect() {
+      if (!vb || !vb.width || !vb.height) return;
+      // Measure against the container's current width, not the SVG's own
+      // — once this has run once, the SVG carries a fixed pixel `width`
+      // attribute (set below), so getBoundingClientRect() on the svg
+      // itself would just echo that stale value back on every later call
+      // (resize, print) instead of reflecting the container's new size.
+      svg.style.width = '100%';
+      const w = svg.getBoundingClientRect().width || vb.width;
+      svg.style.width = '';
+      if (!w) return;
+      svg.setAttribute('width', w);
+      svg.setAttribute('height', w * (vb.height / vb.width));
+    }
+    sizeToAspect();
     let isDown = false, moved = false;
     const instance = svgPanZoom(svg, {
       zoomEnabled: true, panEnabled: true, controlIconsEnabled: true,
       fit: true, center: true, zoomScaleSensitivity: 0.3, minZoom: 0.5, maxZoom: 8,
       beforePan: () => { if (isDown) moved = true; },
     });
-    panZoomInstances.push(instance);
+    panZoomInstances.push({ instance, sizeToAspect });
     svg.addEventListener('mousedown', () => { isDown = true; });
     svg.addEventListener('touchstart', () => { isDown = true; });
     svg.addEventListener('click', (e) => {
@@ -1566,12 +1620,33 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Print/PDF fallback: whatever pan/zoom state a reader left a diagram
-  // in on screen must never clip the printed page — reset every instance
-  // to its fitted, centered default right before printing (Ctrl+P or
+  // in on screen must never clip the printed page — recompute each
+  // diagram's height for the print layout's width, then reset to its
+  // fitted, centered default right before printing (Ctrl+P or
   // window.print()), then restore the reader's on-screen view afterward.
   if (panZoomInstances.length) {
     window.addEventListener('beforeprint', () => {
-      panZoomInstances.forEach((inst) => inst.reset());
+      panZoomInstances.forEach(({ instance, sizeToAspect }) => {
+        sizeToAspect();
+        instance.resize();
+        instance.fit();
+        instance.center();
+      });
+    });
+
+    // Keep every diagram's aspect ratio correct across viewport changes
+    // (orientation flip, window resize) instead of only at initial load.
+    let resizeTimer = null;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        panZoomInstances.forEach(({ instance, sizeToAspect }) => {
+          sizeToAspect();
+          instance.resize();
+          instance.fit();
+          instance.center();
+        });
+      }, 150);
     });
   }
 });

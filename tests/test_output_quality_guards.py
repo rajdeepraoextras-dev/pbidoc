@@ -171,6 +171,20 @@ class OutputQualityGuardsTest(unittest.TestCase):
         for name, text in self.rendered.items():
             self.assertGreater(len(text), 500, f"{name} rendered suspiciously small ({len(text)} chars)")
 
+    # ---- V2 fix must not over-exclude a real, disconnected measure-home
+    # table: SampleSales' "Key Measures" (1 calculated column, no
+    # relationships) is exactly the shape field_parameter_table_names'
+    # broader "<=3 columns" heuristic also matches — the model diagram's
+    # V2 exclusion must use the stricter name-only signal instead, or a
+    # genuine table silently disappears from the diagram a reader relies
+    # on to see the model's real shape.
+
+    def test_key_measures_table_still_renders_in_model_diagram(self):
+        text = self.rendered["technical.html"]
+        m = re.search(r'aria-labelledby="model-diagram-title".*?</svg>', text, re.S)
+        self.assertIsNotNone(m, "fixture must still produce a model diagram")
+        self.assertIn("Key Measures", m.group(0))
+
 
 # ============================================================================
 # Day 7: the same holistic discipline, plus P0-P2/I1-I6 closure, against the
@@ -351,12 +365,56 @@ class CorporateSpendOutputQualityGuardsTest(unittest.TestCase):
     # ---- I3: every intra-document #anchor href resolves to a real id ------
 
     def test_i3_every_intra_document_href_resolves(self):
-        for name in ("technical.html", "user_guide.html"):
+        for name in ("technical.html", "user_guide.html", "executive.html"):
             text = self.rendered[name]
             ids = set(_ID_RE.findall(text))
             hrefs = set(_HREF_ANCHOR_RE.findall(text))
             dead = {h for h in hrefs if h not in ids}
             self.assertEqual(dead, set(), f"I3 regression: dead intra-document anchor link(s) in {name}: {dead}")
+
+    # ---- I4: executive "Report at a glance" thumbnails reuse the full-size
+    # wireframe SVG verbatim, internal <a href="#visual-..."> / "#page-..."
+    # links and all — those anchors only exist in the technical doc/user
+    # guide, never in the executive doc itself. In the real multi-doc bundle
+    # (sibling_hrefs set) each thumbnail is *also* wrapped in its own outer
+    # deep-link <a>, so the unstripped SVG produced invalid nested <a> tags
+    # on top of the dead links (I3/G6: this fixture alone put >39% of the
+    # executive doc's anchors dead — the real regression this guards).
+
+    def test_i4_executive_thumbnails_have_no_dead_or_nested_links_in_bundle(self):
+        from pbicompass.render import render_executive_html as _render_exec_html
+
+        sibling_hrefs = {"technical": "technical.html", "user_guide": "user_guide.html", "audit": "audit.html"}
+        text = _render_exec_html(self.executive_doc, sibling_hrefs=sibling_hrefs)
+        self.assertIn("thumb-card", text, "fixture should produce at least one page thumbnail")
+
+        ids = set(_ID_RE.findall(text))
+        hrefs = set(_HREF_ANCHOR_RE.findall(text))
+        dead = {h for h in hrefs if h not in ids}
+        self.assertEqual(dead, set(), f"I4 regression: dead intra-document anchor link(s) in executive.html: {dead}")
+
+        self.assertIsNone(
+            re.search(r'<a\b[^>]*>[^<]*<a\b', text),
+            "I4 regression: nested <a> inside <a> in executive.html (invalid HTML)",
+        )
+
+    # ---- V2: model diagram never draws Auto Date/Time internals or
+    # disconnected field-parameter tables as nodes — this fixture's own
+    # 'Range' table and its two real Auto Date/Time hidden tables
+    # (DateTableTemplate_.../LocalDateTable_...) were rendering as full
+    # visible diagram nodes (and listed in the diagram's own accessible
+    # <title>), misrepresenting the model's actual star/galaxy shape.
+
+    def test_v2_auto_datetime_and_parameter_tables_never_drawn_in_model_diagram(self):
+        text = self.rendered["technical.html"]
+        m = re.search(r'aria-labelledby="model-diagram-title".*?</svg>', text, re.S)
+        self.assertIsNotNone(m, "fixture must still produce a model diagram")
+        svg = m.group(0)
+        for excluded in ("DateTableTemplate", "LocalDateTable", ">Range<", "Range&#x27;", "'Range'"):
+            self.assertNotIn(excluded, svg, f"V2 regression: {excluded!r} drawn in the model diagram")
+        # Belt-and-braces: none of these tables' own anchors exist as
+        # clickable data-table nodes either.
+        self.assertNotIn('data-table="Range"', svg)
 
     # ---- Rules that must fire on this real fixture (proving they still do)
 

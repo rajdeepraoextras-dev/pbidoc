@@ -302,8 +302,16 @@ class PanZoomVendorTest(unittest.TestCase):
         self.assertLess(vendor_pos, init_pos)
 
     def test_beforeprint_resets_every_instance(self):
+        # G5 fix: print can render at a different width than the screen
+        # (e.g. a narrower print column), so beforeprint must recompute
+        # each diagram's height from its own viewBox aspect ratio (not
+        # just call .reset(), which would re-fit against a stale cached
+        # size) before resetting pan/zoom to the fitted, centered default.
         self.assertIn("window.addEventListener('beforeprint'", self.html)
-        self.assertIn("panZoomInstances.forEach((inst) => inst.reset());", self.html)
+        self.assertIn("panZoomInstances.forEach(({ instance, sizeToAspect }) => {", self.html)
+        self.assertIn("instance.resize();", self.html)
+        self.assertIn("instance.fit();", self.html)
+        self.assertIn("instance.center();", self.html)
 
     def test_click_suppression_is_gated_on_a_real_mousedown(self):
         # P0-class regression (Day 6): beforePan also fires for the

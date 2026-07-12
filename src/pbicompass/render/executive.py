@@ -10,6 +10,7 @@ pages. Reuses the same low-level primitives as the other renderers
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from ..schemas.executive_document import ExecutiveDocument, ExecutiveRisk
@@ -177,6 +178,9 @@ def _health_mini_html(h) -> str:
     )
 
 
+_SVG_LINK_RE = re.compile(r'<a\s+href="[^"]*"[^>]*>|</a>')
+
+
 def _thumbnails_html(doc: ExecutiveDocument, sibling_hrefs: dict[str, str] | None) -> str:
     """"Report at a glance" (Day 5): a small grid of wireframe thumbnails,
     one per visible page (capped, "+N more" beyond that). Screen-only
@@ -191,7 +195,16 @@ def _thumbnails_html(doc: ExecutiveDocument, sibling_hrefs: dict[str, str] | Non
     cards = []
     for t in doc.page_thumbnails:
         caption = _truncate(t.name, 28)
-        inner = f'{t.svg}<span class="thumb-caption" title="{_e(t.name)}">{_e(caption)}</span>'
+        # ``t.svg`` is the exact same wireframe the technical doc/user guide
+        # build full-size, complete with its own internal per-visual and
+        # page-tab <a href="#..."> links to anchors that only exist in
+        # *those* documents. Reused verbatim here it would both nest <a>
+        # inside the card's own deep-link <a> (invalid HTML) and leave
+        # >30% of hrefs dead within this document (I3/G6) — strip the
+        # thumbnail's own interactivity since the whole card is already
+        # one link to the sibling doc's full, truly-interactive version.
+        svg = _SVG_LINK_RE.sub("", t.svg)
+        inner = f'{svg}<span class="thumb-caption" title="{_e(t.name)}">{_e(caption)}</span>'
         if target_href:
             cards.append(f'<div class="thumb-card"><a href="{_e(target_href)}#{_e(t.anchor)}">{inner}</a></div>')
         else:

@@ -53,7 +53,14 @@ _META_REFERENCE = re.compile(
     # confirmation.\" when no such structural fact is available either.")
     # — an orphan fragment of this leaking means the model echoed its own
     # instructions instead of producing content.
-    r"|structural fact is available either|only write exactly\b",
+    r"|structural fact is available either|only write exactly\b"
+    # A self-verification instruction ("Check the model to ensure that
+    # all the described functionalities ... are supported by actual
+    # measures, tables, or data sources.") the model has echoed verbatim
+    # — spliced mid-sentence into the executive summary's core_purpose in
+    # production — instead of silently following it the way a grounding
+    # instruction is meant to be followed.
+    r"|are supported by actual measures, tables, or data sources",
     re.IGNORECASE,
 )
 
@@ -140,10 +147,27 @@ _SENTENCE_RE = re.compile(r"[^.!?]*[.!?]+(?:\s+|$)")
 
 
 def _split_sentences(text: str) -> list[str]:
-    sentences = _SENTENCE_RE.findall(text)
-    consumed = "".join(sentences)
-    if len(consumed) < len(text):
-        sentences.append(text[len(consumed):])
+    # A terminator immediately followed by a non-whitespace character (the
+    # ".," splice artifact this codebase already treats as a known leak
+    # shape, e.g. "...data sources., analyzing...") can't satisfy this
+    # pattern's trailing (?:\s+|$), so the regex scanner silently skips
+    # forward character-by-character until its *next* successful match —
+    # which, with plain findall/consumed-length bookkeeping, would both
+    # drop the skipped span entirely and (since ``consumed`` no longer
+    # tracks a real offset into ``text``) slice a bogus, misaligned
+    # "remainder" off the end. finditer + explicit gap-tracking keeps any
+    # skipped span glued to the match that follows it instead, so no text
+    # is ever silently lost or misattributed.
+    sentences = []
+    pos = 0
+    for m in _SENTENCE_RE.finditer(text):
+        if m.start() > pos:
+            sentences.append(text[pos:m.start()] + m.group())
+        else:
+            sentences.append(m.group())
+        pos = m.end()
+    if pos < len(text):
+        sentences.append(text[pos:])
     return [s for s in sentences if s]
 
 
@@ -176,12 +200,48 @@ def strip_punt_leak(text: Optional[str], fallback: str) -> str:
     return cleaned
 
 
+def strip_meta_commentary_leak(text: Optional[str], fallback: str) -> str:
+    """Remove a leaked internal editing directive / system-prompt
+    guardrail fragment (D2) from narrative prose, sentence by sentence —
+    the same shape-preserving removal :func:`strip_punt_leak` uses for the
+    punt phrase, so a leak embedded inside an otherwise-good multi-
+    sentence field (e.g. the executive summary's ``core_purpose``, seen in
+    production spliced between two legitimate sentences: "...CFOs, and
+    Check the model to ensure that all the described functionalities ...
+    are supported by actual measures, tables, or data sources., analyzing
+    vendor performance...") loses only the contaminated sentence, not the
+    whole field. Falls back wholesale if nothing content-bearing
+    survives.
+
+    Matched on :data:`_META_REFERENCE` only, *not* the full
+    :func:`is_meta_commentary` (which also flags a sentence merely
+    *starting* with an imperative verb via ``_STARTS_WITH_DIRECTIVE``).
+    That start-anchored check is safe for its other callers, which test a
+    whole short field end-to-end (a corrupted glossary definition that
+    *is*, in full, an editing directive) — but a longer narrative field
+    legitimately contains real, deterministic recommendation sentences
+    that also open with "Remove"/"Verify"/"Consider" (e.g. an audit
+    root-cause paragraph's "Remove unused assets, or confirm they are
+    needed..."), and checking each split sentence in isolation would
+    misidentify every one of those as a leak."""
+    if not text:
+        return fallback
+    sentences = _split_sentences(text)
+    if not any(_META_REFERENCE.search(s) for s in sentences):
+        return text
+    kept = [s for s in sentences if not _META_REFERENCE.search(s)]
+    cleaned = "".join(kept).strip()
+    if _content_word_count(cleaned) < 4:
+        return fallback
+    return cleaned
+
+
 def sanitize_narratives(
     triples: list[tuple[str, str, "Callable[[str], None]"]],
     fallbacks: Optional[dict[str, str]] = None,
 ) -> None:
     """The one gate every narrative field from every document generator
-    passes through (P0) — call this last, after critic + grounding +
+    passes through (P0/D2) — call this last, after critic + grounding +
     consistency have all already run, over triples re-collected fresh so
     it sees their final text.
 
@@ -193,7 +253,12 @@ def sanitize_narratives(
     invites. Every generator must call this unconditionally (not gated on
     ``client`` — a field's *initial* draft, before critic/grounding ever
     ran, can itself carry the leak) as its last step before returning a
-    document.
+    document. :func:`strip_meta_commentary_leak` closes the same gap for
+    the broader D2 meta-commentary class (:func:`is_meta_commentary` was
+    previously only checked at critic-replacement merge points via
+    ``critic.apply_results`` — a field's *initial* AI draft, like
+    ``core_purpose`` here, skipped that gate entirely and shipped a raw
+    leak to a reader).
 
     ``fallbacks``, keyed by location, lets a caller supply a real
     deterministic replacement for a field it already computed one for
@@ -206,9 +271,19 @@ def sanitize_narratives(
     doesn't fire."""
     fallbacks = fallbacks or {}
     for location, text, setter in triples:
-        if not text or not _PUNT_PHRASE_RE.search(text):
+        if not text:
             continue
-        cleaned = strip_punt_leak(text, fallbacks.get(location, text))
+        cleaned = text
+        if _PUNT_PHRASE_RE.search(cleaned):
+            cleaned = strip_punt_leak(cleaned, fallbacks.get(location, cleaned))
+        # Unconditional, not gated on is_meta_commentary(cleaned): that
+        # check is anchored to the *start* of whatever string it's given,
+        # so a directive-sentence sitting mid-paragraph (as here) would
+        # never trip a whole-field check — strip_meta_commentary_leak does
+        # its own correct per-sentence check internally and no-ops when
+        # nothing matches, so gating the call here would only reintroduce
+        # the same false-negative it exists to fix.
+        cleaned = strip_meta_commentary_leak(cleaned, fallbacks.get(location, cleaned))
         if cleaned != text:
             setter(cleaned)
 

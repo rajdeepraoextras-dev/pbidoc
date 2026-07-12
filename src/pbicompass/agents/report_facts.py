@@ -81,6 +81,27 @@ def field_parameter_table_names(model: SemanticModel) -> set[str]:
     return names
 
 
+def named_field_parameter_table_names(model: SemanticModel) -> set[str]:
+    """The strict subset of :func:`field_parameter_table_names`: a
+    disconnected table whose *name itself* is a telltale field-parameter
+    pattern ('select', 'select1', 'Range', 'Field Parameter', ...) — not
+    the broader "<=3 columns" fallback, which also matches a legitimate,
+    real part of the model (a single-column, no-relationship "Key
+    Measures"/measure-home table is exactly that shape too). Also not
+    gated on ``is_calculated`` (unlike the broader function): a real field
+    parameter can be a plain M-query/web-sourced table rather than a DAX
+    calculated one — a disconnected table literally named "Range" is a
+    parameter table regardless of how it was built. Used where
+    misclassifying a real table would be visibly wrong to a reader (V2:
+    the model diagram must never draw a field-parameter node, but must
+    still draw every genuine table, including a measure-home one)."""
+    related = {r.from_table for r in model.relationships} | {r.to_table for r in model.relationships}
+    return {
+        t.name for t in model.tables
+        if t.name not in related and _FIELD_PARAM_NAME_RE.match(t.name.strip())
+    }
+
+
 # The reader-facing label substituted for a raw field-parameter reference
 # wherever one has to remain visible (e.g. a slicer bound directly to it —
 # a real, working control the reader needs to know about).

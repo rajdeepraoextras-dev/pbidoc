@@ -58,11 +58,12 @@ def _pl(word: str, count: int, plural: str | None = None) -> str:
 # "LocalDateTable_<GUID>" and "DateTableTemplate_<GUID>" — real Auto
 # Date/Time table names don't contain "TemplateId" on their own, but the
 # substring is kept as a defensive third match for older export shapes.
-# Shared by PBIC-PERF-007's own detection (below) and ``find_unused_assets``
-# (Day 2): a reviewer expects these auto-generated artifacts to be called
-# out once, as their own category, not scattered across "unused calculated
-# columns"/"unused tables" noise.
-def _is_auto_date_table(name: str) -> bool:
+# Shared by PBIC-PERF-007's own detection (below), ``find_unused_assets``
+# (Day 2), and the model diagram (V2: these must never render as a node) —
+# a reviewer expects these auto-generated artifacts to be called out once,
+# as their own category, not scattered across "unused calculated
+# columns"/"unused tables" noise or drawn as if they were real dimensions.
+def is_auto_date_table(name: str) -> bool:
     return "LocalDateTable" in name or "DateTableTemplate" in name or "TemplateId" in name
 
 # -- Rules Engine & Configuration (Phase 4) ---------------------------------------
@@ -1135,7 +1136,7 @@ def find_performance_risks(model: SemanticModel) -> list[PerformanceRisk]:
             ))
 
     # PBIC-PERF-007: Auto date/time enabled.
-    auto_date_tables = [t for t in model.tables if _is_auto_date_table(t.name)]
+    auto_date_tables = [t for t in model.tables if is_auto_date_table(t.name)]
     if auto_date_tables:
         column_count = sum(len(t.columns) for t in auto_date_tables)
         risks.append(PerformanceRisk(
@@ -1300,7 +1301,7 @@ def check_governance(
 def find_unused_assets(model: SemanticModel) -> UnusedAssets:
     used_measures = used_measure_names(model)
     used_cols = used_column_names(model)
-    auto_date_table_names = {t.name for t in model.tables if _is_auto_date_table(t.name)}
+    auto_date_table_names = {t.name for t in model.tables if is_auto_date_table(t.name)}
 
     unused_measures = [m.name for m in model.all_measures() if m.name not in used_measures]
     unused_columns_all = [

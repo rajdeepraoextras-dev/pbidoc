@@ -775,6 +775,13 @@ verdict. Empty for "Gap". Never invent an anchor not present in that requirement
 
 A requirement with no candidates listed is always "Gap". Never claim a table, measure, column, or page \
 exists beyond what's listed in its candidates.
+
+Tiering floor — a matching *column* candidate is real evidence even alone, never "Gap": a column named after \
+its own table (e.g. Department[Department]) is that dimension's canonical attribute, so a requirement asking \
+to slice/monitor/analyze "by <that dimension>" is at minimum "Partial" once such a column is offered as a \
+candidate — score it "Gap" only when the candidate list for that requirement is empty or genuinely \
+unrelated. A requirement is "Covered" once both a relevant measure *and* a relevant dimension column/page \
+are offered as candidates together.
 """
 
 TRACEABILITY_SCHEMA = {

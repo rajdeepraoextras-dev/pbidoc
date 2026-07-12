@@ -52,6 +52,7 @@ from ..report_facts import (
     first_sentence,
     is_field_selector,
     local_path_sources,
+    named_field_parameter_table_names,
     parse_human_glossary,
     report_pages,
     slicers,
@@ -394,15 +395,25 @@ def _semantic_model(model: SemanticModel, client, warn, col_descs: dict,
 
     for target in local_path_sources(model):
         risks.append(f"Hardcoded local path detected — replace with a parameterized path or gateway source before production deployment. (Path: {target})")
+    # V2: Auto Date/Time's own hidden calendar tables and disconnected
+    # field-parameter/helper tables (e.g. "Range") are never real
+    # dimensions — drawing them as model-diagram nodes misrepresents the
+    # actual star/galaxy shape a reader is trying to verify. Excluded here
+    # (diagram nodes + their edges) only; the "Key tables" list below still
+    # lists every table for completeness, matching what count-based checks
+    # elsewhere already treat as a separate concern from the diagram.
+    diagram_excluded = {t.name for t in model.tables if audit_rules.is_auto_date_table(t.name)}
+    diagram_excluded |= named_field_parameter_table_names(model)
     tables = [
         {"name": t.name, "kind": t.kind, "columns": len(t.columns), "measures": len(t.measures)}
-        for t in model.tables
+        for t in model.tables if t.name not in diagram_excluded
     ]
     edges = [
         {"from": r.from_table, "to": r.to_table, "from_card": r.from_cardinality,
          "to_card": r.to_cardinality, "cross_filter": r.cross_filter, "is_active": r.is_active,
          "from_column": r.from_column, "to_column": r.to_column}
         for r in model.relationships
+        if r.from_table not in diagram_excluded and r.to_table not in diagram_excluded
     ]
     return SemanticModelDoc(summary=summary, data_dictionary=data_dictionary, relationships=rels,
                             risks=risks, tables=tables, relationship_edges=edges)

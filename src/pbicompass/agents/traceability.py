@@ -256,7 +256,15 @@ def _deterministic_verdict(matched: list[dict]) -> tuple[str, list[dict]]:
         dims = [c for c in matched if c["kind"] != "measure"]
         evidence = measures[:1] + (dims[:1] if dims else measures[1:2])
         return "Covered", evidence
-    return "Partial", matched[:1]
+    # Partial: prefer a column over a page as the single evidence item — a
+    # specific dimension attribute ("Cost Element[Cost element name]") is
+    # stronger, more legible evidence than a generic page name that only
+    # happens to rank #1 by raw overlap count (a page's combined visual/
+    # metric/dimension text is long enough to rack up incidental word
+    # overlaps a narrower column candidate can't compete with on count
+    # alone, even when the column is the more relevant match).
+    columns = [c for c in matched if c["kind"] == "column"]
+    return "Partial", (columns[:1] if columns else matched[:1])
 
 
 # -- Orchestration ----------------------------------------------------------------
@@ -293,10 +301,17 @@ def build_requirements_matrix(
 
     per_requirement_candidates: list[dict] = []
     results: list[RequirementCoverage] = []
+    # A self-named column (Department[Department]) is the strongest signal
+    # build_candidates computes — a table's own canonical dimension
+    # attribute, not an incidental keyword hit — so a requirement whose
+    # deterministic match includes one is protected from an AI "Gap"
+    # downgrade below (RF-11: production false Gaps on exactly this shape).
+    self_named_protected: dict[str, bool] = {}
     for priority, text in parsed:
         matched = match_candidates(text, candidates)
         per_requirement_candidates.append({"requirement": text, "candidates": matched})
         status, evidence = _deterministic_verdict(matched)
+        self_named_protected[text] = any(c.get("self_named") for c in matched)
         results.append(RequirementCoverage(
             text=text, priority=priority, status=status,
             evidence=[RequirementEvidence(kind=e["kind"], name=e["name"], anchor=e["anchor"]) for e in evidence],
@@ -335,6 +350,14 @@ def build_requirements_matrix(
             continue
         status = item.get("status")
         if status not in STATUSES:
+            continue
+        if status == "Gap" and target.status != "Gap" and self_named_protected.get(req_text):
+            # AI may only improve a verdict backed by a self-named
+            # canonical-dimension match, never erase it into a false Gap —
+            # the report *does* have the attribute the requirement names
+            # (RF-11: exactly this shape shipped in production for
+            # "department"/"region" requirements against a real Department/
+            # Country Region dimension). Keep the deterministic verdict.
             continue
         allowed = allowed_by_text.get(req_text, set())
         # Grounding: only anchors this requirement was actually offered as a
