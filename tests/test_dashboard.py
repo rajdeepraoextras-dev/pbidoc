@@ -583,6 +583,18 @@ class DashboardApiTest(unittest.TestCase):
         self.assertEqual(stats["estimated_mrr"],
                          stats["plan_prices"]["pro"] + stats["plan_prices"]["business"])
 
+    def test_admin_stats_reports_page_visits(self):
+        # index / pricing / app should each count once; an API route should not.
+        self.client.get("/")
+        self.client.get("/pricing")
+        self.client.get("/app/api/config")
+        admin = self._make_admin()
+        stats = self.client.get("/app/api/admin/stats", headers=admin).json()
+        self.assertGreaterEqual(stats["visits_today"], 2)
+        self.assertGreaterEqual(stats["unique_visitors_today"], 1)
+        self.assertIn("visits_last_14_days", stats)
+        self.assertEqual(len(stats["visits_last_14_days"]), 14)
+
     def test_admin_can_block_and_it_reflects_in_target_me(self):
         me = self.client.get("/app/api/me", headers=self._headers("target@x.com", sub="tgt-1")).json()
         self.assertFalse(me["blocked"])

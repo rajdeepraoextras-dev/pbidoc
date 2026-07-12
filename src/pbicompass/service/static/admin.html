@@ -264,6 +264,8 @@ async function loadStats() {
     { b: money(s.estimated_mrr), s: "Est. MRR", sm: "projected", hero: true },
     { b: s.docs_this_month, s: "Docs this month", sm: `${s.docs_all_time} all-time` },
     { b: s.blocked_accounts, s: "Suspended", sm: "" },
+    { b: s.visits_today, s: "Visits today", sm: `${s.unique_visitors_today} unique` },
+    { b: s.visits_all_time, s: "Visits all-time", sm: "" },
   ];
   plans.forEach(p => tiles.push({ b: (s.by_plan && s.by_plan[p]) || 0, s: planLabel(p), sm: money(s.plan_prices[p]) + "/mo" }));
   $("stat-grid").innerHTML = tiles.map(t =>

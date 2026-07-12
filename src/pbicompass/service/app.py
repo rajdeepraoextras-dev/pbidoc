@@ -37,6 +37,7 @@ from .metrics import MetricsRegistry
 from .ratelimit import RateLimiter
 from .sandbox import JobSandbox
 from .sentry_config import init_sentry
+from .visits import VisitStore, visitor_hash
 from .worker import process_job
 
 log = logging.getLogger("pbicompass.service.app")
@@ -108,6 +109,33 @@ def _provider_default_enabled(provider: dict) -> bool:
 
 def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
+
+
+def _forwarded_client_ip(request: Request) -> str:
+    """Like :func:`_client_ip`, but honors ``X-Forwarded-For`` -- visit
+    tracking needs the real caller's IP for accurate unique-visitor counts,
+    which ``request.client.host`` alone would report as the reverse proxy's
+    IP on a deployment fronted by nginx/Caddy (e.g. the duckdns host)."""
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return _client_ip(request)
+
+
+# Page paths counted as a "visit" -- deliberately excludes API/asset/health
+# routes so the counter reflects real page loads, not polling or asset
+# fetches. Kept as a plain prefix set rather than sniffing content-type so it
+# stays correct even if a route later changes its response shape.
+_TRACKED_PAGE_PATHS = frozenset({
+    "/", "/app", "/admin", "/pricing", "/privacy", "/terms", "/refund",
+})
+
+
+def _visits_salt() -> str:
+    # Reuses the admin token (or a dedicated override) purely as hashing
+    # material -- it never needs to be verified here, just unpredictable so a
+    # stored visitor_hash can't be reversed back to an IP.
+    return os.environ.get("PBICOMPASS_VISITS_SALT") or os.environ.get("PBICOMPASS_ADMIN_TOKEN") or "pbicompass"
 
 
 def _safe_basename(filename: str) -> str:
@@ -194,6 +222,21 @@ def create_app(
     app.state.metrics = metrics
     upload_rate_limiter = RateLimiter(_upload_rate_limit(), _upload_rate_window_seconds())
 
+    # Visitor/page-view counter (Day 38) -- always on, independent of the
+    # account/admin-token features above, so even a plain self-host without
+    # auth configured gets a visit count. Shares whichever DB the accounts
+    # store already uses (its own table, own connection) rather than adding
+    # a whole second env var for a single small table; falls back to
+    # in-memory when neither is set, matching every test's implicit
+    # no-disk-writes expectation for a bare create_app() call.
+    visits_db_path = os.environ.get("PBICOMPASS_VISITS_DB") or os.environ.get("PBICOMPASS_DB") or ":memory:"
+    visit_store = VisitStore(visits_db_path)
+    app.state.visits = visit_store
+
+    @app.on_event("shutdown")
+    def _close_visit_store() -> None:
+        visit_store.close()
+
     # Persistent by default (A2-1): a file path (ideally on a mounted volume,
     # per DEPLOYMENT.md) so an in-flight/finished job survives a worker
     # restart instead of 404ing on the next poll. Tests that construct their
@@ -260,6 +303,19 @@ def create_app(
         finally:
             request_id_var.reset(token)
         response.headers["X-Request-Id"] = rid
+        return response
+
+    @app.middleware("http")
+    async def _track_visit(request: Request, call_next):
+        response = await call_next(request)
+        if request.method == "GET" and response.status_code < 400 \
+                and request.url.path in _TRACKED_PAGE_PATHS:
+            try:
+                ip = _forwarded_client_ip(request)
+                ua = request.headers.get("user-agent", "")
+                visit_store.record(request.url.path, visitor_hash(_visits_salt(), ip, ua))
+            except Exception:
+                log.warning("visit tracking failed", exc_info=True)
         return response
 
     def _reject_if_blocked(acct) -> None:
@@ -692,6 +748,13 @@ def create_app(
             "estimated_mrr": mrr,
             "docs_this_month": account_store.total_usage_this_month(),
             "docs_all_time": account_store.total_usage_all_time(),
+            "visits_today": visit_store.views_today(),
+            "unique_visitors_today": visit_store.unique_visitors_today(),
+            "visits_all_time": visit_store.views_all_time(),
+            "visits_last_14_days": [
+                {"day": d.day, "views": d.views, "unique_visitors": d.unique_visitors}
+                for d in visit_store.daily_breakdown(14)
+            ],
         }
 
     @app.post("/app/api/admin/accounts/{account_id}/block")
