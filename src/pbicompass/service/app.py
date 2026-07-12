@@ -28,9 +28,12 @@ from fastapi import (BackgroundTasks, FastAPI, File, Form, HTTPException, Query,
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
 
 from . import supabase_auth
+from ..agents import get_client
+from ..agents.assist import ASSIST_FIELDS, build_report_summary, fill_field, format_text
 from .accounts import PLAN_LIMITS, PLAN_PRICES, AccountStore
 from .admin import AdminGuard, verify_admin_token
 from .supabase_auth import SupabaseAuthConfig
+from .ingest import ingest_to_model
 from .jobs import JobStatus, JobStore
 from .logging_config import configure_logging, job_id_var, request_id_var
 from .metrics import MetricsRegistry
@@ -73,6 +76,29 @@ def _upload_rate_limit() -> int:
 
 def _upload_rate_window_seconds() -> float:
     return float(os.environ.get("PBICOMPASS_UPLOAD_RATE_WINDOW_SECONDS", "60"))
+
+
+def _assist_rate_limit() -> int:
+    return int(os.environ.get("PBICOMPASS_ASSIST_RATE_LIMIT", "20"))
+
+
+def _assist_rate_window_seconds() -> float:
+    return float(os.environ.get("PBICOMPASS_ASSIST_RATE_WINDOW_SECONDS", "60"))
+
+
+def _assist_client():
+    """The intake form's "AI Fill"/"Format" buttons always run on MeshAPI,
+    independent of whatever engine the eventual job uses -- a deliberate
+    product decision to keep this free-form drafting aid on one fixed, cheap
+    engine rather than tying it to the caller's job-engine choice. ``None``
+    when the server holds no MeshAPI key (self-host without one configured),
+    which the route turns into a 503 rather than a crash."""
+    if not os.environ.get("MESHAPI_API_KEY"):
+        return None
+    try:
+        return get_client("mesh")
+    except Exception:
+        return None
 
 
 def _byok_ui_enabled() -> bool:
@@ -221,6 +247,7 @@ def create_app(
     metrics = MetricsRegistry()
     app.state.metrics = metrics
     upload_rate_limiter = RateLimiter(_upload_rate_limit(), _upload_rate_window_seconds())
+    assist_rate_limiter = RateLimiter(_assist_rate_limit(), _assist_rate_window_seconds())
 
     # Visitor/page-view counter (Day 38) -- always on, independent of the
     # account/admin-token features above, so even a plain self-host without
@@ -894,6 +921,129 @@ def create_app(
         _require_admin_user(request)
         entries = app.state.store.list_feedback(limit=max(1, min(limit, 500)))
         return {"feedback": [app.state.store.public_feedback(fb) for fb in entries]}
+
+    @app.post("/app/api/assist/fill")
+    async def assist_fill(
+        request: Request,
+        file: UploadFile = File(...),
+        field: str = Form(...),
+        current_text: str | None = Form(None),
+        owner: str | None = Form(None),
+        audience: str | None = Form(None),
+        refresh: str | None = Form(None),
+        version: str | None = Form(None),
+        status: str | None = Form(None),
+        author: str | None = Form(None),
+        reviewer: str | None = Form(None),
+        classification: str | None = Form(None),
+        business_decision: str | None = Form(None),
+        requirements: str | None = Form(None),
+        security_notes: str | None = Form(None),
+        refresh_notes: str | None = Form(None),
+        deployment_notes: str | None = Form(None),
+        access_notes: str | None = Form(None),
+        glossary: str | None = Form(None),
+        assumptions: str | None = Form(None),
+        support_notes: str | None = Form(None),
+    ) -> dict:
+        """Draft one Notes-tab field from the uploaded report's own structure
+        (see ``agents/assist.py``) plus whatever else the user already typed
+        on the form. Always MeshAPI (see ``_assist_client``), independent of
+        the job engine picked on tab 1 -- this runs before any job exists."""
+        if field not in ASSIST_FIELDS:
+            raise HTTPException(status_code=400, detail="Unknown field.")
+        if not assist_rate_limiter.allow(_client_ip(request)):
+            raise HTTPException(
+                status_code=429,
+                detail="Too many AI-assist requests from this address. Try again shortly.",
+            )
+        resolve_tenant(request)  # same auth gate as /jobs; tenant itself unused here
+
+        client = _assist_client()
+        if client is None:
+            raise HTTPException(
+                status_code=503,
+                detail="AI assist is not configured on this server (MeshAPI key missing).",
+            )
+
+        suffix = Path(file.filename or "").suffix.lower()
+        if suffix not in _ALLOWED_SUFFIXES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported file type '{suffix or '?'}'. Upload a .pbix or a .zip of a .pbip project.",
+            )
+
+        sandbox = JobSandbox(uuid.uuid4().hex, root=sandbox_root)
+        try:
+            upload_path = sandbox.path(f"upload{suffix}")
+            cap = _max_upload_bytes()
+            size = 0
+            with open(upload_path, "wb") as out:
+                while chunk := await file.read(1 << 20):
+                    size += len(chunk)
+                    if size > cap:
+                        raise HTTPException(status_code=413, detail="Upload exceeds the size limit.")
+                    out.write(chunk)
+
+            try:
+                model = ingest_to_model(upload_path, sandbox.dir)
+            except Exception:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Could not read the uploaded file. Ensure it is a valid .pbix or a .zip of a .pbip project.",
+                )
+
+            form_context = {
+                "owner": owner, "audience": audience, "refresh": refresh, "version": version,
+                "status": status, "author": author, "reviewer": reviewer, "classification": classification,
+                "business_decision": business_decision, "requirements": requirements,
+                "security_notes": security_notes, "refresh_notes": refresh_notes,
+                "deployment_notes": deployment_notes, "access_notes": access_notes,
+                "glossary": glossary, "assumptions": assumptions, "support_notes": support_notes,
+            }
+            try:
+                text = fill_field(client, field, build_report_summary(model), form_context, current_text)
+            except Exception:
+                raise HTTPException(status_code=502, detail="AI assist is temporarily unavailable. Try again.")
+            if not text:
+                raise HTTPException(status_code=502, detail="AI assist returned no text. Try again.")
+            return {"text": text}
+        finally:
+            sandbox.cleanup()
+
+    @app.post("/app/api/assist/format")
+    async def assist_format(request: Request) -> dict:
+        """Grammar/punctuation cleanup of whatever the user already typed
+        into a Notes-tab field -- no report file involved. Always MeshAPI,
+        same as ``assist_fill`` above."""
+        if not assist_rate_limiter.allow(_client_ip(request)):
+            raise HTTPException(
+                status_code=429,
+                detail="Too many AI-assist requests from this address. Try again shortly.",
+            )
+        resolve_tenant(request)
+
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        text = str(body.get("text") or "").strip() if isinstance(body, dict) else ""
+        if not text:
+            raise HTTPException(status_code=400, detail="No text to format.")
+        if len(text) > 8000:
+            raise HTTPException(status_code=400, detail="Text is too long to format.")
+
+        client = _assist_client()
+        if client is None:
+            raise HTTPException(
+                status_code=503,
+                detail="AI assist is not configured on this server (MeshAPI key missing).",
+            )
+        try:
+            formatted = format_text(client, text)
+        except Exception:
+            raise HTTPException(status_code=502, detail="AI assist is temporarily unavailable. Try again.")
+        return {"text": formatted or text}
 
     @app.post("/jobs")
     async def create_job(

@@ -245,7 +245,7 @@ def render_html(
             
             rows.append([type_cell, loc_cell, fed_cell, mode_cell, auth_cell, flag_cell])
             
-        o.append(_table(["Source Type", "Location / Host", "Table(s) Fed", "Storage Mode", "Authentication", "Flag / Risk"], rows, row_ids=src_row_ids))
+        o.append(_table(["Source Type", "Location / Host", "Tables Fed", "Storage Mode", "Authentication", "Flag / Risk"], rows, row_ids=src_row_ids))
     else:
         o.append('<p class="muted">No external data sources detected.</p>')
     o.append("<h3>Power Query / ETL transformations</h3>")
@@ -417,7 +417,7 @@ def render_html(
         rows = [[_e(v.get("label") or "—"), _e(v.get("type")),
                  _e(", ".join(v.get("metrics", [])) or "—"),
                  _e(", ".join(v.get("dimensions", [])) or "—")] for v in p.get("visuals", [])]
-        o.append(_table(["Visual", "Type", "Metric(s)", "Dimension(s)"], rows, "No data visuals on this page.", row_ids=row_ids))
+        o.append(_table(["Visual", "Type", "Metrics", "Dimensions"], rows, "No data visuals on this page.", row_ids=row_ids))
         if p.get("decorative_count"):
             o.append(f'<p class="muted">{_e(_non_data_note(p["decorative_count"]))}</p>')
         o.append("</div>")

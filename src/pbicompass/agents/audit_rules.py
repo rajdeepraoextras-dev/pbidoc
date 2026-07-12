@@ -1461,7 +1461,7 @@ _PRACTICE_TEMPLATES = {
     "bidirectional_fact": ("High",
         "A bidirectional relationship filters a fact table.",
         "Bidirectional filtering on a fact table is the most common cause of ambiguous or duplicated totals, and carries a real performance cost as the model grows.",
-        "Switch the relationship to single-direction filtering from the dimension side, and use CROSSFILTER() in the specific measure(s) that genuinely need the reverse direction.",
+        "Switch the relationship to single-direction filtering from the dimension side, and use CROSSFILTER() in the specific measures that genuinely need the reverse direction.",
         "Predictable, fast aggregation on the fact table."),
     "dev_leftover_naming": ("Medium",
         "Some table or column names look like development leftovers (e.g. 'test', 'tmp', 'Copy of ...').",

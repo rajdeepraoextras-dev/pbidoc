@@ -66,6 +66,18 @@ def _resolve_error_class(module: Any, *dotted_paths: str, default: type = Except
     return default
 
 
+def _loose_json_parse(text: str) -> dict:
+    """``json.loads``, tolerant of a stray ```json ... ``` fence — used for
+    MeshAPI's unstructured JSON fallback (:class:`MeshAPIClient`), where a
+    model is asked in plain text to reply with JSON rather than constrained
+    via ``response_format`` and occasionally wraps it in a fence anyway."""
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        stripped = re.sub(r"^```[a-zA-Z]*\n?", "", stripped)
+        stripped = re.sub(r"\n?```$", "", stripped)
+    return json.loads(stripped)
+
+
 class AnthropicClient:
     """Claude-backed client using structured outputs.
 
@@ -392,15 +404,20 @@ class MeshAPIClient:
     model ids, which use hyphens (``claude-opus-4-8``, as
     :class:`AnthropicClient` expects) — the two are not interchangeable.
 
-    Defaults to ``openai/gpt-4o`` rather than a Claude model: MeshAPI routes
-    at least some Anthropic model ids through AWS Bedrock's Converse API,
-    which doesn't support the structured-output parameter MeshAPI's
-    translation layer attaches for them (every ``complete_json`` call here
-    fails with a Bedrock ``ValidationException`` on ``output_config.format``
-    for those ids) — MeshAPI's own docs confirm first-class structured-output
-    support for OpenAI (and Google Gemini) models, not Anthropic-via-Bedrock.
-    Pass an explicit ``model=`` to use a different one once MeshAPI's
-    Bedrock-routed structured-output support catches up.
+    Defaults to ``deepseek/deepseek-v4-flash`` (owner decision, 2026-07-13):
+    far cheaper than the prior ``openai/gpt-4o`` default ($0.14/$0.28 per 1M
+    input/output tokens vs. gpt-4o's ~$2.50/$10 — confirmed against MeshAPI's
+    own model catalog, https://developers.meshapi.ai/docs/introduction/
+    available-models), with a 1M-token context window. MeshAPI's own
+    dashboard lists this specific model's "Structured Output" capability as
+    unsupported, unlike gpt-4o — ``complete_json`` below degrades to a
+    prompt-only JSON instruction (no ``response_format``) when the strict
+    schema call itself is rejected, so this default stays safe even where a
+    routed model can't do native JSON-schema-constrained decoding. Not a
+    concern for the Anthropic-via-Bedrock structured-output gap the previous
+    default was chosen around (see git history) since DeepSeek isn't routed
+    through Bedrock at all. Pass an explicit ``model=`` to use a different
+    one.
 
     Implemented with the official ``openai`` SDK pointed at MeshAPI's base
     URL, exactly as MeshAPI's own quickstart recommends ("replace the Base
@@ -452,33 +469,57 @@ class MeshAPIClient:
             if _meshapi_reasoning_capable(self.model) else None
         )
 
-        def _call(include_reasoning: bool):
+        # MeshAPI fronts 1000+ models of wildly varying structured-output
+        # support with no per-model signal exposed here either (its own
+        # dashboard shows this for the deepseek/deepseek-v4-flash default —
+        # see the class docstring), so a rejected ``response_format`` also
+        # degrades gracefully: the schema is restated as a plain-text
+        # instruction instead and the response is parsed loosely (stripping
+        # a stray ```json fence some models add despite the instruction).
+        def _call(*, include_reasoning: bool, structured: bool):
+            sys_prompt = system if structured else (
+                system + "\n\nRespond with only a single valid JSON object (no markdown "
+                "code fences, no commentary) that matches exactly this JSON schema:\n"
+                + json.dumps(schema, ensure_ascii=False)
+            )
             kwargs: dict = dict(
                 model=self.model,
                 max_tokens=self.max_tokens,
                 messages=[
-                    {"role": "system", "content": system},
+                    {"role": "system", "content": sys_prompt},
                     {"role": "user", "content": user},
                 ],
-                response_format={
+            )
+            if structured:
+                kwargs["response_format"] = {
                     "type": "json_schema",
                     "json_schema": {"name": "response", "schema": schema, "strict": True},
-                },
-            )
+                }
             if include_reasoning and reasoning_effort is not None:
                 kwargs["reasoning_effort"] = reasoning_effort
             return self._client.chat.completions.create(**kwargs)
 
-        # Graceful degradation (§4.0): a reasoning-capable-looking model that
-        # still rejects the param retries once without it, rather than
-        # failing the whole agent call.
+        # Graceful degradation (§4.0), in order of what's cheapest to give
+        # up: reasoning_effort first (a reasoning-capable-looking model that
+        # still rejects it), then structured output too (a model with no
+        # native JSON-schema-constrained decoding). Never more than one
+        # extra tier beyond the first real attempt, so this can't loop.
+        attempts = [(reasoning_effort is not None, True)]
+        if reasoning_effort is not None:
+            attempts.append((False, True))
+        attempts.append((False, False))
+
         bad_request = _resolve_error_class(self._openai, "BadRequestError")
-        try:
-            response = _call(True)
-        except bad_request:
-            if reasoning_effort is None:
-                raise
-            response = _call(False)
+        response = None
+        last_exc: Exception | None = None
+        for include_reasoning, structured in attempts:
+            try:
+                response = _call(include_reasoning=include_reasoning, structured=structured)
+                break
+            except bad_request as exc:
+                last_exc = exc
+        if response is None:
+            raise last_exc
         choice = response.choices[0]
         if getattr(choice, "finish_reason", None) == "content_filter":
             raise RuntimeError("MeshAPI declined the request (finish_reason=content_filter).")
@@ -490,17 +531,16 @@ class MeshAPIClient:
             "input_tokens": getattr(usage, "prompt_tokens", 0) or 0,
             "output_tokens": getattr(usage, "completion_tokens", 0) or 0,
         }
-        return json.loads(text)
+        return _loose_json_parse(text)
 
 
 _DEFAULT_MODEL = {
     "anthropic": "claude-opus-4-8",
     "gemini": "gemini-3.5-flash",
     "cohere": "command-a-03-2025",
-    # openai/gpt-4o, not a Claude id — see MeshAPIClient's docstring: MeshAPI
-    # routes at least some Anthropic ids through AWS Bedrock's Converse API,
-    # which rejects the structured-output parameter every agent here needs.
-    "meshapi": "openai/gpt-4o",
+    # deepseek/deepseek-v4-flash, not a Claude id — see MeshAPIClient's
+    # docstring for the cost/context/structured-output rationale.
+    "meshapi": "deepseek/deepseek-v4-flash",
 }
 
 

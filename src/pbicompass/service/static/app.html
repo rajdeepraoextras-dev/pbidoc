@@ -269,7 +269,6 @@
         <div class="signup-step" data-step="2">
           <div class="step-title">Step 3 — Choose a plan</div>
           <div class="plan-grid" id="signup-plans"><!-- populated from /app/api/config --></div>
-          <p class="muted" style="margin:4px 0 12px;">Paid tiers are granted instantly, no card required — billing arrives later. You can change your plan anytime from your profile.</p>
           <div class="err-text" id="signup-err"></div>
           <div class="ok-text" id="signup-info"></div>
           <div class="step-nav">
@@ -423,11 +422,23 @@
             </div>
             <div class="grid-2">
               <div class="form-group"><label>Version</label><input type="text" id="version" placeholder="v1.0"></div>
-              <div class="form-group"><label>Status</label><input type="text" id="status-field" placeholder="Draft / Approved"></div>
+              <div class="form-group"><label>Status</label>
+                <select id="status-field">
+                  <option value="" selected>Select status...</option>
+                  <option value="Draft">Draft</option>
+                  <option value="Approved">Approved</option>
+                </select>
+              </div>
             </div>
             <div class="grid-2">
               <div class="form-group"><label>Refresh Schedule</label><input type="text" id="refresh" placeholder="Daily 8 AM EST"></div>
-              <div class="form-group"><label>Data Classification</label><input type="text" id="classification" placeholder="Internal Only / Restricted"></div>
+              <div class="form-group"><label>Data Classification</label>
+                <select id="classification">
+                  <option value="" selected>Select classification...</option>
+                  <option value="Internal Only">Internal Only</option>
+                  <option value="Restricted">Restricted</option>
+                </select>
+              </div>
             </div>
           </div>
 
@@ -490,7 +501,6 @@
 
       <div class="panel-card liquid-glass">
         <h2>Plan</h2>
-        <p class="muted" style="margin-bottom:12px;">Change your plan anytime. Paid tiers are granted instantly — no card required until billing launches.</p>
         <div class="plan-grid" id="profile-plans"><!-- populated --></div>
         <div class="err-text" id="plan-err"></div>
         <div class="ok-text" id="plan-ok"></div>
@@ -1001,6 +1011,92 @@ document.querySelectorAll("#gen-form .tab-btn").forEach(tab => {
   });
 });
 
+/* ---------- Notes tab: per-field "AI Fill" / "Format" (MeshAPI-backed) ---------- */
+// Field ids whose backend Form param name matches the element id exactly
+// (everything on tabs 2 & 3 except "status", handled separately since its
+// element id is "status-field").
+const ASSIST_CONTEXT_IDS = ["owner", "audience", "refresh", "version", "author", "reviewer",
+  "classification", "business_decision", "requirements", "security_notes", "refresh_notes",
+  "deployment_notes", "access_notes", "glossary", "assumptions", "support_notes"];
+
+function collectFormContext(excludeId) {
+  const ctx = {};
+  const statusVal = $("status-field").value.trim();
+  if (statusVal && excludeId !== "status") ctx.status = statusVal;
+  ASSIST_CONTEXT_IDS.forEach(k => {
+    if (k === excludeId) return;
+    const el = $(k);
+    if (el) { const v = el.value.trim(); if (v) ctx[k] = v; }
+  });
+  return ctx;
+}
+
+function fieldAiMsg(btn, text, cls) {
+  const row = btn.closest(".field-actions");
+  let msg = row.querySelector(".field-ai-msg");
+  if (!msg) { msg = document.createElement("span"); msg.className = "field-ai-msg"; row.appendChild(msg); }
+  msg.textContent = text; msg.className = "field-ai-msg " + (cls || "");
+  if (text) setTimeout(() => { if (msg.textContent === text) msg.textContent = ""; }, 4000);
+}
+
+function setFieldBusy(row, btn, busyLabel, busy) {
+  row.querySelectorAll("button").forEach(b => b.disabled = busy);
+  if (busy) { btn.dataset.label = btn.textContent; btn.textContent = busyLabel; }
+  else { btn.textContent = btn.dataset.label || btn.textContent; }
+}
+
+async function assistFill(ta, btn) {
+  const f = $("file").files[0];
+  if (!f) { fieldAiMsg(btn, "Upload a report on tab 1 first.", "err"); return; }
+  const row = btn.closest(".field-actions");
+  setFieldBusy(row, btn, "Working…", true);
+  try {
+    const fd = new FormData();
+    fd.append("file", f);
+    fd.append("field", ta.id);
+    if (ta.value.trim()) fd.append("current_text", ta.value.trim());
+    Object.entries(collectFormContext(ta.id)).forEach(([k, v]) => fd.append(k, v));
+    const r = await fetch("/app/api/assist/fill", { method: "POST", body: fd, headers: authHeaders() });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { fieldAiMsg(btn, j.detail || "AI fill failed.", "err"); return; }
+    ta.value = j.text || "";
+    fieldAiMsg(btn, "Filled.", "ok");
+  } catch { fieldAiMsg(btn, "Connection failed.", "err"); }
+  finally { setFieldBusy(row, btn, "", false); }
+}
+
+async function assistFormat(ta, btn) {
+  const text = ta.value.trim();
+  if (!text) { fieldAiMsg(btn, "Nothing to format.", "err"); return; }
+  const row = btn.closest(".field-actions");
+  setFieldBusy(row, btn, "Working…", true);
+  try {
+    const r = await api("/app/api/assist/format", { method: "POST", body: JSON.stringify({ text }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { fieldAiMsg(btn, j.detail || "Format failed.", "err"); return; }
+    ta.value = j.text || text;
+    fieldAiMsg(btn, "Formatted.", "ok");
+  } catch { fieldAiMsg(btn, "Connection failed.", "err"); }
+  finally { setFieldBusy(row, btn, "", false); }
+}
+
+document.querySelectorAll("#tab-details .form-group").forEach(group => {
+  const ta = group.querySelector("textarea");
+  if (!ta) return;
+  const row = document.createElement("div");
+  row.className = "field-actions";
+  const fillBtn = document.createElement("button");
+  fillBtn.type = "button"; fillBtn.className = "field-ai-btn"; fillBtn.textContent = "✨ AI Fill";
+  fillBtn.title = "Draft this field from the uploaded report";
+  const formatBtn = document.createElement("button");
+  formatBtn.type = "button"; formatBtn.className = "field-ai-btn"; formatBtn.textContent = "Format";
+  formatBtn.title = "Fix grammar & punctuation of what's typed here";
+  fillBtn.addEventListener("click", () => assistFill(ta, fillBtn));
+  formatBtn.addEventListener("click", () => assistFormat(ta, formatBtn));
+  row.appendChild(fillBtn); row.appendChild(formatBtn);
+  group.insertBefore(row, ta);
+});
+
 const providerApikey = $("provider-apikey");
 providerApikey.value = localStorage.getItem("pbicompass_provider_key") || "";
 providerApikey.addEventListener("change", () => localStorage.setItem("pbicompass_provider_key", providerApikey.value.trim()));
@@ -1092,7 +1188,15 @@ const DL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stro
 
 function setStatus(msg, cls) { const s = $("status"); s.textContent = msg; s.className = "status-line " + (cls || ""); }
 const FALLBACK_MARKERS = ["LLM call failed", "AI narrative unavailable", "malformed response", "provider unavailable"];
-function isFallbackWarning(w) { return FALLBACK_MARKERS.some(m => w.includes(m)); }
+// The Senior Reviewer / benchmark quality pass is an internal QA layer on top
+// of an already-complete document — its warnings (including a failed reviewer
+// call) never mean degraded content, so they stay internal like the
+// grounding/consistency notes below.
+const INTERNAL_QA_PREFIXES = ["Senior Reviewer", "quality:"];
+function isFallbackWarning(w) {
+  if (INTERNAL_QA_PREFIXES.some(p => w.startsWith(p))) return false;
+  return FALLBACK_MARKERS.some(m => w.includes(m));
+}
 function renderWarnings(warnings) {
   const fb = $("job-warnings");
   if (!Array.isArray(warnings) || !warnings.length) {

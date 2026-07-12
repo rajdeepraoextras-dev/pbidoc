@@ -222,7 +222,8 @@ def main(argv: list[str] | None = None) -> int:
     p_gen.add_argument("--provider", default="none",
                        help="LLM provider: 'none' (deterministic, default), 'anthropic', 'gemini', 'cohere', "
                             "or 'meshapi' (https://developers.meshapi.ai — one API key routes to 1000+ models "
-                            "across providers; use a 'provider/model-name' --model id, e.g. 'openai/gpt-4o')")
+                            "across providers; use a 'provider/model-name' --model id, e.g. "
+                            "'deepseek/deepseek-v4-flash', MeshAPI's own default here)")
     p_gen.add_argument("--model", default="claude-opus-4-8", help="Model id for the LLM provider")
     p_gen.add_argument("--effort", default="high", choices=["low", "medium", "high", "xhigh", "max"],
                        help="Reasoning effort (quality vs. latency), applied to every "
@@ -539,6 +540,18 @@ def main(argv: list[str] | None = None) -> int:
         for dtype in ("technical", "audit"):
             if changelog_text and dtype in docs:
                 docs[dtype].changelog = changelog_text
+
+        # Benchmark-gated Senior Reviewer loop: score the whole bundle,
+        # fix-and-rescore until every evaluated check passes (capped), then
+        # render. Internal-only telemetry — a failure here never blocks the
+        # job and nothing from it reaches the rendered documents.
+        try:
+            from .agents.reviewer import run_review_loop
+            quality = run_review_loop(docs, model, client, _warn, ai_context)
+            if not args.quiet:
+                print(quality.summary_line(), file=sys.stderr)
+        except Exception as exc:
+            _warn(f"Senior Reviewer: quality pass failed, continuing ({exc})")
 
         if args.bundle:
             return _write_bundle(model, docs, document_types, args.out, enrichment_data,

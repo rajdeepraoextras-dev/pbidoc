@@ -7,11 +7,13 @@ skips cleanly when they are absent, so the stdlib-only test run is unaffected.
 from __future__ import annotations
 
 import io
+import os
 import tempfile
 import time
 import unittest
 import zipfile
 from pathlib import Path
+from unittest import mock
 
 try:
     from fastapi.testclient import TestClient
@@ -329,6 +331,82 @@ class ServiceTest(unittest.TestCase):
             # the zip's own copy of the docs must carry the same working
             # cross-document links as the standalone downloads above.
             self.assertIn('href="technical.html#measure-total-revenue"', zf.read("audit.html").decode("utf-8"))
+
+
+@unittest.skipUnless(_HAVE_SERVICE, "service extras (fastapi/httpx/multipart) not installed")
+class AssistTest(unittest.TestCase):
+    """The Notes tab's "AI Fill" / "Format" buttons -- always MeshAPI (see
+    ``_assist_client`` in service/app.py), independent of the job's own
+    engine. No real MeshAPI key/network call here: ``get_client`` is
+    monkeypatched with a stub so these stay fast and offline like the rest
+    of the suite."""
+
+    def setUp(self):
+        self._root = tempfile.mkdtemp(prefix="pbicompass_sbroot_")
+        self.client = TestClient(create_app(JobStore(), sandbox_root=self._root))
+        os.environ.pop("MESHAPI_API_KEY", None)
+
+    def tearDown(self):
+        os.environ.pop("MESHAPI_API_KEY", None)
+
+    def test_fill_requires_known_field(self):
+        os.environ["MESHAPI_API_KEY"] = "test-key"
+        res = self.client.post(
+            "/app/api/assist/fill",
+            files={"file": ("SampleSales.zip", _zip_fixture(), "application/zip")},
+            data={"field": "not_a_real_field"},
+        )
+        self.assertEqual(res.status_code, 400)
+
+    def test_fill_without_meshapi_key_is_unavailable(self):
+        res = self.client.post(
+            "/app/api/assist/fill",
+            files={"file": ("SampleSales.zip", _zip_fixture(), "application/zip")},
+            data={"field": "glossary"},
+        )
+        self.assertEqual(res.status_code, 503)
+
+    def test_format_without_meshapi_key_is_unavailable(self):
+        res = self.client.post("/app/api/assist/format", json={"text": "hello world"})
+        self.assertEqual(res.status_code, 503)
+
+    def test_format_rejects_empty_text(self):
+        os.environ["MESHAPI_API_KEY"] = "test-key"
+        res = self.client.post("/app/api/assist/format", json={"text": "   "})
+        self.assertEqual(res.status_code, 400)
+
+    def test_fill_rejects_unsupported_file_type(self):
+        os.environ["MESHAPI_API_KEY"] = "test-key"
+        with mock.patch("pbicompass.service.app.get_client", return_value=object()):
+            res = self.client.post(
+                "/app/api/assist/fill",
+                files={"file": ("notes.txt", b"hello", "text/plain")},
+                data={"field": "glossary"},
+            )
+        self.assertEqual(res.status_code, 400)
+
+    def test_fill_and_format_happy_path_with_stubbed_client(self):
+        class StubClient:
+            model = "stub"
+
+            def complete_json(self, system, user, schema, *, effort=None):
+                if "field_label" in user:
+                    return {"text": "Real drafted content."}
+                return {"text": "Real formatted content."}
+
+        os.environ["MESHAPI_API_KEY"] = "test-key"
+        with mock.patch("pbicompass.service.app.get_client", return_value=StubClient()):
+            res = self.client.post(
+                "/app/api/assist/fill",
+                files={"file": ("SampleSales.zip", _zip_fixture(), "application/zip")},
+                data={"field": "glossary", "owner": "Sales Team"},
+            )
+            self.assertEqual(res.status_code, 200, res.text)
+            self.assertEqual(res.json()["text"], "Real drafted content.")
+
+            res2 = self.client.post("/app/api/assist/format", json={"text": "the sales team  needs this"})
+            self.assertEqual(res2.status_code, 200, res2.text)
+            self.assertEqual(res2.json()["text"], "Real formatted content.")
 
 
 @unittest.skipUnless(_HAVE_SERVICE, "service extras not installed")

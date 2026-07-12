@@ -132,7 +132,7 @@ def render_docx(doc: Document, out_path) -> Path:
     ln = doc.lineage
     d.heading(1, f"5. Data Sources{_badge(5)}")
     if ln.data_sources_inventory:
-        d.table(["Source Type", "Location / Host", "Table(s) Fed", "Storage Mode", "Authentication", "Flag / Risk"],
+        d.table(["Source Type", "Location / Host", "Tables Fed", "Storage Mode", "Authentication", "Flag / Risk"],
                 _t([[item["type"], item["display_location"], ", ".join(item["tables_fed"]) or "—",
                      item["storage_mode"], item["auth"], item["flag"] or "None"]
                     for item in ln.data_sources_inventory]))
@@ -235,7 +235,7 @@ def render_docx(doc: Document, out_path) -> Path:
                 d.para([d._run("Decision supported: ", bold=True), d._run(pd.decisions)])
             if pd.confidence == "Low":
                 d.para([d._run("Purpose inferred with low confidence — requires business review.", italic=True)])
-        d.table(["Visual", "Type", "Metric(s)", "Dimension(s)"],
+        d.table(["Visual", "Type", "Metrics", "Dimensions"],
                 _t([[v.get("label") or "—", v.get("type"), ", ".join(v.get("metrics", [])) or "—",
                      ", ".join(v.get("dimensions", [])) or "—"] for v in p.get("visuals", [])]) or [["—", "—", "—", "—"]])
         if p.get("decorative_count"):

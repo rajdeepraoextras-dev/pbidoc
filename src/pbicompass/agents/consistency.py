@@ -239,8 +239,13 @@ def annotate_findings_with_assumptions(findings: list, assumptions: Optional[str
 # -- Layer 1: deterministic fixed-vocabulary check -----------------------------
 
 _STAR_SCHEMA_RE = re.compile(r"\bstar[\s-]schema\b", re.IGNORECASE)
-_NOT_STAR_SCHEMA_RE = re.compile(r"\b(?:not|isn't|is not|n't)\s+(?:a\s+|structured\s+as\s+a\s+)?star[\s-]schema\b",
-                                  re.IGNORECASE)
+# Tolerates up to two intervening words ("does not FOLLOW a star schema",
+# "is not STRUCTURED AS a star schema") — without them, a correctly hedged
+# sentence's bare "star schema" match would get "corrected" into nonsense
+# like "does not follow a multi-fact (galaxy) schema".
+_NOT_STAR_SCHEMA_RE = re.compile(
+    r"\b(?:not|isn't|is not|n't|never|no)\s+(?:\w+\s+){0,2}?(?:a\s+)?star[\s-]schema\b",
+    re.IGNORECASE)
 
 _NO_RLS_RE = re.compile(r"\bno row-level security\b|\bno RLS\b|\bwithout row-level security\b", re.IGNORECASE)
 _RLS_COUNT_RE = re.compile(r"\b(\d+)\s+(?:RLS|row-level security)\s+roles?\b", re.IGNORECASE)

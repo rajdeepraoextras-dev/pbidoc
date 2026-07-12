@@ -1,4 +1,4 @@
-# PBICompass Output Quality Benchmark v2.0
+# PBICompass Output Quality Benchmark v3.0
 
 **Purpose:** Score any PBICompass documentation bundle out of 100 against a fixed, repeatable standard. Run it on every release candidate and every golden fixture. A bundle = technical + audit + executive + user-guide (+ hub) generated from one model in one run.
 
@@ -80,12 +80,19 @@ grep -o "[a-z]\.\. [A-Z]" *.html
 
 | ID | Check | Pts | Method | Pass criterion |
 |---|---|---|---|---|
-| C1 | **Technical doc: all 19 sections present** with correct provenance pill per section (Extracted / AI-inferred / Human-provided), numbered, canonical order, each non-empty or carrying an honest "To complete" callout. Conditional claims rule: never reference an artifact ("model diagram is in section 6") unless it rendered. | 5 | AUTO | h2 census matches canonical list; every section has a pill; claim–artifact cross-check |
-| C2 | **DAX dictionary card completeness.** Every measure card: home table (bold) + "Operates on" secondary, business description, calculation explanation, caveats, dependency tree (when deps exist), used-on pages, format string, confidence chip, syntax-highlighted copyable DAX. Descriptions must be grounded — a `* .3` factor described as 30% is a PASS; an unexplained factor must carry the confirmation flag *in the description cell, deliberately*. | 4 | AUTO + MANUAL | Card field census = 100%; reviewer verifies 3 random cards against raw DAX |
-| C3 | **Audit findings anatomy.** Every finding: rule ID, severity pill, why-it-matters, suggested fix (code snippet with *actual model values* substituted), expected benefit, estimated effort. Heuristic sections carry the "not measured against actual data" disclaimer; unparsed features (hierarchies, calc groups) carry the scoping note. Auto date/time internals roll up into one finding, never inflate unused-asset counts. | 4 | AUTO + MANUAL | Field census; disclaimers present; adjusted counts |
-| C4 | **RTM accuracy.** Score each row against the adjudicated key below. Tiering rule enforced: matching dimension table ⇒ floor Partial; measure + dimension pair ⇒ eligible for Covered; Gap only when nothing matches. **A false Gap (report demonstrably satisfies the requirement) fails the check outright.** Evidence must be the strongest available object — measure+dimension beats lone column; never an unrelated column (`Department[VP]` for a spend question). | 5 | AUTO vs key | ≥ 6/7 rows correct on the Corporate Spend key; 0 false Gaps |
-| C5 | **Executive completeness.** Health score chip + band, component mini-bars, requirements-coverage stat, top risks with severity pills and "Ask:" framing + full-detail deep links, data & refresh in human phrasing ("1 Excel workbook — Data.xlsx", never `File.Contents(s)`), ownership + classification, What's Next as Severity/Action/Effort table (3–5 rows), page thumbnails excluding hidden pages. | 4 | AUTO + MANUAL | Element census; phrasing regex; 60-second-CFO read test |
-| C6 | **User guide quality.** Per visible page: wireframe, what-to-look-at, visual/what-it-shows table, filters, navigation, "questions this page answers". Glossary contains business terms only — no field parameters or system fields (`select`, `select1`, `LocalDateTable*`); definitions grounded in DAX or human input. | 3 | AUTO + MANUAL | Junk-term grep = 0; per-page census |
+| C1 | **Technical doc: all 19 sections present** with correct provenance pill per section (Extracted / AI-inferred / Human-provided), numbered, canonical order, each non-empty or carrying an honest "To complete" callout. Conditional claims rule: never reference an artifact ("model diagram is in section 6") unless it rendered. | 3 | AUTO | h2 census matches canonical list; every section has a pill; claim–artifact cross-check |
+| C2 | **DAX dictionary card completeness.** Every measure card: home table (bold) + "Operates on" secondary, business description, calculation explanation, caveats, dependency tree (when deps exist), used-on pages, format string, confidence chip, syntax-highlighted copyable DAX. Descriptions must be grounded — a `* .3` factor described as 30% is a PASS; an unexplained factor must carry the confirmation flag *in the description cell, deliberately*. | 3 | AUTO + MANUAL | Card field census = 100%; reviewer verifies 3 random cards against raw DAX |
+| C3 | **Audit findings anatomy.** Every finding: rule ID, severity pill, why-it-matters, suggested fix (code snippet with *actual model values* substituted), expected benefit, estimated effort. Heuristic sections carry the "not measured against actual data" disclaimer; unparsed features (hierarchies, calc groups) carry the scoping note. Auto date/time internals roll up into one finding, never inflate unused-asset counts. | 2 | AUTO + MANUAL | Field census; disclaimers present; adjusted counts |
+| C4 | **RTM accuracy.** Score each row against the adjudicated key below. Tiering rule enforced: matching dimension table ⇒ floor Partial; measure + dimension pair ⇒ eligible for Covered; Gap only when nothing matches. **A false Gap (report demonstrably satisfies the requirement) fails the check outright.** Evidence must be the strongest available object — measure+dimension beats lone column; never an unrelated column (`Department[VP]` for a spend question). | 3 | AUTO vs key | ≥ 6/7 rows correct on the Corporate Spend key; 0 false Gaps |
+| C5 | **Executive completeness.** Health score chip + band, component mini-bars, requirements-coverage stat, top risks with severity pills and "Ask:" framing + full-detail deep links, data & refresh in human phrasing ("1 Excel workbook — Data.xlsx", never `File.Contents(s)`), ownership + classification, What's Next as Severity/Action/Effort table (3–5 rows), page thumbnails excluding hidden pages. | 2 | AUTO + MANUAL | Element census; phrasing regex; 60-second-CFO read test |
+| C6 | **User guide quality.** Per visible page: wireframe, what-to-look-at, visual/what-it-shows table, filters, navigation, "questions this page answers". Glossary contains business terms only — no field parameters or system fields (`select`, `select1`, `LocalDateTable*`); definitions grounded in DAX or human input. | 2 | AUTO + MANUAL | Junk-term grep = 0; per-page census |
+| C7 | **Data dictionary coverage** *(v3.0)*. Every non-hidden column in the data dictionary carries a real (non-empty, non-punt) description. | 2 | AUTO | ≥ 80% of rows described |
+| C8 | **Refresh & gateway configuration documented** *(v3.0)*. Schedule, sources and connection mode concrete enough that a new owner could re-establish refresh unaided. | 2 | AUTO + JUDGE | Schedule string present (floor); Senior Reviewer judges adequacy |
+| C9 | **Security/RLS documented** *(v3.0)*. Roles listed with filter logic, or an explicit "no row-level security" statement — never silence. | 2 | AUTO | Roles present XOR explicit no-RLS statement in §10 |
+| C10 | **Lineage traceable** *(v3.0)*. Data sources and their flow into the model documented whenever the model has sources. | 1 | AUTO | Lineage/source inventory non-empty when sources exist |
+| C11 | **Ownership & contacts populated** *(v3.0)*. A report owner is recorded. | 1 | AUTO | `metadata.owner` non-empty |
+| C12 | **Assumptions & limitations present** *(v3.0)*. An assumptions/limitations statement is recorded. | 1 | AUTO | `metadata.assumptions` non-empty |
+| C13 | **Measure business logic explains why** *(v3.0)*. Descriptions state business meaning, not a name-echo. | 1 | JUDGE | Senior Reviewer samples cards |
 
 **Adjudicated RTM key — Corporate Spend fixture**
 
@@ -183,6 +190,31 @@ Every defect found in review rounds 1–4, as permanent named tests. Each maps t
 
 ---
 
+## Automated enforcement (v3.0)
+
+This rubric is now executable. `src/pbicompass/agents/benchmark.py` encodes every
+check above as a `CheckSpec` (same IDs, same points — `BENCHMARK_VERSION` must
+match this document's version), and `src/pbicompass/agents/reviewer.py` runs the
+**benchmark-gated Senior Reviewer loop** on every generation (CLI and service),
+between document assembly and rendering:
+
+1. **Deterministic scorer** (`run_benchmark`) evaluates every `AUTO` check over
+   the assembled document objects and in-memory renders — no LLM, no browser.
+   Gates G1/G3/G4 are applied as score caps.
+2. **Senior Reviewer** (one `xhigh`-effort whole-bundle LLM call per cycle)
+   judges the `JUDGE` checks (C8 adequacy, C13) and proposes prose fixes for
+   failing, prose-fixable checks. Fixes flow through the generators' own
+   narrative triples → `apply_results` (meta-commentary guard) → re-grounding →
+   `sanitize_narratives`; a fix may never downgrade real prose to the punt
+   phrase or contradict the model digest / checks ledger.
+3. **Re-score and repeat**, capped at **2 fix cycles**. Whatever still fails is
+   recorded as `unresolved`/`gaps` in the internal quality report (job log +
+   `job.warnings`; hidden from the end-user screen, like all QA-pass notes).
+
+`RENDER` checks remain the Playwright suite's job; `MANUAL` checks remain the
+human session's. Neither is ever iterated on by the loop. When a check is
+added or re-pointed here, update `benchmark.py`'s spec in the same change.
+
 ## Benchmark session procedure (~45 min)
 
 1. **Generate** the bundle from the golden fixture with the standard intake filled (all 17 human fields + 7 requirements + sign-off names).
@@ -225,4 +257,8 @@ Top 3 defects this run:
 
 ---
 
-*Maintained alongside the golden fixtures. Bump the version when checks are added; never remove a regression fixture.*
+*Maintained alongside the golden fixtures. Bump the version when checks are added — and update `agents/benchmark.py`'s `BENCHMARK_VERSION` + `BENCHMARK_CHECKS` in the same change; never remove a regression fixture.*
+
+**Changelog**
+- **v3.0 (2026-07-12):** Added C7–C13 (data-dictionary coverage, refresh/gateway, RLS, lineage, ownership, assumptions, measure business logic) and rebalanced Pillar 2 to keep 25 pts. The rubric is now enforced in-pipeline by the deterministic scorer + Senior Reviewer loop (see "Automated enforcement"). Renderer `(s)` headers (RF-20 class: "Table(s) Fed", "Metric(s)", "Dimension(s)") fixed; `consistency.py`'s star-schema negation regex fixed so correctly hedged prose ("does not follow a star schema") is never "corrected" into nonsense.
+- **v2.0:** Scored rubric with pillars, hard gates, regression fixtures RF-01–RF-24.

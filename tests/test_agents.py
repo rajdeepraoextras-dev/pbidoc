@@ -1084,6 +1084,93 @@ class ReasoningEffortWiringTest(unittest.TestCase):
         self.assertEqual(out, {"ok": True})
         self.assertEqual(captured["reasoning_effort"], "high")
 
+    # -- MeshAPI: graceful degradation when a model rejects structured output --
+
+    def test_meshapi_retries_without_response_format_on_bad_request(self):
+        # Regression: MeshAPI's own dashboard lists the new deepseek-v4-flash
+        # default's "Structured Output" capability as unsupported — a
+        # rejected response_format must fall back to a plain-text JSON
+        # instruction rather than failing the whole agent call.
+        import sys
+        from unittest.mock import patch
+        from pbicompass.agents.llm import MeshAPIClient
+
+        calls: list = []
+
+        def on_create(kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                raise fake_module.BadRequestError("response_format not supported")
+            return self._fake_meshapi_response()
+
+        fake_module = self._fake_openai_module(on_create)
+        with patch.dict(sys.modules, {"openai": fake_module}):
+            # Not a reasoning-capable model id, so there's exactly one
+            # fallback tier to exercise here (structured output) rather than
+            # two — see the combined test below for both tiers at once.
+            client = MeshAPIClient(model="openai/gpt-4o", api_key="rsk_test")
+            out = client.complete_json("sys", "user", {"type": "object"}, effort="high")
+
+        self.assertEqual(out, {"ok": True})
+        self.assertEqual(len(calls), 2)
+        self.assertIn("response_format", calls[0])
+        self.assertNotIn("response_format", calls[1])
+        # The schema is restated as a plain-text instruction on the fallback.
+        self.assertIn("JSON schema", calls[1]["messages"][0]["content"])
+
+    def test_meshapi_falls_back_through_both_reasoning_and_structured_output(self):
+        # A model that looks reasoning-capable (per _meshapi_reasoning_capable)
+        # but rejects *both* reasoning_effort and response_format needs two
+        # fallback tiers, not one — the retry loop must not give up after the
+        # first failure just because reasoning_effort was involved.
+        import sys
+        from unittest.mock import patch
+        from pbicompass.agents.llm import MeshAPIClient
+
+        calls: list = []
+
+        def on_create(kwargs):
+            calls.append(kwargs)
+            if len(calls) < 3:
+                raise fake_module.BadRequestError("unrecognized argument")
+            return self._fake_meshapi_response()
+
+        fake_module = self._fake_openai_module(on_create)
+        with patch.dict(sys.modules, {"openai": fake_module}):
+            client = MeshAPIClient(model="deepseek/deepseek-v4-flash", api_key="rsk_test")
+            out = client.complete_json("sys", "user", {"type": "object"}, effort="high")
+
+        self.assertEqual(out, {"ok": True})
+        self.assertEqual(len(calls), 3)
+        self.assertIn("reasoning_effort", calls[0])
+        self.assertIn("response_format", calls[0])
+        self.assertNotIn("reasoning_effort", calls[1])
+        self.assertIn("response_format", calls[1])
+        self.assertNotIn("reasoning_effort", calls[2])
+        self.assertNotIn("response_format", calls[2])
+
+    def test_meshapi_loose_json_parse_strips_code_fence(self):
+        import sys
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        from pbicompass.agents.llm import MeshAPIClient
+
+        def on_create(kwargs):
+            if "response_format" in kwargs:
+                raise fake_module.BadRequestError("response_format not supported")
+            return SimpleNamespace(
+                choices=[SimpleNamespace(finish_reason="stop",
+                                          message=SimpleNamespace(content='```json\n{"ok": true}\n```'))],
+                usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1),
+            )
+
+        fake_module = self._fake_openai_module(on_create)
+        with patch.dict(sys.modules, {"openai": fake_module}):
+            client = MeshAPIClient(model="openai/gpt-4o", api_key="rsk_test")
+            out = client.complete_json("sys", "user", {"type": "object"})
+
+        self.assertEqual(out, {"ok": True})
+
     # -- Anthropic: graceful degradation on a rejected effort tier -----
 
     def test_anthropic_retries_without_effort_on_bad_request(self):

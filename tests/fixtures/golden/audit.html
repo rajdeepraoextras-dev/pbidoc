@@ -1287,7 +1287,7 @@ Model.Relationships.First(rel =&gt; rel.FromTable.Name == &quot;Sales&quot; &amp
 <div class="card-section" id="rec-PBIC-MOD-015">
 <h3><span class="pill high">High</span> A bidirectional relationship filters a fact table.<span class="pill rule-id" title="Bi-directional relationship filtering a fact table">PBIC-MOD-015</span></h3>
 <p><strong>Why it matters:</strong> Bidirectional filtering on a fact table is the most common cause of ambiguous or duplicated totals, and carries a real performance cost as the model grows.</p>
-<p><strong>Suggested fix:</strong> Switch the relationship to single-direction filtering from the dimension side, and use CROSSFILTER() in the specific measure(s) that genuinely need the reverse direction.<br><br><div style="margin: 8px 0; position: relative;"><pre><code>// Tabular Editor C# Script to resolve bidirectional cross-filtering
+<p><strong>Suggested fix:</strong> Switch the relationship to single-direction filtering from the dimension side, and use CROSSFILTER() in the specific measures that genuinely need the reverse direction.<br><br><div style="margin: 8px 0; position: relative;"><pre><code>// Tabular Editor C# Script to resolve bidirectional cross-filtering
 Model.Relationships.First(rel =&gt; rel.FromTable.Name == &quot;Sales&quot; &amp;&amp; rel.ToTable.Name == &quot;Date&quot;).CrossFilteringBehavior = CrossFilteringBehavior.OneDirection;
 </code></pre></div></p>
 <p><strong>Expected benefit:</strong> Predictable, fast aggregation on the fact table.</p>

@@ -27,6 +27,7 @@ never as the individual per-format downloads.
 from __future__ import annotations
 
 import io
+import json
 import logging
 import zipfile
 from pathlib import Path
@@ -271,6 +272,9 @@ def process_job(store: JobStore, job_id: str, upload_path: Path,
 
         outputs: dict[str, bytes] = {}
         docs: dict[str, object] = {}
+        # Phase A: generate every requested document first (no rendering yet)
+        # so the whole-bundle Senior Reviewer pass below sees the complete
+        # bundle — its highest-value checks are cross-document.
         for dtype in document_types:
             if dtype == "audit" and pre_audit_doc is not None:
                 doc = pre_audit_doc
@@ -283,6 +287,23 @@ def process_job(store: JobStore, job_id: str, upload_path: Path,
             if changelog_text and dtype in ("technical", "audit"):
                 doc.changelog = changelog_text
             docs[dtype] = doc
+
+        # Benchmark-gated Senior Reviewer loop between generation and
+        # rendering. Internal-only: the quality report goes to the job log
+        # and the warnings list (both already hidden from the end-user
+        # completed-job screen), never into the rendered outputs.
+        try:
+            from ..agents.reviewer import run_review_loop
+            quality = run_review_loop(docs, model, client, warn, ai_context)
+            log.info("job %s quality: %s", job_id, json.dumps(quality.to_dict()))
+            warn(quality.summary_line())
+        except Exception as exc:
+            warn(f"Senior Reviewer: quality pass failed, continuing ({exc})")
+
+        # Phase B: render everything (body unchanged from the old combined
+        # loop).
+        for dtype in document_types:
+            doc = docs[dtype]
             renderers = registry.RENDERERS[dtype]
 
             def key(fmt: str, _dtype: str = dtype) -> str:

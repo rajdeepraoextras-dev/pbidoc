@@ -192,8 +192,7 @@ PYTHONPATH=src python -m pbicompass generate path/to/Project.pbip --provider gem
 PYTHONPATH=src python -m pbicompass generate path/to/Project.pbip --provider cohere    -o report.md   # COHERE_API_KEY
 
 # Or one key for any of 1000+ models via https://developers.meshapi.ai (model ids are "provider/model-name";
-# defaults to openai/gpt-4o — MeshAPI's Bedrock-routed Anthropic models don't yet support the structured
-# JSON output every agent here needs, per MeshAPI's own structured-output docs):
+# defaults to deepseek/deepseek-v4-flash — cheap, 1M-token context; pass --model for a different one):
 PYTHONPATH=src python -m pbicompass generate path/to/Project.pbip --provider meshapi -o report.md   # MESHAPI_API_KEY
 ```
 

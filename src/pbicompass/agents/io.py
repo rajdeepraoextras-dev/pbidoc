@@ -67,6 +67,10 @@ AGENT_EFFORT: dict[str, str] = {
     # Day 4: judging pre-matched candidates against requirement text is
     # closer to Grounding than to open-ended synthesis.
     "Requirements Traceability": "medium",
+    # Benchmark-gated review loop: one whole-bundle judgment + targeted-fix
+    # call per cycle — reads all four documents at once against the quality
+    # benchmark, so it gets the same deepest tier as Report Intelligence.
+    "Senior Reviewer": "xhigh",
 }
 
 # --------------------------------------------------------------------------
