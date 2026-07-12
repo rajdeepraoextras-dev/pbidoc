@@ -40,7 +40,7 @@ STATUSES = ("Covered", "Partial", "Gap")
 
 @dataclass
 class RequirementEvidence:
-    kind: str    # "measure" | "column" | "page"
+    kind: str    # "measure" | "column" | "table" | "page"
     name: str    # display name, e.g. "Total Revenue" or "Sales[Region]"
     anchor: str  # e.g. "measure-total-revenue" — an id that exists in the rendered document
 
@@ -143,7 +143,7 @@ def _time_intelligence_keywords(expression: Optional[str]) -> str:
 
 
 def build_candidates(model, translations: Optional[dict] = None) -> list[dict]:
-    """One candidate per measure/column/page — built directly from
+    """One candidate per measure/column/table/page — built directly from
     ``model`` (plus the job-shared DAX Translator result, when available)
     rather than any one generator's own assembled artifacts, so this runs
     the same way regardless of which document type asks for it first, with
@@ -171,6 +171,21 @@ def build_candidates(model, translations: Optional[dict] = None) -> list[dict]:
             "used": m.name in used_measures,
         })
     for t in model.tables:
+        if t.kind == "dimension" and not t.is_hidden:
+            # A dimension table's own name is real evidence for a requirement
+            # that names it (e.g. "by department"), independent of whether its
+            # individual columns are hidden — a dimension whose only display
+            # attribute is hidden (or coincidentally has no column literally
+            # matching the requirement's word) was showing a false Gap even
+            # though the model demonstrably has that dimension (RTM regression:
+            # "Monitor total corporate spend by department" / "... by region"
+            # against a real Department / Country Region dimension table).
+            candidates.append({
+                "kind": "table", "name": t.name,
+                "anchor": f"table-{anchor_slug(t.name)}",
+                "text": f"{t.name} {t.description or ''} " + " ".join(c.name for c in t.columns),
+                "used": True,
+            })
         for c in t.columns:
             if c.is_hidden:
                 continue
@@ -242,10 +257,11 @@ def _deterministic_verdict(matched: list[dict]) -> tuple[str, list[dict]]:
       (e.g. "Compare actual spend against budget" naming the literal
       Actual/Plan measures), whether or not a dimension also matched;
       when one did, both are shown as corroborating evidence.
-    - Partial: only column/page ("dimension") evidence matched, no
-      measure — real evidence (the report has the attribute a requirement
-      names) but not confirmation a measure quantifies it that way. This
-      is the floor for any non-empty match — it can never fall to Gap.
+    - Partial: only column/table/page ("dimension") evidence matched, no
+      measure — real evidence (the report has the attribute or dimension a
+      requirement names) but not confirmation a measure quantifies it that
+      way. This is the floor for any non-empty match — it can never fall to
+      Gap.
 
     A real, reproducible verdict without an LLM, upgraded by the LLM pass
     when a client is available."""
@@ -256,15 +272,19 @@ def _deterministic_verdict(matched: list[dict]) -> tuple[str, list[dict]]:
         dims = [c for c in matched if c["kind"] != "measure"]
         evidence = measures[:1] + (dims[:1] if dims else measures[1:2])
         return "Covered", evidence
-    # Partial: prefer a column over a page as the single evidence item — a
-    # specific dimension attribute ("Cost Element[Cost element name]") is
-    # stronger, more legible evidence than a generic page name that only
+    # Partial: prefer a column, then a table, then a page as the single
+    # evidence item — a specific dimension attribute ("Cost Element[Cost
+    # element name]") is stronger, more legible evidence than a bare table
+    # name, which in turn is stronger than a generic page name that only
     # happens to rank #1 by raw overlap count (a page's combined visual/
     # metric/dimension text is long enough to rack up incidental word
-    # overlaps a narrower column candidate can't compete with on count
-    # alone, even when the column is the more relevant match).
+    # overlaps a narrower column/table candidate can't compete with on count
+    # alone, even when the column/table is the more relevant match).
     columns = [c for c in matched if c["kind"] == "column"]
-    return "Partial", (columns[:1] if columns else matched[:1])
+    if columns:
+        return "Partial", columns[:1]
+    tables = [c for c in matched if c["kind"] == "table"]
+    return "Partial", (tables[:1] if tables else matched[:1])
 
 
 # -- Orchestration ----------------------------------------------------------------
@@ -301,17 +321,18 @@ def build_requirements_matrix(
 
     per_requirement_candidates: list[dict] = []
     results: list[RequirementCoverage] = []
-    # A self-named column (Department[Department]) is the strongest signal
-    # build_candidates computes — a table's own canonical dimension
-    # attribute, not an incidental keyword hit — so a requirement whose
-    # deterministic match includes one is protected from an AI "Gap"
-    # downgrade below (RF-11: production false Gaps on exactly this shape).
+    # A self-named column (Department[Department]) or a matched dimension
+    # table itself is the strongest signal build_candidates computes — a
+    # table's own canonical dimension attribute or name, not an incidental
+    # keyword hit — so a requirement whose deterministic match includes one
+    # is protected from an AI "Gap" downgrade below (RF-11: production false
+    # Gaps on exactly this shape).
     self_named_protected: dict[str, bool] = {}
     for priority, text in parsed:
         matched = match_candidates(text, candidates)
         per_requirement_candidates.append({"requirement": text, "candidates": matched})
         status, evidence = _deterministic_verdict(matched)
-        self_named_protected[text] = any(c.get("self_named") for c in matched)
+        self_named_protected[text] = any(c.get("self_named") or c["kind"] == "table" for c in matched)
         results.append(RequirementCoverage(
             text=text, priority=priority, status=status,
             evidence=[RequirementEvidence(kind=e["kind"], name=e["name"], anchor=e["anchor"]) for e in evidence],

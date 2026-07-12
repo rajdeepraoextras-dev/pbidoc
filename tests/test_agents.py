@@ -1032,6 +1032,58 @@ class ReasoningEffortWiringTest(unittest.TestCase):
         self.assertIn("reasoning_effort", calls[0])
         self.assertNotIn("reasoning_effort", calls[1])
 
+    # -- MeshAPI: reasoning_effort for DeepSeek's "Thinking" models -----
+
+    def test_meshapi_reasoning_capable_recognizes_deepseek_thinking_models(self):
+        from pbicompass.agents.llm import _meshapi_reasoning_capable
+
+        reasoning_capable = [
+            "deepseek/deepseek-v3.2-speciale",
+            "deepseek/deepseek-v4-flash",
+            "deepseek/deepseek-v4-pro",
+            "deepseek/deepseek-r1",
+            "deepseek/deepseek-r1-0528",
+            "deepseek/deepseek-r1-distill-llama-70b",
+        ]
+        for model in reasoning_capable:
+            with self.subTest(model=model):
+                self.assertTrue(_meshapi_reasoning_capable(model))
+
+        # Hybrid thinking/non-thinking DeepSeek models toggle reasoning via a
+        # separate `reasoning.enabled` boolean MeshAPI exposes — this client
+        # doesn't send that, so they must not be treated as reasoning_effort-
+        # capable (matching the pre-existing "everything else" default).
+        not_reasoning_capable = [
+            "deepseek/deepseek-chat",
+            "deepseek/deepseek-chat-v3-0324",
+            "deepseek/deepseek-chat-v3.1",
+            "deepseek/deepseek-v3.1-terminus",
+            "deepseek/deepseek-v3.2",
+            "deepseek/deepseek-v3.2-exp",
+        ]
+        for model in not_reasoning_capable:
+            with self.subTest(model=model):
+                self.assertFalse(_meshapi_reasoning_capable(model))
+
+    def test_meshapi_sends_reasoning_effort_for_deepseek_speciale(self):
+        import sys
+        from unittest.mock import patch
+        from pbicompass.agents.llm import MeshAPIClient
+
+        captured: dict = {}
+
+        def on_create(kwargs):
+            captured.update(kwargs)
+            return self._fake_meshapi_response()
+
+        fake_module = self._fake_openai_module(on_create)
+        with patch.dict(sys.modules, {"openai": fake_module}):
+            client = MeshAPIClient(model="deepseek/deepseek-v3.2-speciale", api_key="rsk_test")
+            out = client.complete_json("sys", "user", {"type": "object"}, effort="high")
+
+        self.assertEqual(out, {"ok": True})
+        self.assertEqual(captured["reasoning_effort"], "high")
+
     # -- Anthropic: graceful degradation on a rejected effort tier -----
 
     def test_anthropic_retries_without_effort_on_bad_request(self):

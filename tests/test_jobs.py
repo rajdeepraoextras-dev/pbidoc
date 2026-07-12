@@ -69,6 +69,15 @@ class InMemoryDefaultBehaviorTest(unittest.TestCase):
         self.assertEqual(self.store.get_output(job.id, "md"), b"# Report")
         self.assertEqual(self.store.get_output(job.id, "html"), b"<html></html>")
 
+    def test_add_and_list_feedback(self):
+        job = self.store.create("x.zip", tenant="acme")
+        fb = self.store.add_feedback(job.id, "acme", "Loved the audit doc.")
+        self.assertEqual(fb.job_id, job.id)
+        entries = self.store.list_feedback()
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0].message, "Loved the audit doc.")
+        self.assertEqual(self.store.public_feedback(entries[0])["tenant"], "acme")
+
     def test_public_payload_has_no_document_content(self):
         job = self.store.create("Model.pbix")
         self.store.mark_done(job.id, ["md"])

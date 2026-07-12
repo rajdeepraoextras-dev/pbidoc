@@ -214,7 +214,14 @@ def report_pages(model: SemanticModel) -> list[dict]:
         for key in order:
             vis = groups[key]
             if vis["count"] > 1:
-                vis["label"] = f"{vis['label']} — {vis['type']} ×{vis['count']}"
+                # An untitled visual's label already fell back to its bare
+                # type name (visual_label()'s last resort) — appending
+                # "— {type}" again would double it up ("Matrix — Matrix ×2"
+                # / "Bar chart — Bar chart ×2") instead of adding information.
+                vis["label"] = (
+                    f"{vis['label']} ×{vis['count']}" if vis["label"] == vis["type"]
+                    else f"{vis['label']} — {vis['type']} ×{vis['count']}"
+                )
             visuals.append(vis)
 
         # Resolve each group's collision-safe anchor slug in the exact same

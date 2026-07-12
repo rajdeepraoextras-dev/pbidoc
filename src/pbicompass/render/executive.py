@@ -41,6 +41,13 @@ _SECTION_TITLES = [
 # (``_IMPLEMENTATION_JARGON`` in the generator enforces the same rule on
 # risk/next-step text), so the calculation-logic component gets its own
 # business-safe label here.
+#
+# Audience mapping for this one component (same score, two labels by
+# design, not an inconsistency to reconcile): audit.py and technical.py both
+# show the shared "DAX Quality" label (developer/BI-analyst audience, DAX is
+# expected vocabulary); this executive doc shows "Calculation Quality"
+# (business-owner audience). user_guide.py doesn't render the health-score
+# component breakdown at all, so it has no label to pick.
 _COMPONENT_ORDER = ["modeling", "dax", "governance", "performance", "unused_assets"]
 _EXEC_COMPONENT_LABELS = dict(HEALTH_COMPONENT_LABELS, dax="Calculation Quality")
 

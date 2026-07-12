@@ -120,16 +120,18 @@ class OnboardingProfileStoreTest(unittest.TestCase):
         self.assertEqual(acct.company, "")
         self.assertEqual(acct.role, "")
 
-    def test_get_or_create_seeds_profile_and_plan_on_first_call_only(self):
+    def test_get_or_create_seeds_profile_on_first_call_only(self):
+        # Day 38: paid plans aren't self-serve yet, so a "pro" pick at
+        # signup is ignored -- the account is always created on free.
         first = self.store.get_or_create_account_for_supabase_user(
             "sub-1", "a@x.com", name="A", company="Co", role="Analyst", plan="pro")
-        self.assertEqual(first.plan, "pro")
+        self.assertEqual(first.plan, "free")
         self.assertEqual(first.company, "Co")
         # second call with different values returns the SAME account unchanged
         second = self.store.get_or_create_account_for_supabase_user(
             "sub-1", "a@x.com", company="Different", plan="free")
         self.assertEqual(second.id, first.id)
-        self.assertEqual(second.plan, "pro")
+        self.assertEqual(second.plan, "free")
         self.assertEqual(second.company, "Co")
 
     def test_get_or_create_unknown_plan_falls_back_to_free(self):
@@ -272,7 +274,7 @@ class DashboardApiTest(unittest.TestCase):
         self.assertEqual(body["supabase_url"], self._URL)
         self.assertIn("byok_enabled", body)
         # Day 33: the plan picker reads real quota numbers from here
-        self.assertEqual(body["plan_limits"]["free"], 1)
+        self.assertEqual(body["plan_limits"]["free"], 2)
         self.assertIn("pro", body["plan_limits"])
 
     def test_app_page_is_served(self):
@@ -294,7 +296,11 @@ class DashboardApiTest(unittest.TestCase):
         self.assertEqual(body["role"], "")
 
     # -- onboarding profile + plan-at-signup (Day 33) -----------------------
-    def test_signup_metadata_seeds_company_role_and_plan(self):
+    def test_signup_metadata_seeds_company_role_but_plan_stays_free(self):
+        # Day 38: paid plans aren't self-serve yet (no checkout behind them),
+        # so a signup form's "pro"/"business" pick is ignored -- everyone
+        # starts on free until billing exists. Other onboarding fields still
+        # come through untouched.
         headers = self._headers(
             "founder@acme.com", sub="u-onboard-1",
             user_metadata={"name": "Dana Founder", "company": "Acme Analytics",
@@ -303,9 +309,8 @@ class DashboardApiTest(unittest.TestCase):
         body = self.client.get("/app/api/me", headers=headers).json()
         self.assertEqual(body["company"], "Acme Analytics")
         self.assertEqual(body["role"], "Head of BI")
-        self.assertEqual(body["plan"], "pro")  # trust-based plan grant, no billing
-        # Pro quota is reflected in the usage limit, not just the label
-        self.assertEqual(body["monthly_limit"], 10)
+        self.assertEqual(body["plan"], "free")
+        self.assertEqual(body["monthly_limit"], 2)
 
     def test_unknown_plan_in_metadata_falls_back_to_free(self):
         headers = self._headers(
@@ -316,27 +321,30 @@ class DashboardApiTest(unittest.TestCase):
         self.assertEqual(body["plan"], "free")  # never blocks account creation
 
     def test_metadata_only_applied_on_first_creation_not_re_upserted(self):
-        # First request creates the account on the "pro" plan from metadata.
+        # First request creates the account with "First Co" from metadata.
         sub = "u-onboard-3"
         first = self.client.get("/app/api/me", headers=self._headers(
-            "p@example.com", sub=sub, user_metadata={"plan": "pro"})).json()
-        self.assertEqual(first["plan"], "pro")
+            "p@example.com", sub=sub, user_metadata={"company": "First Co"})).json()
+        self.assertEqual(first["company"], "First Co")
         # A later token from the same user carrying different metadata must
         # NOT silently overwrite the account (JIT-create, not upsert-always).
         second = self.client.get("/app/api/me", headers=self._headers(
-            "p@example.com", sub=sub, user_metadata={"plan": "free"})).json()
-        self.assertEqual(second["plan"], "pro")
+            "p@example.com", sub=sub, user_metadata={"company": "Second Co"})).json()
+        self.assertEqual(second["company"], "First Co")
 
-    # -- self-serve plan change (Day 33) ------------------------------------
-    def test_change_plan_endpoint_updates_the_account(self):
+    # -- self-serve plan change (Day 33; restricted to "free" since Day 38) --
+    def test_change_plan_endpoint_allows_free(self):
         headers = self._headers("switch@example.com", sub="u-plan-1")
         self.assertEqual(self.client.get("/app/api/me", headers=headers).json()["plan"], "free")
-        res = self.client.post("/app/api/plan", json={"plan": "pro"}, headers=headers)
+        res = self.client.post("/app/api/plan", json={"plan": "free"}, headers=headers)
         self.assertEqual(res.status_code, 200, res.text)
-        self.assertEqual(res.json()["plan"], "pro")
-        after = self.client.get("/app/api/me", headers=headers).json()
-        self.assertEqual(after["plan"], "pro")
-        self.assertEqual(after["monthly_limit"], 10)
+        self.assertEqual(res.json()["plan"], "free")
+
+    def test_change_plan_rejects_paid_plans_until_billing_exists(self):
+        headers = self._headers("switch2@example.com", sub="u-plan-1b")
+        res = self.client.post("/app/api/plan", json={"plan": "pro"}, headers=headers)
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(self.client.get("/app/api/me", headers=headers).json()["plan"], "free")
 
     def test_change_plan_rejects_unknown_plan(self):
         headers = self._headers("bad@example.com", sub="u-plan-2")
@@ -487,6 +495,45 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("tenant-a", tenants)
         self.assertIn("tenant-b", tenants)
 
+    # -- post-generation feedback (Day 39) -----------------------------------
+    def test_feedback_is_submitted_and_visible_to_admin(self):
+        headers = self._headers("feedback@example.com", sub="fb-1")
+        tenant = self.client.get("/app/api/me", headers=headers).json()["tenant"]
+        job = self.store.create("f.pbix", tenant=tenant)
+        res = self.client.post(f"/jobs/{job.id}/feedback", json={"message": "Great report!"}, headers=headers)
+        self.assertEqual(res.status_code, 200, res.text)
+        self.assertEqual(res.json()["feedback"]["message"], "Great report!")
+
+        admin = self._make_admin()
+        entries = self.client.get("/app/api/admin/feedback", headers=admin).json()["feedback"]
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["job_id"], job.id)
+        self.assertEqual(entries[0]["tenant"], tenant)
+        self.assertEqual(entries[0]["message"], "Great report!")
+
+    def test_feedback_rejects_empty_message(self):
+        headers = self._headers("feedback2@example.com", sub="fb-2")
+        tenant = self.client.get("/app/api/me", headers=headers).json()["tenant"]
+        job = self.store.create("f2.pbix", tenant=tenant)
+        res = self.client.post(f"/jobs/{job.id}/feedback", json={"message": "   "}, headers=headers)
+        self.assertEqual(res.status_code, 400)
+
+    def test_feedback_rejects_unknown_or_other_tenants_job(self):
+        headers = self._headers("feedback3@example.com", sub="fb-3")
+        self.client.get("/app/api/me", headers=headers)  # provision
+        self.store.create("other.pbix", tenant="someone-else")
+        other_job = self.store.list_for_tenant("someone-else")[0]
+        res = self.client.post(f"/jobs/{other_job.id}/feedback", json={"message": "hi"}, headers=headers)
+        self.assertEqual(res.status_code, 404)
+        res = self.client.post("/jobs/nonexistent/feedback", json={"message": "hi"}, headers=headers)
+        self.assertEqual(res.status_code, 404)
+
+    def test_feedback_admin_route_requires_admin(self):
+        headers = self._headers("nonadmin2@example.com", sub="na-2")
+        self.client.get("/app/api/me", headers=headers)  # provision
+        self.assertEqual(self.client.get("/app/api/admin/feedback", headers=headers).status_code, 403)
+        self.assertEqual(self.client.get("/app/api/admin/feedback").status_code, 401)
+
     # -- AI-engine availability toggles (Day 36) ----------------------------
     def test_config_exposes_provider_catalog(self):
         providers = self.client.get("/app/api/config").json()["providers"]
@@ -569,12 +616,19 @@ class DashboardApiTest(unittest.TestCase):
         self.assertFalse(target["blocked"])
 
     def test_admin_stats_reports_counts_and_estimated_mrr(self):
-        # one pro, one business, plus the admin (free)
-        p = self.client.get("/app/api/me", headers=self._headers("pro@x.com", sub="pro-1",
-                            user_metadata={"plan": "pro"})).json()
-        self.client.get("/app/api/me", headers=self._headers("biz@x.com", sub="biz-1",
-                        user_metadata={"plan": "business"}))
+        # one pro, one business, plus the admin (free) -- plans are set via
+        # the admin endpoint now that signup/self-serve can't grant a paid
+        # plan (Day 38: paid plans aren't self-serve until billing exists).
+        self.client.get("/app/api/me", headers=self._headers("pro@x.com", sub="pro-1"))
+        self.client.get("/app/api/me", headers=self._headers("biz@x.com", sub="biz-1"))
         admin = self._make_admin()
+        accounts = self.client.get("/app/api/admin/accounts", headers=admin).json()["accounts"]
+        pro_acct = next(a for a in accounts if a["email"] == "pro@x.com")
+        biz_acct = next(a for a in accounts if a["email"] == "biz@x.com")
+        self.client.post(f"/app/api/admin/accounts/{pro_acct['id']}/plan",
+                         json={"plan": "pro"}, headers=admin)
+        self.client.post(f"/app/api/admin/accounts/{biz_acct['id']}/plan",
+                         json={"plan": "business"}, headers=admin)
         stats = self.client.get("/app/api/admin/stats", headers=admin).json()
         self.assertEqual(stats["total_accounts"], 3)
         self.assertEqual(stats["by_plan"]["pro"], 1)

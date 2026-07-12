@@ -368,7 +368,11 @@ def schema_shape(model: SemanticModel) -> tuple[str, list[str], list[str]]:
         r.from_table in dims and r.to_table in dims for r in model.relationships
     )
     if len(facts) == 1 and dims and not snowflake:
-        shape = f"a star schema centred on the '{facts[0]}' fact table"
+        # When the fact table is literally named e.g. "Fact" (a common lazy
+        # naming convention), "centred on the 'Fact' fact table" doubles up
+        # the word — drop the redundant noun phrase in that case.
+        noun = "table" if "fact" in facts[0].strip().lower() else "fact table"
+        shape = f"a star schema centred on the '{facts[0]}' {noun}"
     elif snowflake:
         shape = "a snowflake schema (dimensions relate to other dimensions)"
     elif len(facts) > 1:

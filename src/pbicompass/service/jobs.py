@@ -48,6 +48,15 @@ class JobStatus(str, Enum):
 
 
 @dataclass
+class Feedback:
+    id: str
+    job_id: str
+    tenant: str
+    message: str
+    created_at: float
+
+
+@dataclass
 class Job:
     id: str
     filename: str
@@ -122,6 +131,13 @@ class JobStore:
                     formats TEXT NOT NULL DEFAULT '[]',
                     warnings TEXT NOT NULL DEFAULT '[]',
                     usage TEXT NOT NULL DEFAULT '{}'
+                );
+                CREATE TABLE IF NOT EXISTS feedback (
+                    id TEXT PRIMARY KEY,
+                    job_id TEXT NOT NULL,
+                    tenant TEXT NOT NULL DEFAULT 'public',
+                    message TEXT NOT NULL,
+                    created_at DOUBLE PRECISION NOT NULL
                 );
                 """
             )
@@ -229,6 +245,41 @@ class JobStore:
                     "SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?", (limit,)
                 ).fetchall()
         return [self._row_to_job(r) for r in rows]
+
+    # -- feedback -------------------------------------------------------------
+    def add_feedback(self, job_id: str, tenant: str, message: str) -> Feedback:
+        """A short free-text note a user left after a job finished — kept
+        indefinitely (unlike output bytes) since it's small, user-authored
+        text meant for the team to read later, not report content."""
+        fb = Feedback(id=uuid.uuid4().hex, job_id=job_id, tenant=tenant,
+                       message=message, created_at=time.time())
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO feedback (id, job_id, tenant, message, created_at) VALUES (?,?,?,?,?)",
+                (fb.id, fb.job_id, fb.tenant, fb.message, fb.created_at),
+            )
+            self._conn.commit()
+        return fb
+
+    def list_feedback(self, limit: int = 200) -> list[Feedback]:
+        """Every tenant's feedback, newest first — for the admin panel's
+        feedback tab (mirrors :meth:`list_all`'s cross-tenant job browser)."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM feedback ORDER BY created_at DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return [
+            Feedback(id=r["id"], job_id=r["job_id"], tenant=r["tenant"],
+                     message=r["message"], created_at=r["created_at"])
+            for r in rows
+        ]
+
+    @staticmethod
+    def public_feedback(fb: Feedback) -> dict:
+        return {
+            "id": fb.id, "job_id": fb.job_id, "tenant": fb.tenant,
+            "message": fb.message, "created_at": fb.created_at,
+        }
 
     def sweep(self) -> None:
         """Force-fail any job stuck in PROCESSING past the watchdog timeout,

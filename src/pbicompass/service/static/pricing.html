@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#0f1a15">
 <title>Pricing — PBICompass</title>
-<meta name="description" content="Simple, predictable pricing for PBICompass. Free, Pro, and Business plans — 1, 10, or 30 documentation reports a month.">
+<meta name="description" content="Simple, predictable pricing for PBICompass. Free, Pro, and Business plans — 2, 10, or 30 documentation reports a month.">
 <meta name="robots" content="index, follow">
 <link href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Source+Serif+4:ital,opsz,wght@1,8..60,300;1,8..60,400;1,8..60,500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/theme.css">
@@ -52,6 +52,9 @@ h1 em, h1 i, h2 em, h2 i { font-family: var(--font-serif); font-style: italic; f
 .price-cta:hover { transform: scale(1.02); background: hsl(0 0% 100% / .16); }
 .price-card.featured .price-cta { background: #fff; color: #000; }
 .price-card.featured .price-cta:hover { background: hsl(0 0% 100% / .88); }
+.price-cta.disabled { opacity: .5; cursor: not-allowed; pointer-events: none; }
+.price-cta.disabled:hover { transform: none; }
+.price-card.featured .price-cta.disabled { background: hsl(0 0% 100% / .3); }
 .price-note { text-align: center; margin-top: 26px; font-size: .8rem; color: hsl(0 0% 100% / .68); }
 .price-note a { color: hsl(0 0% 100% / .92); text-decoration: underline; text-underline-offset: 3px; }
 
@@ -133,7 +136,7 @@ h1 em, h1 i, h2 em, h2 i { font-family: var(--font-serif); font-style: italic; f
         <div class="price-card liquid-glass">
           <div class="price-name">Free</div>
           <div class="price-amt"><b>$0</b><span>/ month</span></div>
-          <div class="price-quota">1 report / month</div>
+          <div class="price-quota">2 reports / month</div>
           <ul class="price-features">
             <li>Technical, Audit, Executive &amp; Business docs</li>
             <li>Markdown · HTML · DOCX · PDF · JSON</li>
@@ -144,7 +147,7 @@ h1 em, h1 i, h2 em, h2 i { font-family: var(--font-serif); font-style: italic; f
         </div>
 
         <div class="price-card liquid-glass-strong featured">
-          <span class="price-badge">Most popular</span>
+          <span class="price-badge">Coming soon</span>
           <div class="price-name">Pro</div>
           <div class="price-amt"><b>$20</b><span>/ month</span></div>
           <div class="price-quota">10 reports / month</div>
@@ -154,10 +157,11 @@ h1 em, h1 i, h2 em, h2 i { font-family: var(--font-serif); font-style: italic; f
             <li>Priority processing</li>
             <li>Email support</li>
           </ul>
-          <a class="price-cta" href="/app#signup">Start with Pro</a>
+          <span class="price-cta disabled">Coming soon</span>
         </div>
 
         <div class="price-card liquid-glass">
+          <span class="price-badge">Coming soon</span>
           <div class="price-name">Business</div>
           <div class="price-amt"><b>$50</b><span>/ month</span></div>
           <div class="price-quota">30 reports / month</div>
@@ -167,11 +171,11 @@ h1 em, h1 i, h2 em, h2 i { font-family: var(--font-serif); font-style: italic; f
             <li>Highest self-serve monthly volume</li>
             <li>Priority support</li>
           </ul>
-          <a class="price-cta" href="/app#signup">Start with Business</a>
+          <span class="price-cta disabled">Coming soon</span>
         </div>
       </div>
 
-      <p class="price-note">Need more than 30 reports a month, SSO, or a custom deployment? <a href="mailto:rajdeepraoextras@gmail.com">Contact us</a> about Enterprise.</p>
+      <p class="price-note">Need more than 30 reports a month, SSO, or a custom deployment? <a href="mailto:pbicompass@gmail.com">Contact us</a> about Enterprise.</p>
 
       <div class="plans-all">
         <h2>Every plan includes</h2>

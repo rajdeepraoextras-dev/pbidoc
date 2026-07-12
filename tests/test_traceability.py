@@ -240,7 +240,7 @@ class BuildCandidatesTest(unittest.TestCase):
         model = _model()
         candidates = build_candidates(model)
         kinds = {c["kind"] for c in candidates}
-        self.assertEqual(kinds, {"measure", "column", "page"})
+        self.assertEqual(kinds, {"measure", "column", "table", "page"})
 
     def test_measure_anchor_matches_render_convention(self):
         model = _model()

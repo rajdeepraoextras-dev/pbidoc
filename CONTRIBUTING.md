@@ -3,7 +3,7 @@
 This is proprietary software (see [LICENSE](LICENSE)) — these are internal
 dev-workflow notes, not an open invitation for external PRs. If you're
 outside the team and want to contribute or integrate, email
-rajdeepraoextras@gmail.com first.
+pbicompass@gmail.com first.
 
 ## Setup
 

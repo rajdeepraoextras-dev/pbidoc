@@ -229,8 +229,8 @@ def main(argv: list[str] | None = None) -> int:
                             "provider's own native reasoning knob where the configured "
                             "model supports one (Anthropic always; Gemini via thinking "
                             "budget; Cohere/MeshAPI only for reasoning-capable models, "
-                            "e.g. --model command-a-reasoning / openai/gpt-5). "
-                            "Ignored for --provider none.")
+                            "e.g. --model command-a-reasoning / openai/gpt-5 / "
+                            "deepseek/deepseek-v3.2-speciale). Ignored for --provider none.")
     p_gen.add_argument("--document", default="technical", choices=[*DOCUMENT_TYPES, "all"],
                        help="Document type to generate (default: technical — the original documentation). "
                             "'all' generates every document type from a single parse.")

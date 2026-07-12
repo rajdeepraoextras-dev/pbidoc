@@ -72,6 +72,9 @@
 .plan-card .p-name { font-size: .98rem; font-weight: 600; color: #fff; }
 .plan-card .p-quota { font-size: .8rem; color: hsl(0 0% 100% / .82); }
 .plan-card .p-note { font-size: .72rem; color: hsl(0 0% 100% / .6); }
+.plan-card.disabled { cursor: not-allowed; opacity: .55; }
+.plan-card.disabled:hover { transform: none; }
+.plan-card.disabled .radio { display: none; }
 
 /* ---- signed-in app shell ---- */
 #app-shell { display: none; }
@@ -120,6 +123,14 @@
 .file-name::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #fff; flex: none; }
 @media (max-width: 560px) { .dz-row { flex-direction: column; text-align: center; gap: 12px; } .dz-btn { display: none; } }
 
+.dz-help { margin-top: 10px; font-size: .78rem; }
+.dz-help summary { cursor: pointer; color: hsl(0 0% 100% / .72); list-style: none; }
+.dz-help summary::-webkit-details-marker { display: none; }
+.dz-help summary::before { content: "\25B8"; display: inline-block; margin-right: 6px; transition: transform .2s var(--ease); }
+.dz-help[open] summary::before { transform: rotate(90deg); }
+.dz-help ol { margin: 8px 0 0 1.1rem; padding: 0; color: hsl(0 0% 100% / .68); }
+.dz-help li { margin-bottom: 5px; }
+
 .doctype-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 10px; }
 @media (max-width: 640px) { .doctype-grid { grid-template-columns: 1fr; } }
 .doctype-option { display: flex; align-items: flex-start; gap: 10px; padding: 13px 15px; border-radius: 18px; cursor: pointer; margin-bottom: 0; transition: background .2s, transform .3s var(--ease); }
@@ -148,6 +159,12 @@
 .download-btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: 100px; background: hsl(0 0% 100% / .07); color: #fff; font-size: .8rem; font-weight: 500; transition: transform .3s var(--ease), background .2s; animation: fadeUp .4s var(--ease) backwards; }
 .download-btn:hover { transform: scale(1.05); background: hsl(0 0% 100% / .14); }
 .download-btn svg { width: 14px; height: 14px; }
+
+#feedback-prompt { margin-top: 22px; padding: 16px 18px; border-radius: 14px; background: hsl(0 0% 100% / .05); border: 1px solid hsl(0 0% 100% / .1); text-align: center; animation: fadeUp .4s var(--ease) backwards; animation-delay: .2s; }
+#feedback-prompt.show { display: block !important; }
+#feedback-prompt p { margin: 0 0 10px; font-size: .84rem; color: hsl(0 0% 100% / .82); }
+#feedback-prompt .download-btn { background: hsl(0 0% 100% / .1); }
+#feedback-prompt .download-btn:hover { background: hsl(0 0% 100% / .18); }
 
 .err-text { color: var(--status-err); font-size: .84rem; min-height: 1.1rem; margin-top: 4px; }
 .ok-text { color: var(--status-ok); font-size: .84rem; min-height: 1.1rem; margin-top: 4px; }
@@ -312,11 +329,11 @@
         <form id="gen-form">
           <div class="tabs liquid-glass" style="margin-bottom:26px;">
             <button type="button" class="tab-btn active" data-tab="tab-config"><span class="tn">1</span><span class="txt">Source &amp; Engine</span></button>
-            <button type="button" class="tab-btn" data-tab="tab-control"><span class="tn">2</span><span class="txt">Metadata <small style="opacity:.65;font-weight:400;">· optional</small></span></button>
-            <button type="button" class="tab-btn" data-tab="tab-details"><span class="tn">3</span><span class="txt">Notes <small style="opacity:.65;font-weight:400;">· optional</small></span></button>
+            <button type="button" class="tab-btn" data-tab="tab-control"><span class="tn">2</span><span class="txt">Metadata <small style="opacity:.65;font-weight:400;">· recommended</small></span></button>
+            <button type="button" class="tab-btn" data-tab="tab-details"><span class="tn">3</span><span class="txt">Notes <small style="opacity:.65;font-weight:400;">· recommended</small></span></button>
           </div>
 
-          <p class="muted" style="text-align:center; margin:-10px 0 22px;">Only the file in step 1 is required — steps 2 &amp; 3 are optional and simply enrich the documents.</p>
+          <p class="muted" style="text-align:center; margin:-10px 0 22px;">Step 1 is all that's required, but steps 2 &amp; 3 feed real business context to the AI — filling them in makes for a noticeably more complete, accurate report.</p>
 
           <!-- Tab 1 -->
           <div class="tab-content active" id="tab-config">
@@ -326,14 +343,24 @@
                 <div class="dz-row">
                   <div class="dz-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 16.6A4.5 4.5 0 0 0 17.5 8.5h-1.3A7 7 0 1 0 4 15"/><path d="M12 12v9M8 17l4-4 4 4"/></svg></div>
                   <div class="dz-copy">
-                    <p class="dz-main">Drop your Power BI report here</p>
-                    <p class="dz-sub">.pbix — or a .zip of a .pbip project folder · drag &amp; drop or browse</p>
+                    <p class="dz-main">Drop your Power BI project .zip here</p>
+                    <p class="dz-sub">.zip of a .pbip project folder · drag &amp; drop or browse</p>
                   </div>
                   <span class="dz-btn">Browse files</span>
                 </div>
-                <input type="file" id="file" accept=".pbix,.zip,.pbip">
+                <input type="file" id="file" accept=".zip">
                 <div class="file-name" id="file-name"></div>
               </div>
+              <details class="dz-help">
+                <summary>Don't have a .pbip project? Here's how to get one</summary>
+                <ol>
+                  <li>In Power BI Desktop, go to <b>File → Options and settings → Options → Preview features</b> and enable <b>"Store semantic model using TMDL format"</b> (one-time, if not already on).</li>
+                  <li>Open your report, then <b>File → Save As</b> and choose <b>Power BI project files (*.pbip)</b> as the save type.</li>
+                  <li>This creates a folder named after your report, containing the <code>.pbip</code> file plus a <code>.Report</code> and <code>.SemanticModel</code> subfolder.</li>
+                  <li>Select that whole folder, right-click it, and choose <b>Send to → Compressed (zipped) folder</b> (Windows) or <b>Compress</b> (Mac).</li>
+                  <li>Upload the resulting <code>.zip</code> here.</li>
+                </ol>
+              </details>
             </div>
 
             <div class="form-group">
@@ -382,6 +409,13 @@
                 </select>
               </div>
             </div>
+
+            <div class="grid-2" id="model-row">
+              <div class="form-group">
+                <label>MeshAPI Model <small>(optional — routes 1000+ models; leave blank for the default)</small></label>
+                <input type="text" id="model-input" autocomplete="off" placeholder="e.g. deepseek/deepseek-v3.2-speciale (DeepSeek's thinking model)">
+              </div>
+            </div>
           </div>
 
           <!-- Tab 2 -->
@@ -428,6 +462,7 @@
           <div id="progress-text" class="progress-text"></div>
         </div>
         <div id="downloads"></div>
+        <div id="feedback-prompt" style="display:none"></div>
       </div>
     </div>
 
@@ -555,6 +590,20 @@
         </div>
         <div class="muted" id="admin-jobs-empty" style="margin-top:10px;"></div>
       </div>
+
+      <div class="panel-card liquid-glass">
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:6px;">
+          <h2 style="margin:0;">Feedback</h2>
+          <div style="flex:1"></div>
+          <button class="btn-ghost" onclick="loadAdminFeedback()">Refresh</button>
+        </div>
+        <p class="muted">Notes users left after a job finished, newest first.</p>
+        <div style="overflow-x:auto;">
+          <table class="data-table"><thead><tr><th>Tenant</th><th>Job</th><th>Message</th><th>Sent</th></tr></thead>
+            <tbody id="admin-feedback-body"></tbody></table>
+        </div>
+        <div class="muted" id="admin-feedback-empty" style="margin-top:10px;"></div>
+      </div>
     </div>
   </section>
 
@@ -602,22 +651,29 @@ function showAuthTab(which) {
 }
 
 /* ---------- plan pickers (signup + profile) ---------- */
+// Paid plans have no checkout behind them yet (Day 38) -- free is the only
+// self-serve option until billing exists; pro/business show as "Coming
+// soon" and aren't clickable. An admin can still grant them manually from
+// the admin portal.
 function renderPlanCards(container, selected, onPick) {
   container.innerHTML = "";
   ["free", "pro", "business"].forEach(p => {
+    const disabled = p !== "free";
     const card = document.createElement("div");
-    card.className = "plan-card liquid-glass" + (p === selected ? " sel" : "");
-    const note = p === "free" ? "Always free" : "Granted instantly · billing coming soon";
+    card.className = "plan-card liquid-glass" + (p === selected ? " sel" : "") + (disabled ? " disabled" : "");
+    const note = p === "free" ? "Always free" : "Coming soon";
     card.innerHTML =
       `<span class="radio"></span>
        <span class="p-name">${planLabel(p)}</span>
        <span class="p-quota">${quotaText(p)}</span>
        <span class="p-note">${note}</span>`;
-    card.addEventListener("click", () => {
-      [...container.children].forEach(c => c.classList.remove("sel"));
-      card.classList.add("sel");
-      onPick(p);
-    });
+    if (!disabled) {
+      card.addEventListener("click", () => {
+        [...container.children].forEach(c => c.classList.remove("sel"));
+        card.classList.add("sel");
+        onPick(p);
+      });
+    }
     container.appendChild(card);
   });
 }
@@ -791,7 +847,7 @@ async function loadJobs() {
 
 /* ---------- admin panel (in-app, admin accounts only) ---------- */
 async function loadAdmin() {
-  await Promise.all([loadAdminAccounts(), loadAdminJobs(), loadAdminProviders()]);
+  await Promise.all([loadAdminAccounts(), loadAdminJobs(), loadAdminProviders(), loadAdminFeedback()]);
 }
 
 /* ---------- admin: AI engine availability ---------- */
@@ -895,6 +951,22 @@ async function loadAdminJobs() {
   $("admin-jobs-empty").textContent = jobs.length ? "" : "No jobs yet.";
 }
 
+async function loadAdminFeedback() {
+  const r = await api("/app/api/admin/feedback");
+  if (!r.ok) { $("admin-feedback-empty").textContent = "Could not load feedback."; return; }
+  const { feedback } = await r.json();
+  const body = $("admin-feedback-body"); body.innerHTML = "";
+  feedback.forEach(fb => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td><span class="admin-sub">${escHtml(fb.tenant || "—")}</span></td>
+      <td><span class="admin-sub">${escHtml(fb.job_id)}</span></td>
+      <td>${escHtml(fb.message)}</td>
+      <td>${fmtDate(fb.created_at)}</td>`;
+    body.appendChild(tr);
+  });
+  $("admin-feedback-empty").textContent = feedback.length ? "" : "No feedback yet.";
+}
+
 /* =============================================================
    GENERATOR (moved from index.html) — talks to /jobs
    ============================================================= */
@@ -927,6 +999,10 @@ document.querySelectorAll("#gen-form .tab-btn").forEach(tab => {
 const providerApikey = $("provider-apikey");
 providerApikey.value = localStorage.getItem("pbicompass_provider_key") || "";
 providerApikey.addEventListener("change", () => localStorage.setItem("pbicompass_provider_key", providerApikey.value.trim()));
+
+const modelInput = $("model-input");
+modelInput.value = localStorage.getItem("pbicompass_meshapi_model") || "";
+modelInput.addEventListener("change", () => localStorage.setItem("pbicompass_meshapi_model", modelInput.value.trim()));
 
 const EFFORT_CAPABLE_PROVIDERS = ["anthropic", "gemini", "cohere", "meshapi"];
 
@@ -962,6 +1038,10 @@ function renderProviderOptions() {
 function syncEffortVisibility() {
   const isOffline = $("provider").value === "none";
   $("effort-row").style.display = EFFORT_CAPABLE_PROVIDERS.includes($("provider").value) ? "" : "none";
+  // Free-text model id only makes sense for MeshAPI (1000+ models behind
+  // one key, e.g. "deepseek/deepseek-v3.2-speciale") — the other providers
+  // each have a single sensible server-side default model.
+  $("model-row").style.display = $("provider").value === "meshapi" ? "" : "none";
   // Hosted default runs every job on the server's own provider key
   // (byok_enabled=false) — a visitor is never asked for their own key.
   // Self-host deployments opt per-job BYOK back in via PBICOMPASS_BYOK_UI.
@@ -1044,12 +1124,17 @@ $("gen-form").addEventListener("submit", async e => {
   const selectedDocs = doctypeBoxes().filter(b => b.checked).map(b => b.value);
   if (!selectedDocs.length) { setStatus("Select at least one document to generate.", "err"); return; }
   setBusy(true); $("downloads").innerHTML = ""; renderWarnings(null);
+  $("feedback-prompt").className = ""; $("feedback-prompt").innerHTML = "";
   setStatus("Uploading and analyzing report structure...");
 
   const fd = new FormData();
   fd.append("file", f);
   fd.append("provider", $("provider").value);
   if (EFFORT_CAPABLE_PROVIDERS.includes($("provider").value)) fd.append("effort", $("effort").value);
+  if ($("provider").value === "meshapi") {
+    const modelVal = modelInput.value.trim();
+    if (modelVal) fd.append("model", modelVal);
+  }
   if (cfg.byok_enabled && $("provider").value !== "none") {
     const engineKey = providerApikey.value.trim();
     if (engineKey) fd.append("provider_api_key", engineKey);
@@ -1101,6 +1186,7 @@ async function poll(jobId) {
       renderWarnings(job.warnings);
       finishProgress(true);
       renderDownloads(jobId, job.formats);
+      renderFeedbackPrompt(jobId);
       setBusy(false);
       refreshProfile();  // usage went up — reflect it on the profile meter
       return;
@@ -1136,6 +1222,36 @@ function renderDownloads(jobId, formats) {
     wrap.appendChild(row); container.appendChild(wrap);
   });
 }
+function renderFeedbackPrompt(jobId) {
+  const el = $("feedback-prompt");
+  el.innerHTML = '<p>How did this output turn out? A quick note helps us fix issues fast.</p>'
+    + '<textarea id="feedback-text" rows="3" placeholder="What worked well, what didn\'t…" '
+    + 'style="width:100%; resize:vertical; margin-bottom:10px;"></textarea>'
+    + '<button type="button" class="download-btn" id="feedback-submit">✉️<span>Send feedback</span></button>'
+    + '<div class="ok-text" id="feedback-ok"></div><div class="err-text" id="feedback-err"></div>';
+  el.className = "show";
+  $("feedback-submit").addEventListener("click", () => submitFeedback(jobId));
+}
+async function submitFeedback(jobId) {
+  const textarea = $("feedback-text");
+  const message = textarea.value.trim();
+  if (!message) { $("feedback-err").textContent = "Write a note before sending."; return; }
+  $("feedback-err").textContent = ""; $("feedback-ok").textContent = "";
+  const btn = $("feedback-submit"); btn.disabled = true;
+  try {
+    const r = await fetch("/jobs/" + jobId + "/feedback", {
+      method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ message }),
+    });
+    if (!r.ok) { $("feedback-err").textContent = "Couldn't send feedback — try again."; return; }
+    textarea.value = ""; textarea.disabled = true; btn.style.display = "none";
+    $("feedback-ok").textContent = "Thanks — feedback sent!";
+  } catch {
+    $("feedback-err").textContent = "Couldn't send feedback — try again.";
+  } finally {
+    btn.disabled = false;
+  }
+}
 async function downloadFile(url, fmt) {
   try {
     const r = await fetch(url, { headers: authHeaders() });
@@ -1159,7 +1275,8 @@ function showSignedOut() {
   $("signedin-foot").style.display = "none";
   $("auth").classList.remove("hidden");
   $("appbar-right").innerHTML = '<a class="account-btn liquid-glass scale-hover" href="/">← Back to site</a>';
-  if (cfg.supabase_enabled) $("ms-wrap").classList.remove("hidden");
+  // "Continue with Microsoft" is temporarily disabled -- ms-wrap stays hidden
+  // (was: `if (cfg.supabase_enabled) $("ms-wrap").classList.remove("hidden");`).
   // Landing-page CTAs deep-link here with #signup so new visitors land on the
   // "Create account" tab instead of the sign-in form.
   if (location.hash === "#signup") showAuthTab("signup");

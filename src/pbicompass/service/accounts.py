@@ -52,7 +52,7 @@ from .db import _Connection, is_postgres_url  # noqa: F401  (re-exported)
 # Monthly document quota per plan (jobs accepted per calendar month, UTC).
 # Mirrors the tiers shown at /#pricing on the marketing site exactly — keep
 # these two in sync any time pricing changes.
-PLAN_LIMITS = {"free": 1, "pro": 10, "business": 30}
+PLAN_LIMITS = {"free": 2, "pro": 10, "business": 30}
 # Monthly list price per plan (USD), matching /#pricing — powers the admin
 # portal's *estimated* MRR panel (Day 35) and Paddle checkout. Free is 0.
 PLAN_PRICES = {"free": 0, "pro": 20, "business": 50}
@@ -357,7 +357,11 @@ class AccountStore:
             return acct
         acct, _raw_key = self.create_account(
             tenant="u-" + secrets.token_hex(8), name=name or email,
-            plan=plan if plan in PLAN_LIMITS else "free",
+            # Day 38: paid plans aren't self-serve yet (no checkout behind
+            # them), so a signup form's "pro"/"business" pick is ignored here
+            # too -- everyone starts on free until billing exists. Revert to
+            # ``plan if plan in PLAN_LIMITS else "free"`` once it does.
+            plan="free",
             company=company, role=role, email=email,
         )
         with self._lock:

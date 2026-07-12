@@ -346,11 +346,21 @@ class CohereClient:
         return json.loads(text)
 
 
-# Model-name pattern for OpenAI's reasoning-capable families routed through
+# Model-name pattern for reasoning-capable model families routed through
 # MeshAPI (``provider/model-name`` ids — matched against the part after the
-# slash): o-series (o1, o3, o4-mini, ...) and gpt-5. Everything else
-# (gpt-4o, gpt-4.1, third-party models, ...) is treated as non-reasoning.
-_MESHAPI_REASONING_MODEL_RE = re.compile(r"^(o[1-9](-mini|-preview|-pro)?|gpt-5)(-|$)", re.IGNORECASE)
+# slash): OpenAI's o-series (o1, o3, o4-mini, ...) and gpt-5, plus DeepSeek's
+# reasoning/"Thinking"-tagged models — V4 Flash/Pro (MeshAPI's catalog
+# documents ``reasoning_effort`` support for these) and the always-on-
+# thinking R1 family (R1, R1-0528, R1-Distill-*) and V3.2 Speciale.
+# Everything else (gpt-4o, gpt-4.1, DeepSeek's *hybrid* thinking/non-thinking
+# V3/V3.1/V3.2/V3.2-Exp models — which MeshAPI toggles via a separate
+# ``reasoning.enabled`` boolean this client doesn't send — third-party
+# models, ...) is treated as non-reasoning.
+_MESHAPI_REASONING_MODEL_RE = re.compile(
+    r"^(o[1-9](-mini|-preview|-pro)?|gpt-5)(-|$)"
+    r"|^deepseek-(v3\.2-speciale|v4-(flash|pro)|r1(-\d+)?|r1-distill-.+)$",
+    re.IGNORECASE,
+)
 
 # OpenAI's ``reasoning_effort`` only accepts a handful of values
 # ("minimal"/"low"/"medium"/"high" depending on model family) — our finer

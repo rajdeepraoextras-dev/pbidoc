@@ -150,10 +150,12 @@ class AccountStorePostgresBackendTest(unittest.TestCase):
             self.assertEqual(verified.company, "Acme Analytics")
             self.assertEqual(verified.role, "Head of BI")
 
-            # JIT-provision path carries profile + plan on first creation only
+            # JIT-provision path carries profile on first creation only; the
+            # "pro" pick is ignored (Day 38: paid plans aren't self-serve
+            # yet), so the account always starts on free.
             jit = store.get_or_create_account_for_supabase_user(
                 "sub-pg-1", "u@acme.com", company="Co", role="Analyst", plan="pro")
-            self.assertEqual(jit.plan, "pro")
+            self.assertEqual(jit.plan, "free")
             self.assertEqual(jit.company, "Co")
 
             # self-serve plan change

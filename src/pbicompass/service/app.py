@@ -647,14 +647,22 @@ def create_app(
     @app.post("/app/api/plan")
     async def app_set_plan(request: Request) -> dict:
         """Self-serve plan change (Day 33) — trust-based, no payment step;
-        billing stays out of scope until a later sprint. Any signed-in
-        user can move themselves between plans in PLAN_LIMITS."""
+        billing stays out of scope until a later sprint. Restricted to
+        ``free`` for now (Day 38): paid plans have no checkout behind them
+        yet, so self-serve upgrading to one would hand out real quota for
+        nothing. An admin can still move any account onto a paid plan from
+        the admin portal (``app_admin_set_plan`` below), unaffected."""
         _claims, acct = _require_user(request)
         try:
             body = await request.json()
         except Exception:
             body = {}
         plan = (body.get("plan") or "").strip() if isinstance(body, dict) else ""
+        if plan != "free":
+            raise HTTPException(
+                status_code=400,
+                detail="Paid plans aren't self-serve yet — billing is coming soon.",
+            )
         try:
             account_store.set_plan(acct.id, plan)
         except ValueError as exc:
@@ -881,6 +889,12 @@ def create_app(
             out.append(payload)
         return {"jobs": out}
 
+    @app.get("/app/api/admin/feedback")
+    def app_admin_feedback(request: Request, limit: int = Query(100)) -> dict:
+        _require_admin_user(request)
+        entries = app.state.store.list_feedback(limit=max(1, min(limit, 500)))
+        return {"feedback": [app.state.store.public_feedback(fb) for fb in entries]}
+
     @app.post("/jobs")
     async def create_job(
         request: Request,
@@ -1049,6 +1063,24 @@ def create_app(
         if job is None or job.tenant != tenant:
             raise HTTPException(status_code=404, detail="Job not found or expired.")
         return JSONResponse(app.state.store.public(job))
+
+    @app.post("/jobs/{job_id}/feedback")
+    async def submit_feedback(job_id: str, request: Request) -> dict:
+        tenant, _plan = resolve_tenant(request)
+        job = app.state.store.get(job_id)
+        if job is None or job.tenant != tenant:
+            raise HTTPException(status_code=404, detail="Job not found or expired.")
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        message = (body.get("message") or "").strip() if isinstance(body, dict) else ""
+        if not message:
+            raise HTTPException(status_code=400, detail="Feedback message is required.")
+        if len(message) > 4000:
+            message = message[:4000]
+        fb = app.state.store.add_feedback(job_id, tenant, message)
+        return {"feedback": app.state.store.public_feedback(fb)}
 
     @app.get("/jobs/{job_id}/download")
     def download(job_id: str, request: Request, format: str = Query(...)) -> Response:

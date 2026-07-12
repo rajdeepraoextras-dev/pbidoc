@@ -1658,8 +1658,15 @@ def page_shell(
     # Day 6: vendored svg-pan-zoom, inlined (not a <script src>, and no
     # CDN) so a downloaded, offline-opened HTML file still gets working
     # pan/zoom on every diagram — must load before ``_SCRIPT``, which
-    # calls ``svgPanZoom(...)`` in its DOMContentLoaded handler.
-    o.append(f"<script>{SVG_PAN_ZOOM_JS}</script>")
+    # calls ``svgPanZoom(...)`` in its DOMContentLoaded handler. Only shipped
+    # when ``body_html`` actually contains a diagram (e.g. the audit doc has
+    # none) — otherwise it's ~9KB of vendor JS wired up for nothing.
+    # ``_SCRIPT`` itself always loads: its pan/zoom wiring already no-ops
+    # when ``svgPanZoom`` isn't defined, and it also carries every doc's
+    # unrelated (non-diagram) chrome — search, theme toggle, scroll-spy,
+    # mobile TOC, copy-to-clipboard, print handling.
+    if '<div class="diagram"' in body_html:
+        o.append(f"<script>{SVG_PAN_ZOOM_JS}</script>")
     o.append(_SCRIPT)
     o.append("</body></html>")
     return "\n".join(o)
