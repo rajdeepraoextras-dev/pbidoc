@@ -118,7 +118,7 @@ Populate:
 - pages: For EVERY visible page provide:
   - page_title: a clean human title.
   - summary: 2-3 sentences on what the page shows and the decision it supports. Do not list every visual — the visual inventory is documented elsewhere.
-  - users: the role(s) who would use this page (e.g. "Sales managers; regional leads"), inferred from its content. If no role can be inferred, write "Requires business confirmation."
+  - users: the role(s) who would use this page (e.g. "Sales managers; regional leads"), inferred from its content — the page's title, tables, measures, and visuals almost always point to a plausible functional audience (a "Spend" page implies procurement/finance; a "Sales" page implies sales/regional managers) even without an explicit org chart, so infer the *functional* role rather than a named team. Only write "Requires business confirmation." for a page so generic (e.g. a bare title with no distinguishing content) that no functional audience can be inferred at all — this should be rare.
   - business_questions: 2-4 realistic questions a business user answers on this page. Phrase them the way a manager would ask ("Which cities generate the highest revenue?", "Is customer retention improving?") — never "What is <measure name>?".
   - decisions: one sentence naming the concrete decision or action this page informs (e.g. "Prioritise regional marketing spend toward cities with declining sales").
   - confidence: "High", "Medium", or "Low" — how confident you are in the inferred purpose. Use "Low" whenever the page content is too generic to infer intent.

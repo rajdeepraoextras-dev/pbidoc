@@ -12,14 +12,24 @@ verify each factual claim against it:
 
 - ``supported``    — left untouched.
 - ``contradicted``  — replaced with the model's own ``correction``.
-- ``unverifiable``  — replaced with the established
-  "Unknown — requires business confirmation." convention (never a guess)
-  *when the claim runs to the end of its sentence*; when the claim is an
-  internal clause (more sentence follows after it), the whole sentence is
-  dropped instead (see ``_replace_unverifiable_claim`` — this is the D3
-  fix: substituting an already-punctuated sentence fragment mid-clause
-  produced nonsense like "However, Unknown — requires business
-  confirmation., are aspects that need attention...").
+- ``unverifiable``  — replaced with the model's own ``correction`` too, when
+  it provides one: a rewrite that keeps the sentence's point but drops or
+  softens only the part that overreaches beyond the digest, same as
+  ``contradicted``. The "Unknown — requires business confirmation."
+  convention is now a *last resort*, used only when the model returns no
+  usable correction — this mirrors the same "AI may only improve, never
+  downgrade" rule the Column Describer already follows (D6): a claim that's
+  merely uncheckable against a structural digest (most business
+  interpretation — "helps leadership prioritize budget cuts" — is
+  inherently uncheckable that way) is not the same as a claim being wrong,
+  and shouldn't be nuked to a canned non-answer by default. When the hard
+  punt is used and *the claim runs to the end of its sentence*, a plain
+  inline substitution reads fine; when the claim is an internal clause
+  (more sentence follows after it), the whole sentence is dropped instead
+  (see ``_replace_unverifiable_claim`` — this is the D3 fix: substituting
+  an already-punctuated sentence fragment mid-clause produced nonsense like
+  "However, Unknown — requires business confirmation., are aspects that
+  need attention...").
 
 Offline (``client is None``), no digest available, or a failed call all
 degrade to a no-op — the regex bracket-name check in ``critic.py`` remains
@@ -33,6 +43,7 @@ from typing import TYPE_CHECKING, Callable, Optional
 
 from .generators.base import call_llm
 from .llm import LLMClient
+from .sanitize import is_punt_phrase
 
 if TYPE_CHECKING:
     from .context import JobAIContext
@@ -48,16 +59,19 @@ the report's own metadata. You receive labelled narrative fields already written
 document, and a digest of the whole model (every table/column, measure/DAX, relationship, \
 page, RLS role, data source, and audit finding counts).
 
-For each field, identify every concrete factual claim it makes about the report (a count, a \
-relationship, a named table/measure/page, a data source, a business fact tied to a specific \
-object) and verify it against the digest. Do not flag stylistic or subjective phrasing — only \
+For each field, identify only concrete, checkable factual claims — a count, a relationship, a \
+named table/measure/page, a data source, or a business fact tied to a specific named object in \
+the digest. Do NOT flag general business interpretation, benefits, consequences, or \
+recommendations ("helps leadership prioritize budget cuts", "enables faster decisions", "should \
+be addressed to reduce risk") as claims to verify — those are framing, not checkable facts, and \
+are not errors; leave them untouched. Do not flag stylistic or subjective phrasing either — only \
 claims that are checkable against the digest's concrete facts.
 
 For each claim, report:
 - location: the field's location label, copied from the input.
 - quote: the exact substring of the field's text that makes the claim (must appear verbatim in that field).
 - verdict: "supported" if the digest confirms it, "contradicted" if the digest states something that conflicts with it, "unverifiable" if the digest neither confirms nor conflicts with it (the claim reaches beyond what the digest can check).
-- correction: for "contradicted" only, the corrected wording grounded in what the digest actually says, phrased to fit naturally in place of the quote. Empty string for "supported"/"unverifiable".
+- correction: for "contradicted", the corrected wording grounded in what the digest actually says, phrased to fit naturally in place of the quote. For "unverifiable", a rewrite of the quote that keeps its point and stays specific where possible, but drops or softens only the part that overreaches beyond what the digest can confirm — you are smart enough to salvage nearly every claim this way, so only return an empty string here if truly nothing in the quote can be kept. Empty string always for "supported".
 
 Only report claims you are actually checking — most fields will have few or none. Never invent a table, measure, page, or relationship not present in the digest. Never flag a claim as contradicted or unverifiable just because the digest doesn't repeat it word-for-word — a claim is supported whenever the digest's facts are consistent with it.
 """
@@ -186,6 +200,14 @@ def apply_grounding_pass(
                 results[location] = current.replace(quote, correction)
                 warn(f"{location}: grounding pass corrected a contradicted claim.")
         elif verdict == "unverifiable":
-            results[location] = _replace_unverifiable_claim(current, quote)
-            warn(f"{location}: grounding pass flagged an unverifiable claim.")
+            correction = (claim.get("correction") or "").strip()
+            if correction and not is_punt_phrase(correction):
+                # Prefer the model's own rewrite over the canned punt — same
+                # "improve, never downgrade to a non-answer" rule the Column
+                # Describer already follows (D6).
+                results[location] = current.replace(quote, correction)
+                warn(f"{location}: grounding pass softened an unverifiable claim.")
+            else:
+                results[location] = _replace_unverifiable_claim(current, quote)
+                warn(f"{location}: grounding pass flagged an unverifiable claim.")
     return results

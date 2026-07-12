@@ -77,6 +77,31 @@ class ApplyGroundingPassTest(unittest.TestCase):
         )
         self.assertEqual(results["a"], f"This page is {UNVERIFIABLE_TEXT}.")
 
+    def test_unverifiable_claim_is_rewritten_when_a_correction_is_given(self):
+        # The model may only improve, never downgrade to the canned punt
+        # (mirrors D6's "AI may only improve, never downgrade" rule) — a
+        # rewrite that salvages the claim's point must win over the hard
+        # "Unknown -- requires business confirmation." fallback.
+        client = FakeGroundingClient([
+            {"location": "a", "quote": "used by the finance team",
+             "verdict": "unverifiable", "correction": "used by finance stakeholders"},
+        ])
+        results = apply_grounding_pass(
+            [("a", "This page is used by the finance team.")], client, model_digest="digest",
+        )
+        self.assertEqual(results["a"], "This page is used by finance stakeholders.")
+        self.assertNotIn(UNVERIFIABLE_TEXT, results["a"])
+
+    def test_unverifiable_claim_falls_back_to_convention_if_correction_is_itself_a_punt(self):
+        client = FakeGroundingClient([
+            {"location": "a", "quote": "used by the finance team",
+             "verdict": "unverifiable", "correction": "Unknown — requires business confirmation."},
+        ])
+        results = apply_grounding_pass(
+            [("a", "This page is used by the finance team.")], client, model_digest="digest",
+        )
+        self.assertEqual(results["a"], f"This page is {UNVERIFIABLE_TEXT}.")
+
     def test_supported_claim_is_left_untouched(self):
         client = FakeGroundingClient([
             {"location": "a", "quote": "3 tables", "verdict": "supported", "correction": ""},
