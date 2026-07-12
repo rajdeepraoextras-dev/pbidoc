@@ -24,10 +24,8 @@ pip install -e ".[dev,service,agents]"
 pytest -v
 ```
 
-725 of the 729 collected tests pass (the LLM path is tested via an in-process
-fake client — no API key needed); 2 pre-existing failures around the
-in-progress model-diagram feature are tracked in
-`docs/planning/ROADMAP_PROGRESS.md`, plus 2 skipped. With a bare
+868 tests pass, 2 skipped, 0 failing (the LLM path is tested via an in-process
+fake client — no API key needed). With a bare
 `pip install -e ".[dev]"` (no `service`/`agents` extras) the service- and
 provider-specific tests skip cleanly instead of running — see any test file's
 module docstring for the pattern. Note: `pytest` is required rather than

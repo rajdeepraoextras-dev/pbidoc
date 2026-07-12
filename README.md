@@ -81,7 +81,7 @@ client (`claude-opus-4-8`, structured outputs, adaptive thinking).
 
 ## Status — Phases 0–5 complete
 
-The foundation is in place and tested (725 tests passing):
+The foundation is in place and tested (868 tests passing):
 
 - **Canonical schemas** — the `model.json` and `document.json` contracts that
   every parser and AI agent keys off ([src/pbicompass/schemas](src/pbicompass/schemas)).
@@ -269,7 +269,7 @@ wrong attempts from a client are locked out for 15 minutes after 8 failures.
 
 ```bash
 pip install -e ".[dev,service,agents]"
-pytest   # 725 passing (a couple of pre-existing snapshot gaps are tracked in the roadmap)
+pytest   # 868 passing, 2 skipped, 0 failing
 ```
 
 ---
@@ -335,7 +335,7 @@ src/pbicompass/
     static/index.html  static/app.html   # marketing site + the sign-in/upload/dashboard app
     static/admin.html   # SaaS admin dashboard (stats, users, suspend/delete) and self-host fallback
   cli.py
-tests/                  # 725 tests across parser, adapter, agents, renderers, service
+tests/                  # 868 tests across parser, adapter, agents, renderers, service
   fixtures/SampleSales/  # synthetic .pbip exercising every code path
 ```
 

@@ -220,6 +220,7 @@ Top 3 defects this run:
 | 2026-07-11 | R2 (Days 1–4) | 82 | G1 (leak ×4), G3 (78/79) | RTM shipped |
 | 2026-07-11 | R3 (fixes + Day 5) | 87 | G1 (exec leak ×1) | Exec transformed |
 | 2026-07-12 | R4 (Day 6) | 84 | G5 (diagram collapse) | Leaks eliminated; sizing regression |
+| 2026-07-12 | R5 (Day 38 defect sweep) | not formally re-scored — see note | none triggered (G1/G5/G6/V2 all resolved) | AUTO+RENDER suite (T1–T6, C6, D6, I2/I3, V1, D3, X3) clean across all 5 rendered docs; RTM (C4) improved to 0 false Gaps / 4-of-7 exact tier (was 2 false Gaps in the R4-era live-AI bundle this run started from); full manual scoring worksheet (three-card DAX audit, D1/D2 screenshots, X1/X2 provenance) not executed this session — see `docs/planning/ROADMAP_PROGRESS.md`'s Day 38 entry for the complete defect list and honest gaps |
 | | | | | |
 
 ---
