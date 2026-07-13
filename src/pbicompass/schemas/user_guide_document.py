@@ -46,6 +46,12 @@ class PageGuide:
 
 
 @dataclass
+class FaqEntry:
+    question: str
+    answer: str
+
+
+@dataclass
 class UserGuideDocument:
     """Top-level ``user_guide_document.json`` object."""
     metadata: DocMetadataCore
@@ -53,6 +59,11 @@ class UserGuideDocument:
     pages: list[PageGuide] = field(default_factory=list)
     glossary: list[GlossaryTerm] = field(default_factory=list)
     getting_started: list[str] = field(default_factory=list)
+    # Generic document/UI usage guidance (never a claim about this report's
+    # specific business content) — same kind of always-true, non-fabricated
+    # tip as ``getting_started``, just phrased as Q&A and covering what to
+    # do when something looks wrong plus who to ask.
+    faq: list[FaqEntry] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return dataclasses.asdict(self)

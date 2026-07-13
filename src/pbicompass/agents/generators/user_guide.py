@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from ...schemas.user_guide_document import GlossaryTerm, PageGuide, UserGuideDocument
+from ...schemas.user_guide_document import FaqEntry, GlossaryTerm, PageGuide, UserGuideDocument
 from .. import io
 from ..consistency import AuditVerdicts, check_consistency
 from ..context import JobAIContext, build_job_context
@@ -33,6 +33,7 @@ from ..report_facts import (
     business_plain_english,
     field_parameter_table_names,
     first_sentence,
+    has_keyword_token,
     is_field_selector,
     parse_human_glossary,
     report_pages,
@@ -53,11 +54,15 @@ _DIMENSION_DEFINITIONS = [
 
 
 def _dimension_definition(name: str) -> str:
-    lower = name.lower()
     for keywords, definition in _DIMENSION_DEFINITIONS:
-        if any(k in lower for k in keywords):
+        if has_keyword_token(name, keywords):
             return definition
-    return f"A field used to filter or group the data by {name}."
+    # No keyword bucket matched, and there is no measure/column description
+    # to fall back on (the caller's other sources are checked first) — the
+    # honest answer is "we don't know what this represents," not a made-up
+    # specific meaning. Named without echoing ``name`` back at itself
+    # ("a field used to filter by {name}" is circular, not informative).
+    return "A descriptive field with no further business meaning available from the model."
 
 
 def _build_glossary(model, client: Optional[LLMClient], warn: Warn,
@@ -162,6 +167,13 @@ def _simple_visual_description(visual: dict) -> str:
         return f"Shows {', '.join(metrics)}."
     if dims:
         return f"Shows a breakdown by {', '.join(dims)}."
+    # No metric/dimension fields were identified for this visual — naming
+    # its actual type (already known, not guessed) is still real information,
+    # rather than the same content-free sentence for every such visual
+    # regardless of whether it's a pie chart, a card, or a matrix.
+    vtype = visual.get("type")
+    if vtype and vtype.lower() not in ("visual", "unknown"):
+        return f"A {vtype.lower()} included for supporting context on this page."
     return "Provides supporting detail for this page."
 
 
@@ -189,10 +201,9 @@ def _dimension_kind(name: str, columns: dict) -> str:
             return "time"
         if col.data_category and col.data_category.lower() in _GEO_CATEGORIES:
             return "geo"
-    lower = name.lower()
-    if any(k in lower for k in _TIME_KEYWORDS):
+    if has_keyword_token(name, _TIME_KEYWORDS):
         return "time"
-    if any(k in lower for k in _GEO_KEYWORDS):
+    if has_keyword_token(name, _GEO_KEYWORDS):
         return "geo"
     return "other"
 
@@ -231,6 +242,13 @@ def _navigation_tips(page_filters: list[str], visual_count: int) -> list[str]:
         tips.append(f"Use the '{field}' filter to narrow down what you see on this page.")
     if visual_count > 1:
         tips.append("Click on any chart to highlight the related data across the rest of the page.")
+    if not tips:
+        # A page with no filters and at most one visual has nothing to
+        # narrow down or cross-highlight — that's a real fact about the
+        # page (not a guess), so it's still worth one honest sentence
+        # instead of silently omitting the "How to navigate" subsection
+        # every other page gets (1.6).
+        tips.append("This page has no additional filters — everything on it is already in view.")
     return tips
 
 
@@ -258,6 +276,29 @@ def _introduction(model, core_purpose: str, insights: Optional[dict] = None,
     if business_decision:
         intro = f"{intro} You'll use it to: {business_decision}"
     return intro
+
+
+def _faq(owner: Optional[str]) -> list[FaqEntry]:
+    """Generic document/UI usage guidance (never a claim about this
+    report's specific data or business meaning) — the same kind of
+    always-true tip ``_getting_started`` already gives, just phrased as
+    troubleshooting Q&A plus who to contact. Safe to generate unconditionally
+    offline, unlike ``common_scenarios``/business questions, which must stay
+    grounded in this report's actual metrics or stay empty (1.1)."""
+    contact = f"Contact {owner} (the report owner) or your Power BI administrator." \
+        if owner else "Contact your Power BI administrator."
+    return [
+        FaqEntry("A chart or number looks empty or blank — what should I check first?",
+                 "Check whether a filter or slicer elsewhere on the page is excluding all the data — "
+                 "clearing it should bring the visual back."),
+        FaqEntry("The numbers don't match what I expected — why?",
+                 "Confirm you're looking at the intended time period or filter selection; "
+                 "different pages can have different filters applied by default."),
+        FaqEntry("I don't understand what a term or field means.",
+                 "Check the Glossary of Business Terms at the end of this guide — most fields "
+                 "used in the report are listed there."),
+        FaqEntry("Who do I contact with questions about this report?", contact),
+    ]
 
 
 def _getting_started(pages: list[PageGuide]) -> list[str]:
@@ -476,6 +517,7 @@ class BusinessGuideGenerator:
             pages=pages,
             glossary=glossary_entries,
             getting_started=getting_started,
+            faq=_faq(owner),
         )
 
         if client is not None:

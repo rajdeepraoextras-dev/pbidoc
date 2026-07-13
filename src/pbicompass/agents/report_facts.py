@@ -323,6 +323,26 @@ def declassify(text: str) -> str:
     return _TABLE_COLUMN_RE.sub(r"\1", text)
 
 
+_WORD_TOKEN_RE = re.compile(r"[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|[0-9]+")
+
+
+def name_word_tokens(name: str) -> set[str]:
+    """Split a field/column name (``camelCase``, ``PascalCase``, ``snake_case``,
+    or space-separated) into lowercase whole words.
+
+    Used instead of a raw ``keyword in name.lower()`` substring check, which
+    false-positives whenever a keyword happens to appear as a fragment of a
+    longer word -- e.g. ``"city"`` is a substring of ``"Ethnicity"``, so a
+    naive check misclassifies an Ethnicity column as a geography field."""
+    return {tok.lower() for tok in _WORD_TOKEN_RE.findall(name)}
+
+
+def has_keyword_token(name: str, keywords) -> bool:
+    """True if any of ``keywords`` matches a whole word of ``name`` (see
+    :func:`name_word_tokens`) rather than merely a substring of it."""
+    return bool(name_word_tokens(name) & set(keywords))
+
+
 def parse_human_glossary(text: Optional[str]) -> dict[str, str]:
     """Parse the intake form's free-text "Glossary of Key Business Terms"
     field into ``{term: definition}`` (Day 3).
@@ -337,7 +357,17 @@ def parse_human_glossary(text: Optional[str]) -> dict[str, str]:
     entries: dict[str, str] = {}
     for line in (text or "").split("\n"):
         line = line.strip()
-        if not line or ":" not in line:
+        if not line:
+            continue
+        # Users often paste markdown-bolded "**Term:** definition" into this
+        # free-text box. A literal "**" is authoring decoration, not part of
+        # the term or the definition -- left in, it can sit right next to
+        # the colon (e.g. "**Count of BU:** ...") and get split onto the
+        # wrong side, producing a mangled term that no longer matches its
+        # counterpart in the deterministic glossary and renders as a
+        # duplicate, "**"-prefixed row instead of overriding it.
+        line = line.replace("**", "")
+        if ":" not in line:
             continue
         term, _, definition = line.partition(":")
         term, definition = term.strip(), definition.strip()

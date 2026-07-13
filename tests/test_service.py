@@ -292,10 +292,13 @@ class ServiceTest(unittest.TestCase):
 
     def test_multi_doc_hub_and_zip_have_working_relative_links(self):
         # P1: the hosted service, not just the CLI, must ship a working hub
-        # and doc-switcher — the zip bundle is the only place the fixed
-        # "{type}.html" names (and the links built on them) are valid side
-        # by side, since the standalone /download names depend on the
-        # upload filename instead.
+        # and doc-switcher — including for a user who downloads the HTML
+        # documents one at a time rather than as the zip bundle. The fixed
+        # "{type}.html"/"index.html" names are what every sibling's links
+        # actually point to, so the standalone /download endpoint must serve
+        # each of those under that same fixed name (not the upload-derived
+        # name it uses for every other format) or the links a user's browser
+        # follows resolve to a file that was never saved under that name.
         res = self.client.post(
             "/jobs",
             files={"file": ("SampleSales.zip", _zip_fixture(), "application/zip")},
@@ -307,18 +310,29 @@ class ServiceTest(unittest.TestCase):
 
         hub = self.client.get(f"/jobs/{job_id}/download", params={"format": "index.html"})
         self.assertEqual(hub.status_code, 200)
+        self.assertIn('filename="index.html"', hub.headers["content-disposition"])
         for dtype in ("technical", "audit", "executive", "user-guide"):
             self.assertIn(f"{dtype}.html", hub.text)
 
-        technical_html = self.client.get(
+        technical_resp = self.client.get(
             f"/jobs/{job_id}/download", params={"format": "technical.html"},
-        ).text
+        )
+        self.assertIn('filename="technical.html"', technical_resp.headers["content-disposition"])
+        technical_html = technical_resp.text
         self.assertIn('class="doc-switcher"', technical_html)
         self.assertIn("audit.html", technical_html)
         self.assertIn('id="measure-total-revenue"', technical_html)
 
-        audit_html = self.client.get(f"/jobs/{job_id}/download", params={"format": "audit.html"}).text
+        audit_resp = self.client.get(f"/jobs/{job_id}/download", params={"format": "audit.html"})
+        self.assertIn('filename="audit.html"', audit_resp.headers["content-disposition"])
+        audit_html = audit_resp.text
         self.assertIn('href="technical.html#measure-total-revenue"', audit_html)
+
+        # A non-HTML format (or the single flat "html" key of a one-doc job)
+        # still gets the informative, upload-derived download name — only
+        # the fixed composite HTML/hub keys are exempted above.
+        audit_md_resp = self.client.get(f"/jobs/{job_id}/download", params={"format": "audit.md"})
+        self.assertIn("SampleSales.audit.md", audit_md_resp.headers["content-disposition"])
 
         zip_resp = self.client.get(f"/jobs/{job_id}/download", params={"format": "zip"})
         self.assertEqual(zip_resp.status_code, 200)

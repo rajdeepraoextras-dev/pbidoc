@@ -14,6 +14,7 @@ slicers, drill-through flags, and field references — no data values.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, Optional
 
@@ -83,17 +84,38 @@ def _extract_title(visual_obj: dict) -> Optional[str]:
     return None
 
 
+# A bare column dragged onto a visual with an implicit aggregation ("Sum",
+# "Count", "Average", ...) gets a queryRef like "Sum('HR Data'.BadHires)" --
+# the wrapping function name, not the field name. Only used as a last-resort
+# fallback (see below): the structured ``field`` object gives the clean
+# entity/property pair directly and is always tried first.
+_AGG_QUERYREF_WRAPPER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\((.+)\)$")
+
+
+def _clean_query_ref(ref: str) -> str:
+    m = _AGG_QUERYREF_WRAPPER_RE.match(ref.strip())
+    if m and m.group(1).count("(") == m.group(1).count(")"):
+        return m.group(1)
+    return ref
+
+
 def _extract_fields(visual_obj: dict) -> list[str]:
     fields: list[str] = []
     try:
         query_state = visual_obj.get("query", {}).get("queryState", {})
         for role in query_state.values():
             for proj in role.get("projections", []):
-                ref = proj.get("queryRef")
-                if ref:
-                    fields.append(ref)
-                    continue
+                # The structured ``field`` object (Column/Measure/Aggregation)
+                # is tried first -- it's already a clean {entity, property}
+                # pair. ``queryRef`` is a display string that, for an
+                # aggregated column, is wrapped in the aggregation function
+                # name (e.g. "Sum('HR Data'.BadHires)"); taking it verbatim
+                # (as this used to do, before the structured field was ever
+                # consulted) leaves that wrapper's trailing ")" glued onto
+                # whatever field name a caller later derives by splitting on
+                # ".", producing a malformed name like "BadHires)".
                 field = proj.get("field", {})
+                resolved = None
                 for kind in ("Column", "Measure", "Aggregation"):
                     node = field.get(kind)
                     if not node:
@@ -103,7 +125,14 @@ def _extract_fields(visual_obj: dict) -> list[str]:
                     entity = node.get("Expression", {}).get("SourceRef", {}).get("Entity")
                     prop = node.get("Property")
                     if entity and prop:
-                        fields.append(f"{entity}.{prop}")
+                        resolved = f"{entity}.{prop}"
+                    break
+                if resolved:
+                    fields.append(resolved)
+                    continue
+                ref = proj.get("queryRef")
+                if ref:
+                    fields.append(_clean_query_ref(ref))
     except Exception:
         pass
     # de-dupe, preserve order

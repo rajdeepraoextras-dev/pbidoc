@@ -28,6 +28,7 @@ _SECTION_TITLES = [
     "2. Getting Started",
     "3. Report Pages",
     "4. Glossary of Business Terms",
+    "5. Frequently Asked Questions",
 ]
 
 
@@ -110,6 +111,12 @@ def render_markdown(doc: UserGuideDocument) -> str:
     else:
         out.append("_No glossary terms available._\n")
 
+    if doc.faq:
+        out.append(f"\n## {_SECTION_TITLES[4]}\n")
+        for item in doc.faq:
+            out.append(f"**{item.question}**\n")
+            out.append(f"{item.answer}\n")
+
     return "\n".join(out).rstrip() + "\n"
 
 
@@ -127,6 +134,8 @@ def render_html(
 
     toc = [("sec1", "Introduction"), ("sec2", "Getting Started"), ("sec3", "Report Pages"),
            ("sec4", "Glossary")]
+    if doc.faq:
+        toc.append(("sec5", "FAQ"))
     kpis = [
         ("Pages", len(doc.pages)),
         ("Glossary Terms", len(doc.glossary)),
@@ -198,6 +207,14 @@ def render_html(
     else:
         o.append('<p class="muted">No glossary terms available.</p>')
 
+    faq_ids: list[str] = []
+    if doc.faq:
+        faq_ids = dedupe_ids([f"faq-{anchor_slug(item.question)}" for item in doc.faq])
+        o.append(f'<h2 id="sec5">{_e(_SECTION_TITLES[4])}</h2>')
+        for item, faq_id in zip(doc.faq, faq_ids):
+            o.append(f'<div id="{_e(faq_id)}"><p><strong>{_e(item.question)}</strong></p>'
+                     f'<p>{_e(item.answer)}</p></div>')
+
     search_index = [{"title": sec_title, "type": "section", "anchor": sec_id} for sec_id, sec_title in toc]
     search_index += [
         {"title": p.page_title, "type": "page", "anchor": page_id}
@@ -206,6 +223,10 @@ def render_html(
     search_index += [
         {"title": g.term, "type": "term", "anchor": tid}
         for g, tid in zip(doc.glossary, term_ids)
+    ]
+    search_index += [
+        {"title": item.question, "type": "faq", "anchor": fid}
+        for item, fid in zip(doc.faq, faq_ids)
     ]
 
     return page_shell(
@@ -280,6 +301,12 @@ def render_docx(doc: UserGuideDocument, out_path) -> Path:
         d.table(["Term", "What it means"], [[g.term, g.plain_definition] for g in doc.glossary])
     else:
         d.para("No glossary terms available.")
+
+    if doc.faq:
+        d.heading(1, _SECTION_TITLES[4])
+        for item in doc.faq:
+            d.para([d._run(item.question, bold=True)])
+            d.para(item.answer)
 
     d.save(out_path)
     return out_path

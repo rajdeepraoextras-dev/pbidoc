@@ -1251,7 +1251,21 @@ def create_app(
         data = app.state.store.get_output(job_id, format)
         if data is None:
             raise HTTPException(status_code=404, detail="Output not available or expired.")
-        filename = f"{_safe_basename(job.filename)}.{format}"
+        # Composite HTML keys ("technical.html", "audit.html", ..., and the
+        # hub "index.html") are the exact, fixed names worker.py bakes the
+        # doc-switcher/hub links into every sibling document's sidebar with
+        # (see html_filenames there) -- unlike every other format, whose
+        # download filename is purely cosmetic. Renaming one to the upload-
+        # derived name below (as every other format does) would leave the
+        # links every sibling file actually points at referring to a
+        # filename nothing was ever saved under, breaking navigation the
+        # moment a user downloads more than one HTML document individually
+        # instead of via the zip bundle (where the fixed names are always
+        # used together and everything resolves).
+        if file_ext == "html" and format != "html":
+            filename = format
+        else:
+            filename = f"{_safe_basename(job.filename)}.{format}"
         return Response(
             content=data,
             media_type=_CONTENT_TYPES[file_ext],

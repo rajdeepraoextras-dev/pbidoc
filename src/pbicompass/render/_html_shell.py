@@ -30,6 +30,8 @@ _CSS = POPPINS_FONT_FACES_CSS + """
   --primary: #124fed;
   --primary-hover: #0e3db8;
   --primary-light: #eef2fd;
+  --brand-text: var(--primary);
+  --logo-filter: none;
   --secondary: #0ea5e9;
   --success: #10b981;
   --success-light: #ecfdf5;
@@ -56,6 +58,8 @@ _CSS = POPPINS_FONT_FACES_CSS + """
     --text-faint: #64748b;
     --border-color: #2a3a56;
     --code-text: #e2e8f0;
+    --brand-text: #ffffff;
+    --logo-filter: brightness(0) invert(1);
   }
 }
 :root[data-theme="dark"] {
@@ -68,6 +72,8 @@ _CSS = POPPINS_FONT_FACES_CSS + """
   --text-faint: #64748b;
   --border-color: #2a3a56;
   --code-text: #e2e8f0;
+  --brand-text: #ffffff;
+  --logo-filter: brightness(0) invert(1);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -129,7 +135,7 @@ body {
 .sidebar-logo {
   font-weight: 800;
   font-size: 1.3rem;
-  color: var(--primary);
+  color: var(--brand-text);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -140,6 +146,7 @@ body {
   height: 28px;
   width: auto;
   display: block;
+  filter: var(--logo-filter);
 }
 .toc-list {
   list-style: none;

@@ -50,6 +50,7 @@ from ..report_facts import (
     field_parameter_table_names,
     find_referenced_tables,
     first_sentence,
+    has_keyword_token,
     is_field_selector,
     local_path_sources,
     named_field_parameter_table_names,
@@ -662,14 +663,13 @@ def _infer_glossary(model: SemanticModel, measure_catalog: MeasureCatalog, col_d
 
         if not definition:
             definition = "No description set."
-            dim_lower = dim.lower()
-            if "date" in dim_lower or "calendar" in dim_lower:
+            if has_keyword_token(dim, ("date", "calendar")):
                 definition = "Time-dimension field used to filter, segment, and perform time-intelligence trends."
-            elif "customer" in dim_lower:
+            elif has_keyword_token(dim, ("customer",)):
                 definition = "Represents unique customer attributes, identifiers, or segments."
-            elif "product" in dim_lower:
+            elif has_keyword_token(dim, ("product",)):
                 definition = "Represents product categories, items, or inventory attributes."
-            elif "region" in dim_lower or "country" in dim_lower or "city" in dim_lower:
+            elif has_keyword_token(dim, ("region", "country", "city")):
                 definition = "Geographical dimension used to analyze regional breakdown and location-based performance."
 
         entries.append({

@@ -17,11 +17,13 @@ are used only when more than one document type is requested.
 Multi-document jobs also get a documentation hub (``index.html``) with a
 doc-switcher in every doc's sidebar and cross-document content links (audit
 measure names -> the technical doc, executive risks -> the audit doc). These
-only work when every sibling file sits next to the others under a *fixed*
-relative name — unlike the single-file download endpoint's name (which
-depends on the upload's filename), so the fixed names only ever appear
-together inside the zip bundle this also produces (pulling 5.7 forward),
-never as the individual per-format downloads.
+only resolve when every sibling file sits next to the others under these
+exact *fixed* relative names — true inside the zip bundle this also produces,
+and also true of the individual per-format downloads: ``app.py``'s download
+endpoint serves any composite ``"{type}.html"``/``"index.html"`` key under
+its own fixed name rather than the upload-derived one it uses for every
+other format, specifically so a user who saves the HTML documents one at a
+time into the same folder still ends up with working cross-document links.
 """
 
 from __future__ import annotations

@@ -568,9 +568,8 @@ def main(argv: list[str] | None = None) -> int:
         multi = len(document_types) > 1
         # Cross-document doc-switcher links (2.7) only make sense when every
         # sibling's filename is known up front — true here (the CLI's
-        # multi-doc naming is deterministic), unlike the hosted service
-        # (job-filename-dependent download names; needs the zip-bundle work
-        # first). Label + relative href per sibling, plus the hub.
+        # multi-doc naming is deterministic: "<stem>.<type>.html" per file).
+        # Label + relative href per sibling, plus the hub.
         html_filenames: dict[str, str] = {}
         if multi and args.out and fmt == "html":
             html_filenames = {d: args.out.with_name(f"{args.out.stem}.{d}.html").name for d in document_types}
