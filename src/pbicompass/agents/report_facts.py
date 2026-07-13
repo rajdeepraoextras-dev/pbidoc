@@ -343,6 +343,11 @@ def has_keyword_token(name: str, keywords) -> bool:
     return bool(name_word_tokens(name) & set(keywords))
 
 
+# A leading ordered- or unordered-list marker ("1. ", "12) ", "- ", "* ",
+# "• ") on a human-glossary line -- see parse_human_glossary.
+_GLOSSARY_LIST_MARKER_RE = re.compile(r"^(?:[-*•]|\d+[.)])\s+")
+
+
 def parse_human_glossary(text: Optional[str]) -> dict[str, str]:
     """Parse the intake form's free-text "Glossary of Key Business Terms"
     field into ``{term: definition}`` (Day 3).
@@ -359,14 +364,16 @@ def parse_human_glossary(text: Optional[str]) -> dict[str, str]:
         line = line.strip()
         if not line:
             continue
-        # Users often paste markdown-bolded "**Term:** definition" into this
-        # free-text box. A literal "**" is authoring decoration, not part of
-        # the term or the definition -- left in, it can sit right next to
-        # the colon (e.g. "**Count of BU:** ...") and get split onto the
-        # wrong side, producing a mangled term that no longer matches its
-        # counterpart in the deterministic glossary and renders as a
-        # duplicate, "**"-prefixed row instead of overriding it.
+        # Users often paste this free-text box as a formatted list --
+        # markdown-bolded "**Term:** definition", or a numbered/bulleted
+        # list ("1. Term: definition", "- Term: definition"). That
+        # decoration is authoring style, not part of the term itself --
+        # left in, "1. EmpCount" or "**EmpCount" no longer matches the
+        # "EmpCount" measure's existing glossary entry, so the merge below
+        # creates a second, decorated-prefix duplicate row instead of
+        # overriding the original.
         line = line.replace("**", "")
+        line = _GLOSSARY_LIST_MARKER_RE.sub("", line)
         if ":" not in line:
             continue
         term, _, definition = line.partition(":")

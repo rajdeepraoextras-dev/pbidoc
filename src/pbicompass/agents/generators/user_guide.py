@@ -278,27 +278,55 @@ def _introduction(model, core_purpose: str, insights: Optional[dict] = None,
     return intro
 
 
-def _faq(owner: Optional[str]) -> list[FaqEntry]:
-    """Generic document/UI usage guidance (never a claim about this
-    report's specific data or business meaning) — the same kind of
-    always-true tip ``_getting_started`` already gives, just phrased as
-    troubleshooting Q&A plus who to contact. Safe to generate unconditionally
-    offline, unlike ``common_scenarios``/business questions, which must stay
-    grounded in this report's actual metrics or stay empty (1.1)."""
-    contact = f"Contact {owner} (the report owner) or your Power BI administrator." \
-        if owner else "Contact your Power BI administrator."
-    return [
+def _faq(
+    owner: Optional[str],
+    support_notes: Optional[str] = None,
+    refresh_notes: Optional[str] = None,
+    access_notes: Optional[str] = None,
+) -> list[FaqEntry]:
+    """Document/UI usage guidance, never a fabricated claim about this
+    report's specific data — the same kind of always-true tip
+    ``_getting_started`` already gives, just phrased as troubleshooting Q&A
+    plus who to contact. Safe to generate unconditionally offline, unlike
+    ``common_scenarios``/business questions, which must stay grounded in
+    this report's actual metrics or stay empty (1.1).
+
+    The intake form already collects real answers to three of these
+    questions -- ``support_notes`` ("Support Escalation & Maintenance
+    Policy": first-line contacts, SLA), ``refresh_notes`` ("Gateway,
+    Latency & Refresh Details"), and ``access_notes`` ("Permissions &
+    Workspace Access Control") -- so a human-provided answer is used
+    verbatim in place of the generic fallback whenever one was given,
+    rather than asking a reader to guess at something already on file."""
+    entries = [
         FaqEntry("A chart or number looks empty or blank — what should I check first?",
                  "Check whether a filter or slicer elsewhere on the page is excluding all the data — "
                  "clearing it should bring the visual back."),
-        FaqEntry("The numbers don't match what I expected — why?",
-                 "Confirm you're looking at the intended time period or filter selection; "
-                 "different pages can have different filters applied by default."),
-        FaqEntry("I don't understand what a term or field means.",
-                 "Check the Glossary of Business Terms at the end of this guide — most fields "
-                 "used in the report are listed there."),
-        FaqEntry("Who do I contact with questions about this report?", contact),
     ]
+    if refresh_notes:
+        entries.append(FaqEntry(
+            "The numbers don't match what I expected, or look out of date — why?", refresh_notes))
+    else:
+        entries.append(FaqEntry(
+            "The numbers don't match what I expected — why?",
+            "Confirm you're looking at the intended time period or filter selection; "
+            "different pages can have different filters applied by default."))
+    entries.append(FaqEntry(
+        "I don't understand what a term or field means.",
+        "Check the Glossary of Business Terms at the end of this guide — most fields "
+        "used in the report are listed there."))
+    if access_notes:
+        entries.append(FaqEntry(
+            "I can't open this report, or I'm missing data I expect to see — who handles access?",
+            access_notes))
+    if support_notes:
+        entries.append(FaqEntry(
+            "Who do I contact with questions or issues about this report?", support_notes))
+    else:
+        contact = f"Contact {owner} (the report owner) or your Power BI administrator." \
+            if owner else "Contact your Power BI administrator."
+        entries.append(FaqEntry("Who do I contact with questions about this report?", contact))
+    return entries
 
 
 def _getting_started(pages: list[PageGuide]) -> list[str]:
@@ -517,7 +545,7 @@ class BusinessGuideGenerator:
             pages=pages,
             glossary=glossary_entries,
             getting_started=getting_started,
-            faq=_faq(owner),
+            faq=_faq(owner, support_notes, refresh_notes, access_notes),
         )
 
         if client is not None:
