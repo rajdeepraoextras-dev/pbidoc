@@ -96,6 +96,83 @@ def _install_fake_psycopg() -> tuple[ModuleType, dict]:
     return fake_module, captured
 
 
+class ConnectionResilienceTest(unittest.TestCase):
+    """2026-07-13 production hang: the single shared Postgres connection's
+    socket was silently dropped (managed-Postgres/cloud-NAT idle disconnect);
+    the next query blocked/failed while holding the store lock and the whole
+    app wedged until a container restart. ``_Connection`` must (a) open the
+    connection with keepalive/timeout parameters so a dead peer is detected,
+    and (b) reconnect-and-retry once when the connection itself is broken —
+    while still re-raising plain SQL errors without reconnecting."""
+
+    def _fake_module(self, fake_connect) -> ModuleType:
+        fake_module = ModuleType("psycopg")
+        fake_module.connect = fake_connect
+        fake_module.rows = SimpleNamespace(dict_row=object())
+        return fake_module
+
+    def test_postgres_connection_uses_keepalives_and_timeouts(self):
+        fake_module, captured = _install_fake_psycopg()
+        with patch.dict(sys.modules, {"psycopg": fake_module}):
+            from pbicompass.service.db import _Connection
+            conn = _Connection("postgres://user:pw@host/db")
+            self.addCleanup(conn.close)
+        kwargs = captured["kwargs"]
+        self.assertEqual(kwargs["keepalives"], 1)
+        self.assertEqual(kwargs["connect_timeout"], 10)
+        # Deliberately no options="-c statement_timeout=..." — PgBouncer/
+        # Supavisor transaction pooling rejects it as a startup parameter.
+        self.assertNotIn("options", kwargs)
+
+    def test_broken_connection_reconnects_and_retries_once(self):
+        shared = sqlite3.connect(":memory:", check_same_thread=False)
+        connects = []
+
+        class _BrokenConnection:
+            broken = True
+
+            def cursor(self):
+                raise RuntimeError("server closed the connection unexpectedly")
+
+            def rollback(self):
+                raise RuntimeError("connection is closed")
+
+            def close(self):
+                pass
+
+        def fake_connect(dsn, **kwargs):
+            connects.append(dsn)
+            if len(connects) == 1:
+                return _BrokenConnection()
+            return _FakePsycopgConnection(shared)
+
+        with patch.dict(sys.modules, {"psycopg": self._fake_module(fake_connect)}):
+            from pbicompass.service.db import _Connection
+            conn = _Connection("postgres://user:pw@host/db")
+            # First statement hits the broken socket, reconnects, retries,
+            # and succeeds on the fresh connection.
+            conn.execute("CREATE TABLE t (a INTEGER)")
+            conn.execute("INSERT INTO t (a) VALUES (?)", (7,))
+            row = conn.execute("SELECT a FROM t").fetchone()
+        self.assertEqual(row["a"], 7)
+        self.assertEqual(len(connects), 2)
+
+    def test_plain_sql_error_does_not_reconnect(self):
+        connects = []
+
+        def fake_connect(dsn, **kwargs):
+            connects.append(dsn)
+            return _FakePsycopgConnection(sqlite3.connect(":memory:", check_same_thread=False))
+
+        with patch.dict(sys.modules, {"psycopg": self._fake_module(fake_connect)}):
+            from pbicompass.service.db import _Connection
+            conn = _Connection("postgres://user:pw@host/db")
+            self.addCleanup(conn.close)
+            with self.assertRaises(sqlite3.OperationalError):
+                conn.execute("SELECT * FROM no_such_table")
+        self.assertEqual(len(connects), 1)
+
+
 class AccountStorePostgresBackendTest(unittest.TestCase):
     def test_missing_psycopg_raises_a_clear_install_message(self):
         with patch.dict(sys.modules, {"psycopg": None}):

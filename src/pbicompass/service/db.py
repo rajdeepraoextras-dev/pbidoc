@@ -35,6 +35,7 @@ class _Connection:
     never needs it (keeps the zero-dependency default intact)."""
 
     def __init__(self, db_path: str) -> None:
+        self._db_path = db_path
         self.is_postgres = is_postgres_url(db_path)
         if self.is_postgres:
             try:
@@ -44,10 +45,48 @@ class _Connection:
                     "A postgres:// database URL needs the 'postgres' extra: "
                     "pip install \"pbicompass[postgres]\""
                 ) from exc
-            self._conn = psycopg.connect(db_path, row_factory=psycopg.rows.dict_row)
+            self._psycopg = psycopg
+            self._conn = self._pg_connect()
         else:
             self._conn = sqlite3.connect(db_path, check_same_thread=False)
             self._conn.row_factory = sqlite3.Row
+
+    def _pg_connect(self):
+        # This one connection is shared process-wide behind the stores' lock,
+        # so a silently dropped socket (managed-Postgres/cloud-NAT idle
+        # disconnects) is catastrophic without these: the next query blocks
+        # on a dead socket for the OS TCP retransmit timeout (15+ minutes)
+        # *while holding the lock*, wedging every request in the app —
+        # 2026-07-13: production hung exactly this way (TLS accepted, zero
+        # bytes ever sent, downloads silently dead). TCP keepalives detect a
+        # dead peer within ~1 minute and connect_timeout caps the reconnect
+        # attempt itself. Both are client-side libpq parameters, safe through
+        # any pooler — deliberately NOT ``options="-c statement_timeout=..."``,
+        # which PgBouncer/Supavisor transaction pooling rejects as an
+        # unsupported startup parameter (it would break connecting at all).
+        return self._psycopg.connect(
+            self._db_path,
+            row_factory=self._psycopg.rows.dict_row,
+            connect_timeout=10,
+            keepalives=1, keepalives_idle=30, keepalives_interval=10, keepalives_count=3,
+        )
+
+    def _pg_reconnect_and_retry(self, exc: Exception):
+        """Reconnect once after a broken-connection error (never after an SQL
+        error). Returns the fresh connection, or re-raises ``exc`` if this
+        doesn't look like a connection failure or reconnecting fails."""
+        if not self.is_postgres:
+            raise exc
+        broken = getattr(self._conn, "broken", False) or getattr(self._conn, "closed", False)
+        op_error = getattr(self._psycopg, "OperationalError", ())
+        if not (broken or isinstance(exc, op_error)):
+            raise exc
+        try:
+            self._conn.close()
+        except Exception:
+            pass
+        self._conn = self._pg_connect()
+        return self._conn
 
     def _sql(self, sql: str) -> str:
         # Safe unconditionally: none of the callers' SQL text contains a
@@ -55,10 +94,11 @@ class _Connection:
         return sql.replace("?", "%s") if self.is_postgres else sql
 
     def execute(self, sql: str, params: tuple = ()):
-        cur = self._conn.cursor()
+        sql = self._sql(sql)
         try:
-            cur.execute(self._sql(sql), params)
-        except Exception:
+            cur = self._conn.cursor()
+            cur.execute(sql, params)
+        except Exception as exc:
             # A failed statement leaves a Postgres connection's transaction
             # "aborted" -- every subsequent statement on it fails with
             # InFailedSqlTransaction until something rolls back. Since this
@@ -67,17 +107,28 @@ class _Connection:
             # the whole process until restart. Roll back immediately so the
             # NEXT call gets a clean transaction (sqlite3's rollback() is a
             # harmless no-op with nothing pending, so this is safe there too).
-            self._conn.rollback()
-            raise
+            try:
+                self._conn.rollback()
+            except Exception:
+                pass  # a broken connection can't roll back either
+            # A *connection* failure (dead socket, server closed it) gets one
+            # reconnect-and-retry; an SQL error re-raises as before.
+            conn = self._pg_reconnect_and_retry(exc)
+            cur = conn.cursor()
+            cur.execute(sql, params)
         return cur
 
     def executemany(self, sql: str, seq) -> None:
-        cur = self._conn.cursor()
+        sql = self._sql(sql)
         try:
-            cur.executemany(self._sql(sql), seq)
-        except Exception:
-            self._conn.rollback()
-            raise
+            self._conn.cursor().executemany(sql, seq)
+        except Exception as exc:
+            try:
+                self._conn.rollback()
+            except Exception:
+                pass
+            conn = self._pg_reconnect_and_retry(exc)
+            conn.cursor().executemany(sql, seq)
 
     def executescript(self, script: str) -> None:
         # psycopg has no sqlite-style ``executescript``, but both engines
@@ -88,9 +139,13 @@ class _Connection:
                 self._conn.cursor().execute(script)
             else:
                 self._conn.executescript(script)
-        except Exception:
-            self._conn.rollback()
-            raise
+        except Exception as exc:
+            try:
+                self._conn.rollback()
+            except Exception:
+                pass
+            conn = self._pg_reconnect_and_retry(exc)
+            conn.cursor().execute(script)
 
     def commit(self) -> None:
         self._conn.commit()
