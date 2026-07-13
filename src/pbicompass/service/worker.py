@@ -183,8 +183,24 @@ def process_job(store: JobStore, job_id: str, upload_path: Path,
         # everything else in the outer ``finally``, and never the env-var
         # default (which would race across jobs running concurrently in
         # this same worker process; the CLI keeps that persistent default).
+        # Raw ``options`` (not yet merged with the enrichment file's
+        # metadata -- ``meta`` below computes that merge, but only after
+        # this call) covers the common case: a value the caller typed into
+        # the request itself. An enrichment-file-only value with no
+        # matching request field would be missed here, unlike everywhere
+        # else these fields are used after ``meta`` exists.
         ai_context = (
-            build_job_context(model, client, warn, cache_path=str(sandbox.path("llm_cache.db")))
+            build_job_context(
+                model, client, warn, cache_path=str(sandbox.path("llm_cache.db")),
+                business_decision=options.get("business_decision"),
+                target_audience=options.get("audience"),
+                assumptions=options.get("assumptions"),
+                security_notes=options.get("security_notes"),
+                refresh_notes=options.get("refresh_notes"),
+                deployment_notes=options.get("deployment_notes"),
+                access_notes=options.get("access_notes"),
+                support_notes=options.get("support_notes"),
+            )
             if client is not None else None
         )
 
@@ -260,6 +276,10 @@ def process_job(store: JobStore, job_id: str, upload_path: Path,
         from ..agents.traceability import build_requirements_matrix
         requirements_matrix = build_requirements_matrix(
             model, meta.get("requirements"), client, warn, ai_context=ai_context,
+            business_decision=meta.get("business_decision"), target_audience=meta.get("audience"),
+            assumptions=meta.get("assumptions"), security_notes=meta.get("security_notes"),
+            refresh_notes=meta.get("refresh_notes"), deployment_notes=meta.get("deployment_notes"),
+            access_notes=meta.get("access_notes"), support_notes=meta.get("support_notes"),
         )
 
         pre_audit_doc = None

@@ -154,6 +154,14 @@ def build_job_context(
     warn: Warn,
     *,
     cache_path: Optional[str] = None,
+    business_decision: Optional[str] = None,
+    target_audience: Optional[str] = None,
+    assumptions: Optional[str] = None,
+    security_notes: Optional[str] = None,
+    refresh_notes: Optional[str] = None,
+    deployment_notes: Optional[str] = None,
+    access_notes: Optional[str] = None,
+    support_notes: Optional[str] = None,
 ) -> JobAIContext:
     """Run the Report Intelligence pass and the DAX Translator once for the
     whole job and stash both results. Offline (``client is None``) or a
@@ -164,6 +172,13 @@ def build_job_context(
     Insights are built *before* the DAX Translator batches so the
     translator's own prompt can consume the resulting ``report_context``
     (Phase 2) — the one deliberate ordering dependency in this function.
+
+    The intake-form fields (``business_decision`` through ``support_notes``)
+    are forwarded into the DAX Translator's own prompt as ``human_context``
+    (the same channel the per-document narrative agents use) — job-shared,
+    so every document type's measure translations benefit from the same
+    human-supplied assumptions/context, not just whichever document type
+    happens to build this job context first.
     """
     # Local import: ``generators.base`` needs ``io.AGENT_EFFORT``, and
     # ``generators/__init__.py`` (via audit/executive/technical/user_guide,
@@ -181,7 +196,13 @@ def build_job_context(
     ctx.insights = _build_insights(model, client, warn, ctx, ctx.model_digest)
 
     merged: dict[str, dict] = {}
-    for batch in io.dax_translator_batches(model, report_context=ctx.insights):
+    for batch in io.dax_translator_batches(
+        model, report_context=ctx.insights,
+        business_decision=business_decision, target_audience=target_audience,
+        assumptions=assumptions, security_notes=security_notes,
+        refresh_notes=refresh_notes, deployment_notes=deployment_notes,
+        access_notes=access_notes, support_notes=support_notes,
+    ):
         data = call_llm(
             client, io.DAX_TRANSLATOR_SYSTEM, batch, io.DAX_TRANSLATOR_SCHEMA,
             warn, "DAX Translator", ai_context=ctx,

@@ -285,7 +285,7 @@ For each measure, populate:
 - confidence: "High", "Medium", or "Low" — confidence in the inferred BUSINESS meaning (the calculation logic is read from the DAX and is not what this rates). Use "Low" when the name and expression do not make the business intent clear; in that case plain_english should still state what the DAX computes in plain terms (category, aggregation, filters applied) and note that the business meaning requires confirmation — never a bare punt sentence with no information in it.
 
 Return a translation for every measure in the input, keyed by its exact name.
-""" + REPORT_CONTEXT_NOTE + STYLE_RULES
+""" + REPORT_CONTEXT_NOTE + HUMAN_CONTEXT_NOTE + STYLE_RULES
 
 DAX_TRANSLATOR_SCHEMA = {
     "type": "object",
@@ -318,7 +318,13 @@ DAX_TRANSLATOR_SCHEMA = {
 }
 
 
-def dax_translator_input(model: SemanticModel, report_context: Optional[dict] = None) -> dict:
+def dax_translator_input(
+    model: SemanticModel, report_context: Optional[dict] = None,
+    business_decision: Optional[str] = None, target_audience: Optional[str] = None,
+    assumptions: Optional[str] = None, security_notes: Optional[str] = None,
+    refresh_notes: Optional[str] = None, deployment_notes: Optional[str] = None,
+    access_notes: Optional[str] = None, support_notes: Optional[str] = None,
+) -> dict:
     payload = {
         "measures": [
             {
@@ -332,6 +338,12 @@ def dax_translator_input(model: SemanticModel, report_context: Optional[dict] = 
     }
     if report_context is not None:
         payload["report_context"] = report_context
+    human_context = human_context_payload(
+        business_decision, target_audience, assumptions, security_notes,
+        refresh_notes, deployment_notes, access_notes, support_notes,
+    )
+    if human_context is not None:
+        payload["human_context"] = human_context
     return payload
 
 
@@ -344,7 +356,13 @@ DAX_TRANSLATOR_BATCH_SIZE = 25
 DAX_TRANSLATOR_BATCH_CHARS = 8000
 
 
-def dax_translator_batches(model: SemanticModel, report_context: Optional[dict] = None) -> list[dict]:
+def dax_translator_batches(
+    model: SemanticModel, report_context: Optional[dict] = None,
+    business_decision: Optional[str] = None, target_audience: Optional[str] = None,
+    assumptions: Optional[str] = None, security_notes: Optional[str] = None,
+    refresh_notes: Optional[str] = None, deployment_notes: Optional[str] = None,
+    access_notes: Optional[str] = None, support_notes: Optional[str] = None,
+) -> list[dict]:
     """Split all measures into bounded batches, each shaped like
     :func:`dax_translator_input`'s return value, so a large model is
     translated across several smaller, bounded LLM calls instead of one."""
@@ -372,6 +390,13 @@ def dax_translator_batches(model: SemanticModel, report_context: Optional[dict] 
     if report_context is not None:
         for b in batches:
             b["report_context"] = report_context
+    human_context = human_context_payload(
+        business_decision, target_audience, assumptions, security_notes,
+        refresh_notes, deployment_notes, access_notes, support_notes,
+    )
+    if human_context is not None:
+        for b in batches:
+            b["human_context"] = human_context
     return batches
 
 
@@ -483,7 +508,7 @@ Write a concise, professional overview (4-6 sentences) that:
 - Uses a confident, direct, enterprise tone — no filler, no generic hedging, no restating every input number back verbatim.
 
 Do not invent findings beyond what is given. Do not recommend anything that is not already in the provided recommendations list.
-""" + STYLE_RULES
+""" + HUMAN_CONTEXT_NOTE + STYLE_RULES
 
 AUDIT_NARRATOR_SCHEMA = {
     "type": "object",
@@ -506,8 +531,12 @@ def audit_narrator_input(
     governance_finding_count: int,
     unused_asset_count: int,
     top_recommendations: list[dict[str, str]],
+    business_decision: Optional[str] = None, target_audience: Optional[str] = None,
+    assumptions: Optional[str] = None, security_notes: Optional[str] = None,
+    refresh_notes: Optional[str] = None, deployment_notes: Optional[str] = None,
+    access_notes: Optional[str] = None, support_notes: Optional[str] = None,
 ) -> dict:
-    return {
+    payload = {
         "health_overall": health_overall,
         "health_band": health_band,
         "component_scores": component_scores,
@@ -519,6 +548,13 @@ def audit_narrator_input(
         "unused_asset_count": unused_asset_count,
         "top_recommendations": top_recommendations,
     }
+    human_context = human_context_payload(
+        business_decision, target_audience, assumptions, security_notes,
+        refresh_notes, deployment_notes, access_notes, support_notes,
+    )
+    if human_context is not None:
+        payload["human_context"] = human_context
+    return payload
 
 
 # --------------------------------------------------------------------------
@@ -539,7 +575,7 @@ For each root cause you can support using only the rule_ids and table/object nam
 If no findings share a clear, defensible root cause, return an empty clusters list — do not force a grouping.
 
 Then write a strategic_narrative (2-4 sentences): the remediation story in priority order — which root cause (or, absent any cluster, which single finding) to fix first and why.
-""" + STYLE_RULES
+""" + HUMAN_CONTEXT_NOTE + STYLE_RULES
 
 AUDIT_SYNTHESIZER_SCHEMA = {
     "type": "object",
@@ -571,14 +607,25 @@ def audit_synthesizer_input(
     performance_risks: list[dict],
     governance: list[dict],
     unused_assets_summary: dict,
+    business_decision: Optional[str] = None, target_audience: Optional[str] = None,
+    assumptions: Optional[str] = None, security_notes: Optional[str] = None,
+    refresh_notes: Optional[str] = None, deployment_notes: Optional[str] = None,
+    access_notes: Optional[str] = None, support_notes: Optional[str] = None,
 ) -> dict:
-    return {
+    payload = {
         "dax_findings": dax_findings,
         "failed_best_practices": failed_best_practices,
         "performance_risks": performance_risks,
         "governance_findings": governance,
         "unused_assets_summary": unused_assets_summary,
     }
+    human_context = human_context_payload(
+        business_decision, target_audience, assumptions, security_notes,
+        refresh_notes, deployment_notes, access_notes, support_notes,
+    )
+    if human_context is not None:
+        payload["human_context"] = human_context
+    return payload
 
 
 # --------------------------------------------------------------------------
@@ -846,6 +893,8 @@ to slice/monitor/analyze "by <that dimension>" is at minimum "Partial" once such
 candidate — score it "Gap" only when the candidate list for that requirement is empty or genuinely \
 unrelated. A requirement is "Covered" once both a relevant measure *and* a relevant dimension column/page \
 are offered as candidates together.
+""" + """
+You may also be given human_context — facts a human supplied about this specific report. When "assumptions" is present, treat it as a known, human-confirmed caveat when judging a requirement (e.g. a stated assumption can explain why a metric is scoped narrower than the requirement's literal wording, without that alone making it a "Gap"). The other human_context fields (business_decision, target_audience, security_notes, refresh_notes, deployment_notes, access_notes, support_notes) are background only — they never by themselves change a Covered/Partial/Gap verdict; only the candidate evidence actually given for that requirement does.
 """
 
 TRACEABILITY_SCHEMA = {
@@ -871,8 +920,21 @@ TRACEABILITY_SCHEMA = {
 }
 
 
-def traceability_input(requirements_with_candidates: list[dict]) -> dict:
+def traceability_input(
+    requirements_with_candidates: list[dict],
+    business_decision: Optional[str] = None, target_audience: Optional[str] = None,
+    assumptions: Optional[str] = None, security_notes: Optional[str] = None,
+    refresh_notes: Optional[str] = None, deployment_notes: Optional[str] = None,
+    access_notes: Optional[str] = None, support_notes: Optional[str] = None,
+) -> dict:
     """``requirements_with_candidates``: ``[{"requirement": str, "candidates":
     [{"anchor": str, "kind": str, "name": str}, ...]}, ...]`` — one entry per
     parsed requirement line, already keyword-matched against the model."""
-    return {"requirements": requirements_with_candidates}
+    payload = {"requirements": requirements_with_candidates}
+    human_context = human_context_payload(
+        business_decision, target_audience, assumptions, security_notes,
+        refresh_notes, deployment_notes, access_notes, support_notes,
+    )
+    if human_context is not None:
+        payload["human_context"] = human_context
+    return payload

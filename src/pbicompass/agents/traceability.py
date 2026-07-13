@@ -295,6 +295,15 @@ def build_requirements_matrix(
     client: Optional["LLMClient"] = None,
     warn: Optional[Warn] = None,
     ai_context: Optional["JobAIContext"] = None,
+    *,
+    business_decision: Optional[str] = None,
+    target_audience: Optional[str] = None,
+    assumptions: Optional[str] = None,
+    security_notes: Optional[str] = None,
+    refresh_notes: Optional[str] = None,
+    deployment_notes: Optional[str] = None,
+    access_notes: Optional[str] = None,
+    support_notes: Optional[str] = None,
 ) -> list[RequirementCoverage]:
     """Parse ``requirements_text``, deterministically match each line
     against the report's own measures/columns/pages, then (when ``client``
@@ -351,7 +360,13 @@ def build_requirements_matrix(
     try:
         from .generators.base import call_llm  # local import: see consistency.py's identical note
         data = call_llm(
-            client, io.TRACEABILITY_SYSTEM, io.traceability_input(payload),
+            client, io.TRACEABILITY_SYSTEM,
+            io.traceability_input(
+                payload, business_decision=business_decision, target_audience=target_audience,
+                assumptions=assumptions, security_notes=security_notes,
+                refresh_notes=refresh_notes, deployment_notes=deployment_notes,
+                access_notes=access_notes, support_notes=support_notes,
+            ),
             io.TRACEABILITY_SCHEMA, warn, "Requirements Traceability", ai_context=ai_context,
         )
     except Exception as exc:  # pragma: no cover - defensive, mirrors call_llm's own contract

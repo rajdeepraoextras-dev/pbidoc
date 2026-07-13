@@ -348,10 +348,20 @@ class ExecutiveSummaryGenerator:
         warn = on_warning or (lambda _msg: None)
         model.compute_counts()
         if ai_context is None and client is not None:
-            ai_context = build_job_context(model, client, warn)
+            ai_context = build_job_context(
+                model, client, warn,
+                business_decision=business_decision, target_audience=audience,
+                assumptions=assumptions, security_notes=security_notes,
+                refresh_notes=refresh_notes, deployment_notes=deployment_notes,
+                access_notes=access_notes, support_notes=support_notes,
+            )
         if requirements_matrix is None:
             requirements_matrix = build_requirements_matrix(
                 model, requirements, client, warn, ai_context=ai_context,
+                business_decision=business_decision, target_audience=audience,
+                assumptions=assumptions, security_notes=security_notes,
+                refresh_notes=refresh_notes, deployment_notes=deployment_notes,
+                access_notes=access_notes, support_notes=support_notes,
             )
 
         # Reuse the full deterministic audit engine (Phase 1) for the

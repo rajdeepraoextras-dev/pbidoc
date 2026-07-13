@@ -461,7 +461,13 @@ def main(argv: list[str] | None = None) -> int:
         # type — CLI keeps its persistent cache default (no explicit
         # cache_path override; ``LLMResponseCache`` falls back to the
         # ``PBICOMPASS_LLM_CACHE`` env var, same as before this phase).
-        ai_context = build_job_context(model, client, _warn) if client is not None else None
+        ai_context = build_job_context(
+            model, client, _warn,
+            business_decision=business_decision, target_audience=audience,
+            assumptions=assumptions, security_notes=security_notes,
+            refresh_notes=refresh_notes, deployment_notes=deployment_notes,
+            access_notes=access_notes, support_notes=support_notes,
+        ) if client is not None else None
 
         # Day 8/Day 2: when "audit" is requested alongside any other document
         # type in the same run, generate it first so its Audit Synthesizer
@@ -494,6 +500,10 @@ def main(argv: list[str] | None = None) -> int:
         from .agents.traceability import build_requirements_matrix
         requirements_matrix = build_requirements_matrix(
             model, requirements, client, _warn, ai_context=ai_context,
+            business_decision=business_decision, target_audience=audience,
+            assumptions=assumptions, security_notes=security_notes,
+            refresh_notes=refresh_notes, deployment_notes=deployment_notes,
+            access_notes=access_notes, support_notes=support_notes,
         )
 
         pre_audit_doc = None

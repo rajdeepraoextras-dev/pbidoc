@@ -268,6 +268,10 @@ class AuditReportGenerator:
         if requirements_matrix is None:
             requirements_matrix = traceability.build_requirements_matrix(
                 model, requirements, client, warn, ai_context=ai_context,
+                business_decision=business_decision, target_audience=audience,
+                assumptions=assumptions, security_notes=security_notes,
+                refresh_notes=refresh_notes, deployment_notes=deployment_notes,
+                access_notes=access_notes, support_notes=support_notes,
             )
 
         audit_rules.reset_suppressed_rules()
@@ -320,6 +324,10 @@ class AuditReportGenerator:
                         {"priority": r.priority, "issue": r.issue, "suggested_fix": r.suggested_fix}
                         for r in recommendations[:3]
                     ],
+                    business_decision=business_decision, target_audience=audience,
+                    assumptions=assumptions, security_notes=security_notes,
+                    refresh_notes=refresh_notes, deployment_notes=deployment_notes,
+                    access_notes=access_notes, support_notes=support_notes,
                 ),
                 io.AUDIT_NARRATOR_SCHEMA, warn, "Audit Narrator", ai_context=ai_context,
             )
@@ -357,6 +365,10 @@ class AuditReportGenerator:
                         "calculated_columns": unused_assets.calculated_columns,
                         "report_pages": unused_assets.report_pages,
                     },
+                    business_decision=business_decision, target_audience=audience,
+                    assumptions=assumptions, security_notes=security_notes,
+                    refresh_notes=refresh_notes, deployment_notes=deployment_notes,
+                    access_notes=access_notes, support_notes=support_notes,
                 ),
                 io.AUDIT_SYNTHESIZER_SCHEMA, warn, "Audit Synthesizer", ai_context=ai_context,
             )

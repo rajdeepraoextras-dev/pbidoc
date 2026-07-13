@@ -435,7 +435,13 @@ class BusinessGuideGenerator:
         warn = on_warning or (lambda _msg: None)
         model.compute_counts()
         if ai_context is None and client is not None:
-            ai_context = build_job_context(model, client, warn)
+            ai_context = build_job_context(
+                model, client, warn,
+                business_decision=business_decision, target_audience=audience,
+                assumptions=assumptions, security_notes=security_notes,
+                refresh_notes=refresh_notes, deployment_notes=deployment_notes,
+                access_notes=access_notes, support_notes=support_notes,
+            )
 
         analyst = business_analyst_deterministic(model)
         page_summary_by_title = {p.page_title: p.summary for p in analyst.pages}
