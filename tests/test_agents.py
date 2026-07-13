@@ -802,6 +802,42 @@ class ClientFactoryTest(unittest.TestCase):
 
         self.assertFalse(client.model.startswith("anthropic/"))
 
+    def test_meshapi_default_model_is_gemini_flash_with_env_override(self):
+        # 2026-07-13: default switched from openai/gpt-4o to
+        # google/gemini-3.5-flash for cost (still inside the OpenAI/Gemini
+        # family MeshAPI documents first-class structured output for), with
+        # a MESHAPI_MODEL env var as a deploy-time override so the next
+        # model switch needs no code change. An env value without a "/"
+        # can't be a MeshAPI "provider/model-name" id, so it's ignored.
+        import os
+        import sys
+        from types import ModuleType
+        from unittest.mock import patch
+
+        from pbicompass.agents.llm import get_client
+
+        class _FakeOpenAI:
+            def __init__(self, **kwargs):
+                pass
+
+        fake_module = ModuleType("openai")
+        fake_module.OpenAI = _FakeOpenAI
+
+        with patch.dict(sys.modules, {"openai": fake_module}):
+            with patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("MESHAPI_MODEL", None)
+                self.assertEqual(get_client("meshapi").model, "google/gemini-3.5-flash")
+            with patch.dict(os.environ, {"MESHAPI_MODEL": "deepseek/deepseek-v3.2"}):
+                self.assertEqual(get_client("mesh").model, "deepseek/deepseek-v3.2")
+            with patch.dict(os.environ, {"MESHAPI_MODEL": "not-a-mesh-id"}):
+                self.assertEqual(get_client("meshapi").model, "google/gemini-3.5-flash")
+            with patch.dict(os.environ, {"MESHAPI_MODEL": "deepseek/deepseek-v3.2"}):
+                # An explicit model always wins over the env override.
+                self.assertEqual(
+                    get_client("meshapi", model="openai/gpt-4o-mini").model,
+                    "openai/gpt-4o-mini",
+                )
+
     def test_gemini_schema_strips_additional_properties(self):
         from pbicompass.agents.llm import _gemini_schema
         schema = {

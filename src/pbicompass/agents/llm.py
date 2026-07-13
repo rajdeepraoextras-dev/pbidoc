@@ -404,18 +404,25 @@ class MeshAPIClient:
     model ids, which use hyphens (``claude-opus-4-8``, as
     :class:`AnthropicClient` expects) — the two are not interchangeable.
 
-    Defaults to ``openai/gpt-4o`` rather than a Claude model: MeshAPI routes
-    at least some Anthropic model ids through AWS Bedrock's Converse API,
-    which doesn't support the structured-output parameter MeshAPI's
-    translation layer attaches for them (every ``complete_json`` call here
-    fails with a Bedrock ``ValidationException`` on ``output_config.format``
-    for those ids) — MeshAPI's own docs confirm first-class structured-output
-    support for OpenAI (and Google Gemini) models, not Anthropic-via-Bedrock.
-    Pass an explicit ``model=`` to use a different one (e.g. a DeepSeek model
-    for a cheaper option — 2026-07-13: ``deepseek/deepseek-v4-flash`` was
-    tried as the default but reverted, it was unacceptably slow in practice).
-    ``complete_json`` below still degrades gracefully to a prompt-only JSON
-    instruction if a chosen model rejects ``response_format`` outright.
+    Defaults to ``google/gemini-3.5-flash`` (2026-07-13, switched from
+    ``openai/gpt-4o`` for cost — roughly 15-20x cheaper per token while
+    staying inside the family MeshAPI's own docs confirm has first-class
+    structured-output support: OpenAI and Google Gemini). A Claude default
+    remains off the table: MeshAPI routes at least some Anthropic model ids
+    through AWS Bedrock's Converse API, which doesn't support the
+    structured-output parameter MeshAPI's translation layer attaches for
+    them (every ``complete_json`` call fails with a Bedrock
+    ``ValidationException`` on ``output_config.format`` for those ids).
+    DeepSeek was also evaluated for the cheap slot but lost:
+    ``deepseek/deepseek-v4-flash`` was unacceptably slow in practice
+    (always-on thinking at the jobs' effort=high default), and DeepSeek ids
+    have no documented ``response_format`` guarantee through MeshAPI.
+
+    The default can be overridden without a code change via the
+    ``MESHAPI_MODEL`` env var (a ``provider/model-name`` id), or per-client
+    with an explicit ``model=``. ``complete_json`` below still degrades
+    gracefully to a prompt-only JSON instruction if a chosen model rejects
+    ``response_format`` outright.
 
     Implemented with the official ``openai`` SDK pointed at MeshAPI's base
     URL, exactly as MeshAPI's own quickstart recommends ("replace the Base
@@ -426,10 +433,11 @@ class MeshAPIClient:
     """
 
     _BASE_URL = "https://api.meshapi.ai/v1"
+    _FALLBACK_MODEL = "google/gemini-3.5-flash"
 
     def __init__(
         self,
-        model: str = "openai/gpt-4o",
+        model: Optional[str] = None,
         *,
         api_key: Optional[str] = None,
         effort: Optional[str] = None,
@@ -446,6 +454,13 @@ class MeshAPIClient:
         key = api_key or os.environ.get("MESHAPI_API_KEY")
         self._client = openai.OpenAI(base_url=self._BASE_URL, api_key=key, timeout=timeout)
         self._openai = openai
+        # Model resolution: explicit arg > MESHAPI_MODEL env (deploy-time
+        # override, no code change to switch models) > hard fallback. The env
+        # value must be a full "provider/model-name" id; anything without a
+        # slash can't be a MeshAPI id, so it's ignored rather than sent.
+        env_model = (os.environ.get("MESHAPI_MODEL") or "").strip()
+        if not model:
+            model = env_model if "/" in env_model else self._FALLBACK_MODEL
         self.model = model
         self.effort = effort
         self.max_tokens = max_tokens
@@ -460,7 +475,8 @@ class MeshAPIClient:
         # wildly varying reasoning-effort support with no per-model signal
         # exposed here, so it's only ever sent when the routed model id
         # itself looks reasoning-capable (o-series/gpt-5); every other model
-        # — including the ``openai/gpt-4o`` default — never receives it.
+        # — including the ``google/gemini-3.5-flash`` default — never
+        # receives it.
         resolved_effort = effort if effort is not None else self.effort
         reasoning_effort = (
             _MESHAPI_REASONING_EFFORT.get(resolved_effort)
@@ -473,7 +489,8 @@ class MeshAPIClient:
         # is restated as a plain-text instruction instead and the response
         # is parsed loosely (stripping a stray ```json fence some models add
         # despite the instruction) — useful for whatever non-default model a
-        # caller passes in, even though gpt-4o itself never hits this path.
+        # caller passes in, even though the gemini-flash default itself
+        # never hits this path.
         def _call(*, include_reasoning: bool, structured: bool):
             sys_prompt = system if structured else (
                 system + "\n\nRespond with only a single valid JSON object (no markdown "
@@ -536,10 +553,12 @@ _DEFAULT_MODEL = {
     "anthropic": "claude-opus-4-8",
     "gemini": "gemini-3.5-flash",
     "cohere": "command-a-03-2025",
-    # openai/gpt-4o, not a Claude id — see MeshAPIClient's docstring: MeshAPI
-    # routes at least some Anthropic ids through AWS Bedrock's Converse API,
-    # which rejects the structured-output parameter every agent here needs.
-    "meshapi": "openai/gpt-4o",
+    # None: MeshAPIClient resolves its own default (MESHAPI_MODEL env var,
+    # else google/gemini-3.5-flash — never a Claude id; see its docstring:
+    # MeshAPI routes at least some Anthropic ids through AWS Bedrock's
+    # Converse API, which rejects the structured-output parameter every
+    # agent here needs).
+    "meshapi": None,
 }
 
 
@@ -570,7 +589,8 @@ def get_client(provider: Optional[str], **kwargs: Any) -> Optional[LLMClient]:
     if provider in ("meshapi", "mesh"):
         # MeshAPI model ids are always "provider/model-name" — a bare model
         # id from another provider's default (e.g. the CLI's own
-        # "claude-opus-4-8") isn't valid here, so fall back the same way.
+        # "claude-opus-4-8") isn't valid here, so fall back the same way:
+        # None lets MeshAPIClient resolve MESHAPI_MODEL / its own default.
         if not model or "/" not in model:
             model = _DEFAULT_MODEL["meshapi"]
         return MeshAPIClient(model=model, **kwargs)
