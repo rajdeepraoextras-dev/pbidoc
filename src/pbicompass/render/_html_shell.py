@@ -948,7 +948,7 @@ details.collapsible > .code-block pre {
    printed-page count. */
 .thumb-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
   gap: 14px;
   margin: 12px 0;
 }
@@ -1391,6 +1391,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const panZoomInstances = [];
   document.querySelectorAll('.diagram svg').forEach((svg) => {
     if (typeof svgPanZoom !== 'function') return; // vendor script failed to parse — degrade to static, never throw
+    // "Report at a glance" thumbnails are static previews (pointer-events:
+    // none — the whole card is already one link to the sibling doc's real,
+    // full-size interactive wireframe) — skip pan-zoom init entirely so its
+    // +/RESET/- control icons don't render uselessly on top of a tiny,
+    // non-interactive card.
+    if (svg.closest('.thumb-card')) return;
     // svg-pan-zoom drives pan/zoom via an explicit pixel width/height that
     // it reads once at init and then bakes in (it discards the original
     // viewBox-driven auto-sizing entirely). Without an explicit height set
