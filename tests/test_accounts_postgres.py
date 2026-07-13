@@ -120,6 +120,10 @@ class ConnectionResilienceTest(unittest.TestCase):
         kwargs = captured["kwargs"]
         self.assertEqual(kwargs["keepalives"], 1)
         self.assertEqual(kwargs["connect_timeout"], 10)
+        # Bounds a mid-query dead-socket wait (keepalives only cover idle
+        # connections; hang #2 froze mid-query for the TCP retransmit
+        # timeout with keepalives already enabled).
+        self.assertEqual(kwargs["tcp_user_timeout"], 30000)
         # Deliberately no options="-c statement_timeout=..." — PgBouncer/
         # Supavisor transaction pooling rejects it as a startup parameter.
         self.assertNotIn("options", kwargs)

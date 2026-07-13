@@ -59,16 +59,23 @@ class _Connection:
         # *while holding the lock*, wedging every request in the app —
         # 2026-07-13: production hung exactly this way (TLS accepted, zero
         # bytes ever sent, downloads silently dead). TCP keepalives detect a
-        # dead peer within ~1 minute and connect_timeout caps the reconnect
-        # attempt itself. Both are client-side libpq parameters, safe through
-        # any pooler — deliberately NOT ``options="-c statement_timeout=..."``,
-        # which PgBouncer/Supavisor transaction pooling rejects as an
-        # unsupported startup parameter (it would break connecting at all).
+        # dead peer within ~1 minute — but ONLY on an idle connection; a
+        # socket that dies mid-query (data sent, reply pending) is governed
+        # by the TCP retransmission timeout instead, 15-25 minutes of hang
+        # (2026-07-13, hang #2: the keepalive-enabled build froze exactly
+        # this way). tcp_user_timeout bounds that un-ACKed-data wait to 30s,
+        # after which the query errors and the reconnect path below takes
+        # over. connect_timeout caps the reconnect attempt itself. All are
+        # client-side libpq parameters, safe through any pooler —
+        # deliberately NOT ``options="-c statement_timeout=..."``, which
+        # PgBouncer/Supavisor transaction pooling rejects as an unsupported
+        # startup parameter (it would break connecting at all).
         return self._psycopg.connect(
             self._db_path,
             row_factory=self._psycopg.rows.dict_row,
             connect_timeout=10,
             keepalives=1, keepalives_idle=30, keepalives_interval=10, keepalives_count=3,
+            tcp_user_timeout=30000,
         )
 
     def _pg_reconnect_and_retry(self, exc: Exception):
