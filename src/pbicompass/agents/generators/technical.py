@@ -110,6 +110,9 @@ def _metadata(model: SemanticModel, owner, audience, refresh,
 # -- II. Executive Summary ----------------------------------------------------
 def _executive_summary(model: SemanticModel, client, warn, ai_context: Optional[JobAIContext],
                         business_decision: Optional[str] = None, audience: Optional[str] = None,
+                        assumptions: Optional[str] = None, security_notes: Optional[str] = None,
+                        refresh_notes: Optional[str] = None, deployment_notes: Optional[str] = None,
+                        access_notes: Optional[str] = None, support_notes: Optional[str] = None,
                         ) -> ExecutiveSummary:
     """Batches the Business Analyst prompt by page (``io.business_analyst_
     batches``) so one failed/invalid batch degrades only the pages it
@@ -149,8 +152,12 @@ def _executive_summary(model: SemanticModel, client, warn, ai_context: Optional[
             if business_decision:
                 core_purpose = f"{core_purpose} This report exists to support: {business_decision}"
 
-    for batch in io.business_analyst_batches(model, report_context=report_context,
-                                              business_decision=business_decision, target_audience=audience):
+    for batch in io.business_analyst_batches(
+            model, report_context=report_context,
+            business_decision=business_decision, target_audience=audience,
+            assumptions=assumptions, security_notes=security_notes,
+            refresh_notes=refresh_notes, deployment_notes=deployment_notes,
+            access_notes=access_notes, support_notes=support_notes):
         batch_size = len(batch["pages"])
         slice_titles = [p.page_title for p in pages[offset:offset + batch_size]]
         data = call_llm_with_retry(client, io.BUSINESS_ANALYST_SYSTEM, batch, io.BUSINESS_ANALYST_SCHEMA,
@@ -919,8 +926,12 @@ class TechnicalDocumentationGenerator:
                 access_notes=access_notes, glossary=glossary,
                 assumptions=assumptions, support_notes=support_notes,
             ),
-            executive_summary=_executive_summary(model, client, warn, ai_context,
-                                                  business_decision=business_decision, audience=audience),
+            executive_summary=_executive_summary(
+                model, client, warn, ai_context,
+                business_decision=business_decision, audience=audience,
+                assumptions=assumptions, security_notes=security_notes,
+                refresh_notes=refresh_notes, deployment_notes=deployment_notes,
+                access_notes=access_notes, support_notes=support_notes),
             lineage=_lineage(model),
             semantic_model=_semantic_model(model, client, warn, col_descs, ai_context),
             measure_catalog=_measure_catalog(model, client, warn, ai_context),

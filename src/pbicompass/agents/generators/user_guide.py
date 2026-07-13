@@ -513,7 +513,13 @@ class BusinessGuideGenerator:
             for batch in io.user_guide_writer_batches(model.report_name, introduction, page_drafts,
                                                        report_context=report_context,
                                                        business_decision=business_decision,
-                                                       target_audience=audience):
+                                                       target_audience=audience,
+                                                       assumptions=assumptions,
+                                                       security_notes=security_notes,
+                                                       refresh_notes=refresh_notes,
+                                                       deployment_notes=deployment_notes,
+                                                       access_notes=access_notes,
+                                                       support_notes=support_notes):
                 batch_titles = [p["page_title"] for p in batch["pages"]]
                 data = call_llm_with_retry(client, io.USER_GUIDE_WRITER_SYSTEM, batch, io.USER_GUIDE_WRITER_SCHEMA,
                                             ai_context=ai_context, name="User Guide Writer")

@@ -409,6 +409,9 @@ class ExecutiveSummaryGenerator:
                     report_context=ai_context.insights if ai_context is not None else None,
                     business_decision=business_decision,
                     target_audience=audience,
+                    assumptions=assumptions, security_notes=security_notes,
+                    refresh_notes=refresh_notes, deployment_notes=deployment_notes,
+                    access_notes=access_notes, support_notes=support_notes,
                 ),
                 io.EXECUTIVE_WRITER_SCHEMA, warn, "Executive Writer", ai_context=ai_context,
             )

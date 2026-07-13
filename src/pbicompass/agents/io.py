@@ -93,14 +93,20 @@ You may also be given report_context — a synthesized understanding of the whol
 # inert metadata-table content the AI writes past.
 # --------------------------------------------------------------------------
 HUMAN_CONTEXT_NOTE = """
-You may also be given human_context — facts a human supplied about this specific report, always higher-precedence than anything you infer from the model alone. When "business_decision" is present, anchor your core content explicitly around that decision rather than writing generically about the report's subject matter (e.g. write toward "weekly regional sales planning", not just "this report tracks sales"). When "target_audience" is present, calibrate vocabulary, detail level, and what you emphasize to that specific audience (e.g. "Executives" wants outcomes and business impact, not field or table names; "BI developers" tolerates more technical density).
+You may also be given human_context — facts a human supplied about this specific report, always higher-precedence than anything you infer from the model alone. When "business_decision" is present, anchor your core content explicitly around that decision rather than writing generically about the report's subject matter (e.g. write toward "weekly regional sales planning", not just "this report tracks sales"). When "target_audience" is present, calibrate vocabulary, detail level, and what you emphasize to that specific audience (e.g. "Executives" wants outcomes and business impact, not field or table names; "BI developers" tolerates more technical density). When "assumptions" is present, treat it as a known, human-confirmed caveat about the data — never write anything that contradicts it. "security_notes", "refresh_notes", "deployment_notes", "access_notes", and "support_notes" are operational facts (data classification/handling, refresh cadence, environment, permissions, support escalation) supplied for background — reference one only where directly relevant to what you are writing, and never invent an operational detail beyond what is given here.
 """
 
 
 def human_context_payload(business_decision: Optional[str] = None,
-                           target_audience: Optional[str] = None) -> Optional[dict]:
+                           target_audience: Optional[str] = None,
+                           assumptions: Optional[str] = None,
+                           security_notes: Optional[str] = None,
+                           refresh_notes: Optional[str] = None,
+                           deployment_notes: Optional[str] = None,
+                           access_notes: Optional[str] = None,
+                           support_notes: Optional[str] = None) -> Optional[dict]:
     """Build the ``human_context`` block an input builder attaches to its
-    payload when either field is present — ``None`` when neither is set, so
+    payload when any field is present — ``None`` when none are set, so
     callers can ``if ctx: payload["human_context"] = ctx`` without an empty
     block ever reaching the prompt."""
     ctx: dict = {}
@@ -108,6 +114,18 @@ def human_context_payload(business_decision: Optional[str] = None,
         ctx["business_decision"] = business_decision
     if target_audience:
         ctx["target_audience"] = target_audience
+    if assumptions:
+        ctx["assumptions"] = assumptions
+    if security_notes:
+        ctx["security_notes"] = security_notes
+    if refresh_notes:
+        ctx["refresh_notes"] = refresh_notes
+    if deployment_notes:
+        ctx["deployment_notes"] = deployment_notes
+    if access_notes:
+        ctx["access_notes"] = access_notes
+    if support_notes:
+        ctx["support_notes"] = support_notes
     return ctx or None
 
 
@@ -174,6 +192,9 @@ BUSINESS_ANALYST_SCHEMA = {
 def business_analyst_input(
     model: SemanticModel, report_context: Optional[dict] = None,
     business_decision: Optional[str] = None, target_audience: Optional[str] = None,
+    assumptions: Optional[str] = None, security_notes: Optional[str] = None,
+    refresh_notes: Optional[str] = None, deployment_notes: Optional[str] = None,
+    access_notes: Optional[str] = None, support_notes: Optional[str] = None,
 ) -> dict:
     key_measures = [m.name for m in model.all_measures() if not m.is_hidden][:25]
     payload = {
@@ -203,7 +224,10 @@ def business_analyst_input(
     }
     if report_context is not None:
         payload["report_context"] = report_context
-    human_context = human_context_payload(business_decision, target_audience)
+    human_context = human_context_payload(
+        business_decision, target_audience, assumptions, security_notes,
+        refresh_notes, deployment_notes, access_notes, support_notes,
+    )
     if human_context is not None:
         payload["human_context"] = human_context
     return payload
@@ -219,6 +243,9 @@ def business_analyst_batches(
     model: SemanticModel, batch_size: int = BUSINESS_ANALYST_BATCH_SIZE,
     report_context: Optional[dict] = None,
     business_decision: Optional[str] = None, target_audience: Optional[str] = None,
+    assumptions: Optional[str] = None, security_notes: Optional[str] = None,
+    refresh_notes: Optional[str] = None, deployment_notes: Optional[str] = None,
+    access_notes: Optional[str] = None, support_notes: Optional[str] = None,
 ) -> list[dict]:
     """Split the report's *visible* pages into bounded batches, each shaped
     like :func:`business_analyst_input`'s return value (same report-wide
@@ -228,8 +255,13 @@ def business_analyst_batches(
     contiguous slice of the deterministic visible-pages list callers already
     have, letting a failed batch be mapped straight back to the pages it
     covers."""
-    base = business_analyst_input(model, report_context=report_context,
-                                   business_decision=business_decision, target_audience=target_audience)
+    base = business_analyst_input(
+        model, report_context=report_context,
+        business_decision=business_decision, target_audience=target_audience,
+        assumptions=assumptions, security_notes=security_notes,
+        refresh_notes=refresh_notes, deployment_notes=deployment_notes,
+        access_notes=access_notes, support_notes=support_notes,
+    )
     visible_pages = [p for p in base["pages"] if not p["is_hidden"]]
     if not visible_pages:
         return [base]
@@ -654,6 +686,12 @@ def executive_writer_input(
     report_context: Optional[dict] = None,
     business_decision: Optional[str] = None,
     target_audience: Optional[str] = None,
+    assumptions: Optional[str] = None,
+    security_notes: Optional[str] = None,
+    refresh_notes: Optional[str] = None,
+    deployment_notes: Optional[str] = None,
+    access_notes: Optional[str] = None,
+    support_notes: Optional[str] = None,
 ) -> dict:
     payload = {
         "business_purpose_draft": business_purpose_draft,
@@ -665,7 +703,10 @@ def executive_writer_input(
     }
     if report_context is not None:
         payload["report_context"] = report_context
-    human_context = human_context_payload(business_decision, target_audience)
+    human_context = human_context_payload(
+        business_decision, target_audience, assumptions, security_notes,
+        refresh_notes, deployment_notes, access_notes, support_notes,
+    )
     if human_context is not None:
         payload["human_context"] = human_context
     return payload
@@ -716,6 +757,12 @@ def user_guide_writer_input(
     report_context: Optional[dict] = None,
     business_decision: Optional[str] = None,
     target_audience: Optional[str] = None,
+    assumptions: Optional[str] = None,
+    security_notes: Optional[str] = None,
+    refresh_notes: Optional[str] = None,
+    deployment_notes: Optional[str] = None,
+    access_notes: Optional[str] = None,
+    support_notes: Optional[str] = None,
 ) -> dict:
     payload = {
         "report_name": report_name,
@@ -724,7 +771,10 @@ def user_guide_writer_input(
     }
     if report_context is not None:
         payload["report_context"] = report_context
-    human_context = human_context_payload(business_decision, target_audience)
+    human_context = human_context_payload(
+        business_decision, target_audience, assumptions, security_notes,
+        refresh_notes, deployment_notes, access_notes, support_notes,
+    )
     if human_context is not None:
         payload["human_context"] = human_context
     return payload
@@ -741,17 +791,27 @@ def user_guide_writer_batches(
     report_context: Optional[dict] = None,
     business_decision: Optional[str] = None,
     target_audience: Optional[str] = None,
+    assumptions: Optional[str] = None,
+    security_notes: Optional[str] = None,
+    refresh_notes: Optional[str] = None,
+    deployment_notes: Optional[str] = None,
+    access_notes: Optional[str] = None,
+    support_notes: Optional[str] = None,
 ) -> list[dict]:
     """Split ``pages`` (each ``{page_title, purpose_draft, common_scenarios_draft}``)
     into bounded batches, each shaped like :func:`user_guide_writer_input`'s
     return value."""
+    kwargs = dict(
+        report_context=report_context, business_decision=business_decision,
+        target_audience=target_audience, assumptions=assumptions,
+        security_notes=security_notes, refresh_notes=refresh_notes,
+        deployment_notes=deployment_notes, access_notes=access_notes,
+        support_notes=support_notes,
+    )
     if not pages:
-        return [user_guide_writer_input(report_name, introduction_draft, [], report_context=report_context,
-                                        business_decision=business_decision, target_audience=target_audience)]
+        return [user_guide_writer_input(report_name, introduction_draft, [], **kwargs)]
     return [
-        user_guide_writer_input(report_name, introduction_draft, pages[i:i + batch_size],
-                                 report_context=report_context,
-                                 business_decision=business_decision, target_audience=target_audience)
+        user_guide_writer_input(report_name, introduction_draft, pages[i:i + batch_size], **kwargs)
         for i in range(0, len(pages), batch_size)
     ]
 
