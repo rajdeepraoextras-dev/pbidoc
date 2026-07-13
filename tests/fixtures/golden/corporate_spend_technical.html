@@ -1925,14 +1925,14 @@ in
 <div class="measure">
 <h3>2. <span class="pill">Medium</span> The model does not follow a star schema.</h3>
 <p><strong>Impact:</strong> Non-star shapes (snowflake, galaxy, flat) typically perform worse and are harder to reason about for report authors.</p>
-<p><strong>Recommendation:</strong> Where practical, re-model dimensions to relate directly to fact tables.</p>
+<p><strong>Recommendation:</strong> Where practical, re-model dimensions to relate directly to fact tables. Fact tables involved: &#x27;Date&#x27;, &#x27;Fact&#x27;.</p>
 <p><strong>Expected benefit:</strong> Simpler, faster, more predictable filter propagation.</p>
 <p><strong>Estimated effort:</strong> High</p>
 </div>
 <div class="measure">
 <h3>3. <span class="pill">Medium</span> Many measures/columns have no description.</h3>
 <p><strong>Impact:</strong> Missing descriptions mean new team members must reverse-engineer intent from DAX and column names alone.</p>
-<p><strong>Recommendation:</strong> Add descriptions to the most-used measures and columns first.</p>
+<p><strong>Recommendation:</strong> Add descriptions to the most-used measures and columns first. Undescribed measures: Amount, Actual, LE1, LE2, LE3, Plan, Var LE1, Var LE2 (+7 more). Undescribed columns: Business Area[Business Area], Cost Element[Cost element name], Cost Element[Cost Element Group], Cost Element[Cost Element Sub Group], Country Region[Sales Region], Country Region[Country/Region], Date[Year], Date[Period] (+17 more).</p>
 <p><strong>Expected benefit:</strong> Faster onboarding and self-documenting metadata in Power BI Desktop tooltips.</p>
 <p><strong>Estimated effort:</strong> Low</p>
 </div>
@@ -1960,7 +1960,7 @@ in
 <div class="measure">
 <h3>7. <span class="pill">Low</span> Some measures have no description.</h3>
 <p><strong>Impact:</strong> Without a description, business meaning has to be reverse-engineered from the DAX every time.</p>
-<p><strong>Recommendation:</strong> Add a one-sentence description to each measure explaining what it calculates and why.</p>
+<p><strong>Recommendation:</strong> Add a one-sentence description to each measure explaining what it calculates and why. Affected measures: Amount, Actual, LE1, LE2, LE3, Plan, Var LE1, Var LE2, Var LE3, Var Plan (+5 more).</p>
 <p><strong>Expected benefit:</strong> Faster onboarding and fewer misinterpretations of what a measure means.</p>
 <p><strong>Estimated effort:</strong> Low</p>
 </div>

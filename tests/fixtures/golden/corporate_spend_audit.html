@@ -1303,14 +1303,14 @@ in
 <div class="card-section" id="rec-PBIC-MOD-007">
 <h3><span class="pill medium">Medium</span> The model does not follow a star schema.<span class="pill rule-id" title="Star schema compliance">PBIC-MOD-007</span></h3>
 <p><strong>Why it matters:</strong> Non-star shapes (snowflake, galaxy, flat) typically perform worse and are harder to reason about for report authors.</p>
-<p><strong>Suggested fix:</strong> Where practical, re-model dimensions to relate directly to fact tables.</p>
+<p><strong>Suggested fix:</strong> Where practical, re-model dimensions to relate directly to fact tables. Fact tables involved: &#x27;Date&#x27;, &#x27;Fact&#x27;.</p>
 <p><strong>Expected benefit:</strong> Simpler, faster, more predictable filter propagation.</p>
 <p><strong>Estimated effort:</strong> High</p>
 </div>
 <div class="card-section" id="rec-PBIC-DOC-002">
 <h3><span class="pill medium">Medium</span> Many measures/columns have no description.<span class="pill rule-id" title="Description coverage">PBIC-DOC-002</span></h3>
 <p><strong>Why it matters:</strong> Missing descriptions mean new team members must reverse-engineer intent from DAX and column names alone.</p>
-<p><strong>Suggested fix:</strong> Add descriptions to the most-used measures and columns first.</p>
+<p><strong>Suggested fix:</strong> Add descriptions to the most-used measures and columns first. Undescribed measures: Amount, Actual, LE1, LE2, LE3, Plan, Var LE1, Var LE2 (+7 more). Undescribed columns: Business Area[Business Area], Cost Element[Cost element name], Cost Element[Cost Element Group], Cost Element[Cost Element Sub Group], Country Region[Sales Region], Country Region[Country/Region], Date[Year], Date[Period] (+17 more).</p>
 <p><strong>Expected benefit:</strong> Faster onboarding and self-documenting metadata in Power BI Desktop tooltips.</p>
 <p><strong>Estimated effort:</strong> Low</p>
 </div>
@@ -1338,7 +1338,7 @@ in
 <div class="card-section" id="rec-PBIC-DAX-003">
 <h3><span class="pill low">Low</span> Some measures have no description.<span class="pill rule-id" title="Missing measure description">PBIC-DAX-003</span></h3>
 <p><strong>Why it matters:</strong> Without a description, business meaning has to be reverse-engineered from the DAX every time.</p>
-<p><strong>Suggested fix:</strong> Add a one-sentence description to each measure explaining what it calculates and why.</p>
+<p><strong>Suggested fix:</strong> Add a one-sentence description to each measure explaining what it calculates and why. Affected measures: Amount, Actual, LE1, LE2, LE3, Plan, Var LE1, Var LE2, Var LE3, Var Plan (+5 more).</p>
 <p><strong>Expected benefit:</strong> Faster onboarding and fewer misinterpretations of what a measure means.</p>
 <p><strong>Estimated effort:</strong> Low</p>
 </div>

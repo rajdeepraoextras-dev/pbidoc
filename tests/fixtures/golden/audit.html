@@ -1303,7 +1303,7 @@ Model.Relationships.First(rel =&gt; rel.FromTable.Name == &quot;Sales&quot; &amp
 <div class="card-section" id="rec-PBIC-DOC-002">
 <h3><span class="pill medium">Medium</span> Many measures/columns have no description.<span class="pill rule-id" title="Description coverage">PBIC-DOC-002</span></h3>
 <p><strong>Why it matters:</strong> Missing descriptions mean new team members must reverse-engineer intent from DAX and column names alone.</p>
-<p><strong>Suggested fix:</strong> Add descriptions to the most-used measures and columns first.</p>
+<p><strong>Suggested fix:</strong> Add descriptions to the most-used measures and columns first. Undescribed measures: Avg Order Value, Total Revenue, Revenue YTD, Orphan Margin. Undescribed columns: Customer[Customer Name], Customer[Region], Customer[Segment], Date[Date], Date[Year], Date[Month Name], Sales[CustomerKey], Sales[OrderDateKey] (+5 more).</p>
 <p><strong>Expected benefit:</strong> Faster onboarding and self-documenting metadata in Power BI Desktop tooltips.</p>
 <p><strong>Estimated effort:</strong> Low</p>
 </div>
@@ -1331,7 +1331,7 @@ Model.Relationships.First(rel =&gt; rel.FromTable.Name == &quot;Sales&quot; &amp
 <div class="card-section" id="rec-PBIC-DAX-003">
 <h3><span class="pill low">Low</span> Some measures have no description.<span class="pill rule-id" title="Missing measure description">PBIC-DAX-003</span></h3>
 <p><strong>Why it matters:</strong> Without a description, business meaning has to be reverse-engineered from the DAX every time.</p>
-<p><strong>Suggested fix:</strong> Add a one-sentence description to each measure explaining what it calculates and why.</p>
+<p><strong>Suggested fix:</strong> Add a one-sentence description to each measure explaining what it calculates and why. Affected measures: Avg Order Value, Total Revenue, Revenue YTD, Orphan Margin.</p>
 <p><strong>Expected benefit:</strong> Faster onboarding and fewer misinterpretations of what a measure means.</p>
 <p><strong>Estimated effort:</strong> Low</p>
 </div>

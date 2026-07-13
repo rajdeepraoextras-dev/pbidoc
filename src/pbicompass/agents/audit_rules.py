@@ -1760,6 +1760,54 @@ def build_recommendations(
                                  for p in paths]
                     r.suggested_fix = r.suggested_fix + "\n\n```m\n// Replace each hardcoded path with a Power Query parameter\n" + "\n\n".join(fix_lines) + "\n```"
 
+            # PBIC-MOD-007: star schema — name the specific dimension-to-
+            # dimension relationships (snowflake) or fact tables (galaxy)
+            # causing the shape, reusing the same schema_shape() the
+            # best-practice check itself already calls.
+            elif "does not follow a star schema" in r.issue.lower():
+                shape, facts, dims = schema_shape(model)
+                dim_set = set(dims)
+                if "snowflake" in shape:
+                    offending = [(rel.from_table, rel.to_table) for rel in model.relationships
+                                 if rel.from_table in dim_set and rel.to_table in dim_set]
+                    if offending:
+                        pairs = ", ".join(f"'{a}' → '{b}'" for a, b in offending[:8])
+                        more = f" (+{len(offending) - 8} more)" if len(offending) > 8 else ""
+                        r.suggested_fix = (r.suggested_fix + " Dimension-to-dimension relationships "
+                                          f"causing the snowflake: {pairs}{more}.")
+                elif "galaxy" in shape or "multi-fact" in shape:
+                    if facts:
+                        r.suggested_fix = (r.suggested_fix + " Fact tables involved: "
+                                          + ", ".join(f"'{f}'" for f in facts) + ".")
+
+            # PBIC-DAX-003: measure-level missing descriptions — name the
+            # specific measures (each DaxFinding already carries its own).
+            elif "some measures have no description" in r.issue.lower():
+                missing_desc = [f.measure for f in dax_findings if f.kind == "missing_description"]
+                if missing_desc:
+                    shown = missing_desc[:10]
+                    more = f" (+{len(missing_desc) - 10} more)" if len(missing_desc) > 10 else ""
+                    r.suggested_fix = r.suggested_fix + f" Affected measures: {', '.join(shown)}{more}."
+
+            # PBIC-DOC-002: model-wide description coverage — name specific
+            # undescribed measures/columns, recomputed the same way
+            # check_best_practices() itself computes the coverage ratio.
+            elif "many measures/columns have no description" in r.issue.lower():
+                undescribed_measures = [m.name for m in model.all_measures() if not m.description]
+                undescribed_columns = [f"{t.name}[{c.name}]" for t in model.tables for c in t.columns
+                                       if not c.is_hidden and not c.description]
+                parts = []
+                if undescribed_measures:
+                    shown = undescribed_measures[:8]
+                    more = f" (+{len(undescribed_measures) - 8} more)" if len(undescribed_measures) > 8 else ""
+                    parts.append(f"Undescribed measures: {', '.join(shown)}{more}.")
+                if undescribed_columns:
+                    shown = undescribed_columns[:8]
+                    more = f" (+{len(undescribed_columns) - 8} more)" if len(undescribed_columns) > 8 else ""
+                    parts.append(f"Undescribed columns: {', '.join(shown)}{more}.")
+                if parts:
+                    r.suggested_fix = r.suggested_fix + " " + " ".join(parts)
+
             # Unused assets
             elif "unused asset" in r.issue.lower():
                 m_to_tbl = {m.name: m.table for m in model.all_measures() if m.table}
