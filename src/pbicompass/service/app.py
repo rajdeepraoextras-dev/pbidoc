@@ -20,6 +20,8 @@ import concurrent.futures
 import logging
 import os
 import re
+import sys
+import threading
 import uuid
 from pathlib import Path
 
@@ -568,23 +570,40 @@ def create_app(
 
     @app.get("/healthz")
     def healthz() -> JSONResponse:
+        # Bounded probes (lock acquired with a timeout, one trivial query):
+        # when the shared store lock is wedged behind a stuck DB call this
+        # returns 503 within seconds instead of hanging with the rest of the
+        # app — which is what lets a container HEALTHCHECK/watchdog restart
+        # a wedged process automatically (2026-07-13 production hang).
         checks: dict[str, bool] = {}
-        try:
-            app.state.store.get("__healthz_probe__")  # cheap DB round-trip, no-op result
-            checks["jobs_db"] = True
-        except Exception:
+        checks["jobs_db"] = app.state.store.healthcheck()
+        if not checks["jobs_db"]:
             log.warning("healthz: jobs_db check failed")
-            checks["jobs_db"] = False
         if account_store is not None:
-            try:
-                account_store.usage_this_month("__healthz_probe__")
-                checks["accounts_db"] = True
-            except Exception:
+            checks["accounts_db"] = account_store.healthcheck()
+            if not checks["accounts_db"]:
                 log.warning("healthz: accounts_db check failed")
-                checks["accounts_db"] = False
         checks["queue"] = _check_queue()
         ok = all(checks.values())
         return JSONResponse({"ok": ok, "checks": checks}, status_code=200 if ok else 503)
+
+    @app.get("/debug/threads")
+    def debug_threads(request: Request) -> PlainTextResponse:
+        """Dump every thread's current stack (admin-token gated). The
+        first-responder tool for a wedged process: shows exactly which call
+        every thread is blocked in. Deliberately touches no store/DB so it
+        still answers while the store lock is wedged."""
+        _require_admin(request)
+        import traceback
+        frames = sys._current_frames()
+        lines: list[str] = []
+        for t in threading.enumerate():
+            lines.append(f"--- {t.name} (ident={t.ident}, daemon={t.daemon}) ---\n")
+            frame = frames.get(t.ident)
+            if frame is not None:
+                lines.extend(traceback.format_stack(frame))
+            lines.append("\n")
+        return PlainTextResponse("".join(lines))
 
     @app.get("/metrics")
     def metrics_endpoint(request: Request, format: str = Query("json")) -> Response:

@@ -109,6 +109,21 @@ class AccountStore:
         with self._lock:
             self._conn.close()
 
+    def healthcheck(self, timeout: float = 3.0) -> bool:
+        """Bounded health probe: try the store lock with a timeout, then one
+        trivial query. Returns ``False`` instead of hanging when the lock is
+        wedged behind a stuck DB call — /healthz must *report* a wedge, not
+        join the queue behind it (see JobStore.healthcheck)."""
+        if not self._lock.acquire(timeout=timeout):
+            return False
+        try:
+            self._conn.execute("SELECT 1").fetchone()
+            return True
+        except Exception:
+            return False
+        finally:
+            self._lock.release()
+
     def _init_schema(self) -> None:
         with self._lock:
             self._conn.executescript(

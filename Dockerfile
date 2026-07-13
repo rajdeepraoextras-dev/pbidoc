@@ -42,6 +42,15 @@ ENV PBICOMPASS_DB=/data/pbicompass.db \
 
 EXPOSE 8000
 
+# Mark the container unhealthy when /healthz stops answering 200 within 10s.
+# healthz's probes are lock-timeout-bounded, so a process wedged behind the
+# shared store lock answers 503 quickly — and a fully frozen process simply
+# times out. Either way the autoheal watchdog (started by deploy.yml)
+# restarts the container instead of waiting for a human (2026-07-13:
+# production hung twice in one evening with nothing watching).
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=8)" || exit 1
+
 # Single worker: the job store is in-process. Scale out later via Celery/Redis.
 # Bind to $PORT when the platform provides one (Render/Railway), else 8000 (local/VM).
 CMD ["sh", "-c", "uvicorn pbicompass.service.app:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]

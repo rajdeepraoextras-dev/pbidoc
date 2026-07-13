@@ -70,6 +70,11 @@ jobs:
             upsert_env PBICOMPASS_REQUIRE_AUTH "1"
 
             sudo docker build -t pbicompass .
+            # Preserve the previous container's logs before it's destroyed --
+            # a wedged/crashed process's last output is the only evidence of
+            # WHY once `docker rm` runs (2026-07-13: two production hangs
+            # were undiagnosable because each deploy shredded the logs).
+            sudo docker logs --tail 500 pbicompass > ~/pbicompass-last-container.log 2>&1 || true
             sudo docker rm -f pbicompass || true
             sudo docker run -d --name pbicompass \
               -p 127.0.0.1:8000:8000 \
@@ -77,7 +82,18 @@ jobs:
               --tmpfs /tmp/pbicompass:rw,size=512m \
               --env-file ~/pbicompass.env \
               --restart unless-stopped \
+              --label autoheal=true \
               pbicompass
+            # Watchdog: restart any container whose HEALTHCHECK goes
+            # unhealthy (the Dockerfile probes /healthz). `docker restart`
+            # keeps the container and its logs, so a wedge self-recovers in
+            # ~2 minutes AND stays diagnosable afterwards.
+            if ! sudo docker ps --format '{{.Names}}' | grep -q '^autoheal$'; then
+              sudo docker run -d --name autoheal --restart always \
+                -e AUTOHEAL_CONTAINER_LABEL=autoheal \
+                -v /var/run/docker.sock:/var/run/docker.sock \
+                willfarrell/autoheal || echo "WARNING: autoheal failed to start; continuing without it"
+            fi
             for i in $(seq 1 30); do
               if curl -sf http://localhost:8000/healthz; then
                 echo "Service is healthy after ${i}s"
