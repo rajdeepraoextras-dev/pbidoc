@@ -232,7 +232,16 @@
       <form id="login-form">
         <div class="ok-text" id="login-info"></div>
         <div class="form-group"><label>Email</label><input type="email" name="email" autocomplete="email" required></div>
-        <div class="form-group"><label>Password</label><input type="password" name="password" autocomplete="current-password" required></div>
+        <div class="form-group">
+          <label>Password</label>
+          <div class="password-field">
+            <input type="password" name="password" autocomplete="current-password" required>
+            <button type="button" class="password-toggle" aria-label="Show password" aria-pressed="false">
+              <svg class="eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+              <svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.7 5.1A10.8 10.8 0 0 1 12 5c6.5 0 10 7 10 7a18.5 18.5 0 0 1-2.1 3.1"/><path d="M6.6 6.6C3.6 8.6 2 12 2 12s3.5 7 10 7a9.8 9.8 0 0 0 5.4-1.6"/><path d="M14.1 14.1A3 3 0 0 1 9.9 9.9"/><path d="M3 3l18 18"/></svg>
+            </button>
+          </div>
+        </div>
         <div class="err-text" id="login-err"></div>
         <button type="submit" class="btn-primary"><span class="spin" id="login-spin"></span><span>Sign in</span></button>
       </form>
@@ -249,7 +258,16 @@
         <div class="signup-step active" data-step="0">
           <div class="step-title">Step 1 — Your login</div>
           <div class="form-group"><label>Email</label><input type="email" name="email" autocomplete="email" required></div>
-          <div class="form-group"><label>Password <small>(min 8 characters)</small></label><input type="password" name="password" autocomplete="new-password" minlength="8" required></div>
+          <div class="form-group">
+            <label>Password <small>(min 8 characters)</small></label>
+            <div class="password-field">
+              <input type="password" name="password" autocomplete="new-password" minlength="8" required>
+              <button type="button" class="password-toggle" aria-label="Show password" aria-pressed="false">
+                <svg class="eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                <svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.7 5.1A10.8 10.8 0 0 1 12 5c6.5 0 10 7 10 7a18.5 18.5 0 0 1-2.1 3.1"/><path d="M6.6 6.6C3.6 8.6 2 12 2 12s3.5 7 10 7a9.8 9.8 0 0 0 5.4-1.6"/><path d="M14.1 14.1A3 3 0 0 1 9.9 9.9"/><path d="M3 3l18 18"/></svg>
+              </button>
+            </div>
+          </div>
           <div class="step-nav"><button type="button" class="btn-primary" data-next="1">Continue</button></div>
         </div>
 
@@ -691,6 +709,16 @@ function renderPlanCards(container, selected, onPick) {
 }
 
 let signupPlan = "free";
+
+document.querySelectorAll(".password-toggle").forEach(button => {
+  button.addEventListener("click", () => {
+    const input = button.closest(".password-field").querySelector("input");
+    const show = input.type === "password";
+    input.type = show ? "text" : "password";
+    button.setAttribute("aria-pressed", String(show));
+    button.setAttribute("aria-label", show ? "Hide password" : "Show password");
+  });
+});
 
 /* ---------- progressive signup navigation ---------- */
 function gotoStep(n) {

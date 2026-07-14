@@ -226,6 +226,22 @@ select { cursor: pointer; appearance: none; background-image: url("data:image/sv
 select option { background: #101a15; color: #fff; }
 textarea { resize: vertical; min-height: 90px; }
 
+.password-field { position: relative; }
+.password-field input { padding-right: 46px; }
+.password-toggle {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center;
+  border: 0; border-radius: 10px; background: transparent; color: hsl(0 0% 100% / .68);
+  cursor: pointer; transition: color .2s, background .2s;
+}
+.password-toggle:hover, .password-toggle:focus-visible {
+  color: #fff; background: hsl(0 0% 100% / .08); outline: none;
+}
+.password-toggle svg { width: 18px; height: 18px; }
+.password-toggle .eye-off { display: none; }
+.password-toggle[aria-pressed="true"] .eye { display: none; }
+.password-toggle[aria-pressed="true"] .eye-off { display: block; }
+
 .link-btn {
   background: none; border: none; cursor: pointer; padding: 2px 0;
   color: hsl(0 0% 100% / .88); font-family: inherit; font-size: .74rem; font-weight: 500;
