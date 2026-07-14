@@ -242,7 +242,7 @@ Parse a file and generate documentation. This is the main command.
 | Flag | Effect |
 |---|---|
 | `--provider` | `none` (deterministic, default) \| `anthropic` \| `gemini` \| `cohere` \| `meshapi`. |
-| `--model` | Model id (default `claude-opus-4-8`). For MeshAPI use `provider/model-name`, e.g. `google/gemini-3.5-flash` (the MeshAPI default; also settable via the `MESHAPI_MODEL` env var). |
+| `--model` | Model id (default `claude-opus-4-8`). For MeshAPI use `provider/model-name`, e.g. `mistralai/mistral-nemo` (the MeshAPI default; also settable via the `MESHAPI_MODEL` env var). |
 | `--effort` | Reasoning effort: `low` \| `medium` \| `high` (default) \| `xhigh` \| `max`. Applied to each provider's native reasoning knob where supported. Ignored for `--provider none`. |
 | `--plan` | `free` \| `pro` \| `enterprise` (default). Gates paid AI features (e.g. AI fix snippets on the audit doc). Defaults to `enterprise` for self-hosted runs. |
 

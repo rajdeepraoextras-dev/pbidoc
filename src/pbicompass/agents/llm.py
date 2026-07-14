@@ -404,19 +404,15 @@ class MeshAPIClient:
     model ids, which use hyphens (``claude-opus-4-8``, as
     :class:`AnthropicClient` expects) — the two are not interchangeable.
 
-    Defaults to ``google/gemini-3.5-flash`` (2026-07-13, switched from
-    ``openai/gpt-4o`` for cost — roughly 15-20x cheaper per token while
-    staying inside the family MeshAPI's own docs confirm has first-class
-    structured-output support: OpenAI and Google Gemini). A Claude default
+    Defaults to ``mistralai/mistral-nemo`` (2026-07-14, switched from
+    ``google/gemini-3.5-flash`` for cost and schema reliability). MeshAPI's
+    live catalog marks it as structured-output capable, and a smoke call with
+    ``response_format=json_schema`` returned clean JSON. A Claude default
     remains off the table: MeshAPI routes at least some Anthropic model ids
     through AWS Bedrock's Converse API, which doesn't support the
     structured-output parameter MeshAPI's translation layer attaches for
     them (every ``complete_json`` call fails with a Bedrock
     ``ValidationException`` on ``output_config.format`` for those ids).
-    DeepSeek was also evaluated for the cheap slot but lost:
-    ``deepseek/deepseek-v4-flash`` was unacceptably slow in practice
-    (always-on thinking at the jobs' effort=high default), and DeepSeek ids
-    have no documented ``response_format`` guarantee through MeshAPI.
 
     The default can be overridden without a code change via the
     ``MESHAPI_MODEL`` env var (a ``provider/model-name`` id), or per-client
@@ -433,7 +429,7 @@ class MeshAPIClient:
     """
 
     _BASE_URL = "https://api.meshapi.ai/v1"
-    _FALLBACK_MODEL = "google/gemini-3.5-flash"
+    _FALLBACK_MODEL = "mistralai/mistral-nemo"
 
     def __init__(
         self,
@@ -475,7 +471,7 @@ class MeshAPIClient:
         # wildly varying reasoning-effort support with no per-model signal
         # exposed here, so it's only ever sent when the routed model id
         # itself looks reasoning-capable (o-series/gpt-5); every other model
-        # — including the ``google/gemini-3.5-flash`` default — never
+        # — including the ``mistralai/mistral-nemo`` default — never
         # receives it.
         resolved_effort = effort if effort is not None else self.effort
         reasoning_effort = (
@@ -554,7 +550,7 @@ _DEFAULT_MODEL = {
     "gemini": "gemini-3.5-flash",
     "cohere": "command-a-03-2025",
     # None: MeshAPIClient resolves its own default (MESHAPI_MODEL env var,
-    # else google/gemini-3.5-flash — never a Claude id; see its docstring:
+    # else mistralai/mistral-nemo — never a Claude id; see its docstring:
     # MeshAPI routes at least some Anthropic ids through AWS Bedrock's
     # Converse API, which rejects the structured-output parameter every
     # agent here needs).

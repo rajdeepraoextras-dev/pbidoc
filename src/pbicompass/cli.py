@@ -222,7 +222,7 @@ def main(argv: list[str] | None = None) -> int:
     p_gen.add_argument("--provider", default="none",
                        help="LLM provider: 'none' (deterministic, default), 'anthropic', 'gemini', 'cohere', "
                             "or 'meshapi' (https://developers.meshapi.ai — one API key routes to 1000+ models "
-                            "across providers; use a 'provider/model-name' --model id, e.g. 'google/gemini-3.5-flash', "
+                            "across providers; use a 'provider/model-name' --model id, e.g. 'mistralai/mistral-nemo', "
                             "the default — also settable via the MESHAPI_MODEL env var)")
     p_gen.add_argument("--model", default="claude-opus-4-8", help="Model id for the LLM provider")
     p_gen.add_argument("--effort", default="high", choices=["low", "medium", "high", "xhigh", "max"],

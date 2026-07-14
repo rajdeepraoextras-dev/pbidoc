@@ -874,11 +874,10 @@ class ClientFactoryTest(unittest.TestCase):
 
         self.assertFalse(client.model.startswith("anthropic/"))
 
-    def test_meshapi_default_model_is_gemini_flash_with_env_override(self):
-        # 2026-07-13: default switched from openai/gpt-4o to
-        # google/gemini-3.5-flash for cost (still inside the OpenAI/Gemini
-        # family MeshAPI documents first-class structured output for), with
-        # a MESHAPI_MODEL env var as a deploy-time override so the next
+    def test_meshapi_default_model_is_mistral_nemo_with_env_override(self):
+        # 2026-07-14: default switched from google/gemini-3.5-flash to
+        # mistralai/mistral-nemo for cost and structured-output reliability,
+        # with a MESHAPI_MODEL env var as a deploy-time override so the next
         # model switch needs no code change. An env value without a "/"
         # can't be a MeshAPI "provider/model-name" id, so it's ignored.
         import os
@@ -898,11 +897,11 @@ class ClientFactoryTest(unittest.TestCase):
         with patch.dict(sys.modules, {"openai": fake_module}):
             with patch.dict(os.environ, {}, clear=False):
                 os.environ.pop("MESHAPI_MODEL", None)
-                self.assertEqual(get_client("meshapi").model, "google/gemini-3.5-flash")
+                self.assertEqual(get_client("meshapi").model, "mistralai/mistral-nemo")
             with patch.dict(os.environ, {"MESHAPI_MODEL": "deepseek/deepseek-v3.2"}):
                 self.assertEqual(get_client("mesh").model, "deepseek/deepseek-v3.2")
             with patch.dict(os.environ, {"MESHAPI_MODEL": "not-a-mesh-id"}):
-                self.assertEqual(get_client("meshapi").model, "google/gemini-3.5-flash")
+                self.assertEqual(get_client("meshapi").model, "mistralai/mistral-nemo")
             with patch.dict(os.environ, {"MESHAPI_MODEL": "deepseek/deepseek-v3.2"}):
                 # An explicit model always wins over the env override.
                 self.assertEqual(
