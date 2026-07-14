@@ -117,8 +117,7 @@ class AccountStore:
         if not self._lock.acquire(timeout=timeout):
             return False
         try:
-            self._conn.execute("SELECT 1").fetchone()
-            return True
+            return self._conn.ping()
         except Exception:
             return False
         finally:
@@ -212,6 +211,8 @@ class AccountStore:
         failure still propagates. A failed ALTER poisons a Postgres
         transaction until rolled back, so that happens unconditionally
         before deciding whether to re-raise."""
+        if self._conn.column_exists(table, column):
+            return
         try:
             self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
             self._conn.commit()

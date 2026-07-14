@@ -1,4 +1,4 @@
-"""Job registry — metadata in SQLite/Postgres, rendered bytes in memory only.
+"""Job registry — metadata in SQLite/Postgres, rendered bytes via a backend.
 
 A ``Job`` record holds **status and timestamps only** — never uploaded content
 or extracted metadata. It is the one piece of state that persists, so a job
@@ -9,16 +9,13 @@ dashboard can show a durable job history. It goes to whatever
 :class:`~pbicompass.service.db._Connection` wrapper — the same one
 ``AccountStore`` uses. No sqlite file is required in a hosted deployment.
 
-The rendered documents (the user-owned output) are held **in process memory
-only** — TTL-swept and **never written to any database or disk**. So no
-document content is ever stored durably (zero-retention): the outputs live
-just long enough for the user to download them and vanish on process restart.
-Only "the job id and stuff" (status/timestamps) is ever persisted.
+Rendered documents (the user-owned output) are held behind an output backend:
+process memory by default, or an external private store such as Supabase
+Storage for hosted Cloud Run deployments. The database persists only
+content-free job metadata and an output expiry timestamp.
 
-This assumes the single-process inline queue mode (the default). A
-Celery/multi-instance setup would need a shared *ephemeral* cache for the
-output bytes — a later scaling step; it must never become a durable store, or
-the zero-retention guarantee breaks.
+With an external output store, completed downloads survive restarts and are no
+longer tied to one container instance.
 """
 
 from __future__ import annotations
@@ -33,6 +30,7 @@ from typing import Optional
 
 from .db import _Connection
 from .metrics import MetricsRegistry
+from .output_store import MemoryOutputStore, OutputStore
 
 _TIMEOUT_MESSAGE = (
     "Generation timed out. Try a smaller file, a lower AI effort level, "
@@ -75,7 +73,8 @@ class Job:
 class JobStore:
     def __init__(self, db_path: str = ":memory:", ttl_seconds: int = 3600,
                  processing_timeout_seconds: int = 600,
-                 metrics: MetricsRegistry | None = None) -> None:
+                 metrics: MetricsRegistry | None = None,
+                 output_store: OutputStore | None = None) -> None:
         # Recorded (not just consumed) so a separate process — a Celery
         # worker (Day 18) — can open its own connection to the exact same
         # database the API process is using, since a Python object can't
@@ -98,11 +97,10 @@ class JobStore:
         # threadpool (same pattern as ``AccountStore``).
         self._conn = _Connection(db_path)
         self._lock = threading.Lock()
-        # Rendered output bytes live HERE — process memory, never a DB/disk.
-        # job_id -> {"expires": float, "blobs": {format: bytes}}. Guarded by
-        # the same lock. TTL-swept; lost on restart, by design (zero
-        # retention: document content is never persisted anywhere durable).
-        self._outputs: dict[str, dict] = {}
+        # Rendered output bytes live behind this backend. The default is the
+        # original process-local memory cache; hosted deployments can inject a
+        # shared object store so downloads survive restarts and scale-out.
+        self._output_store = output_store or MemoryOutputStore()
         self._init_schema()
 
     def close(self) -> None:
@@ -130,7 +128,8 @@ class JobStore:
                     error TEXT,
                     formats TEXT NOT NULL DEFAULT '[]',
                     warnings TEXT NOT NULL DEFAULT '[]',
-                    usage TEXT NOT NULL DEFAULT '{}'
+                    usage TEXT NOT NULL DEFAULT '{}',
+                    output_expires_at DOUBLE PRECISION
                 );
                 CREATE TABLE IF NOT EXISTS feedback (
                     id TEXT PRIMARY KEY,
@@ -141,7 +140,19 @@ class JobStore:
                 );
                 """
             )
+            self._ensure_output_expires_column()
             self._conn.commit()
+
+    def _ensure_output_expires_column(self) -> None:
+        if self._conn.column_exists("jobs", "output_expires_at"):
+            return
+        try:
+            self._conn.execute("ALTER TABLE jobs ADD COLUMN output_expires_at DOUBLE PRECISION")
+        except Exception as exc:
+            self._conn.rollback()
+            message = str(exc).lower()
+            if "duplicate column" not in message and "already exists" not in message:
+                raise
 
     # -- lifecycle ----------------------------------------------------------
     def create(self, filename: str, tenant: str = "public") -> Job:
@@ -197,11 +208,15 @@ class JobStore:
             self.metrics.record_job_failed()
 
     def store_outputs(self, job_id: str, data: dict[str, bytes]) -> None:
-        """Hold the rendered bytes in memory until ``ttl`` elapses. Never
-        written to the DB or disk — this is the whole zero-retention point."""
+        """Store rendered bytes until ``ttl`` elapses."""
         expires = time.time() + self.ttl
+        self._output_store.put_many(job_id, data, expires)
         with self._lock:
-            self._outputs[job_id] = {"expires": expires, "blobs": dict(data)}
+            self._conn.execute(
+                "UPDATE jobs SET output_expires_at = ? WHERE id = ?",
+                (expires, job_id),
+            )
+            self._conn.commit()
 
     def healthcheck(self, timeout: float = 3.0) -> bool:
         """Bounded health probe: try the store lock with a timeout, then one
@@ -212,8 +227,7 @@ class JobStore:
         if not self._lock.acquire(timeout=timeout):
             return False
         try:
-            self._conn.execute("SELECT 1").fetchone()
-            return True
+            return self._conn.ping()
         except Exception:
             return False
         finally:
@@ -228,9 +242,7 @@ class JobStore:
 
     def get_output(self, job_id: str, fmt: str) -> Optional[bytes]:
         self.sweep()
-        with self._lock:
-            entry = self._outputs.get(job_id)
-            return entry["blobs"].get(fmt) if entry else None
+        return self._output_store.get(job_id, fmt)
 
     def list_for_tenant(self, tenant: str, limit: int = 50) -> list[Job]:
         """A tenant's recent jobs, newest first — for the account dashboard's
@@ -298,11 +310,13 @@ class JobStore:
         }
 
     def sweep(self) -> None:
-        """Force-fail any job stuck in PROCESSING past the watchdog timeout,
-        and drop expired output bytes from memory. Job **metadata** is kept as
-        a durable history (only the ephemeral output bytes expire) — unlike
-        the pre-Day-34 store, which deleted the whole record with its BLOBs."""
+        """Force-fail stuck jobs and drop expired output bytes.
+
+        Job metadata is kept as durable history; only the downloadable bytes
+        expire from whichever output backend is configured.
+        """
         now = time.time()
+        expired_outputs: list[tuple[str, list[str]]] = []
         with self._lock:
             cur = self._conn.execute(
                 "UPDATE jobs SET status = ?, finished_at = ?, error = ? "
@@ -312,9 +326,22 @@ class JobStore:
             )
             timed_out = cur.rowcount
             self._conn.commit()
-            # Evict expired output blobs (in-memory only, never persisted).
-            for jid in [jid for jid, e in self._outputs.items() if e["expires"] < now]:
-                del self._outputs[jid]
+            rows = self._conn.execute(
+                "SELECT id, formats FROM jobs WHERE output_expires_at IS NOT NULL "
+                "AND output_expires_at < ?",
+                (now,),
+            ).fetchall()
+            expired_outputs = [(r["id"], json.loads(r["formats"])) for r in rows]
+        for jid, formats in expired_outputs:
+            self._output_store.delete_job(jid, formats)
+        if expired_outputs:
+            with self._lock:
+                for jid, _formats in expired_outputs:
+                    self._conn.execute(
+                        "UPDATE jobs SET output_expires_at = NULL WHERE id = ?",
+                        (jid,),
+                    )
+                self._conn.commit()
         if self.metrics and timed_out > 0:
             for _ in range(timed_out):
                 self.metrics.record_job_failed()

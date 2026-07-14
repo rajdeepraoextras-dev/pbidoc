@@ -37,7 +37,10 @@ That's it. No managed database, no message broker, no third-party auth provider.
 |---|---|---|
 | `PBICOMPASS_REQUIRE_AUTH` | _(off)_ | Set `1` to require API keys (hosted SaaS). Off = open `public` tenant. |
 | `PBICOMPASS_DB` | `pbicompass.db` | Accounts store. A plain path is SQLite (point at the persistent volume, e.g. `/data/pbicompass.db`); a `postgres://`/`postgresql://` URL uses managed Postgres instead (install the `postgres` extra — see below). |
-| `PBICOMPASS_JOBS_DB` | `pbicompass_jobs.db` | SQLite path for job status + rendered outputs (TTL-swept). Point at the same persistent volume, e.g. `/data/pbicompass_jobs.db`. |
+| `PBICOMPASS_JOBS_DB` | `pbicompass_jobs.db` | Job metadata store. A plain path is SQLite; a `postgres://`/`postgresql://` URL uses managed Postgres. For Cloud Run, set this to the same Supabase Postgres URL as `PBICOMPASS_DB`. |
+| `PBICOMPASS_OUTPUT_STORE` | `memory` | Rendered download-byte backend: `memory` (local default), `filesystem` (single-host durable path), or `supabase` (private Supabase Storage bucket for Cloud Run/scale-out). |
+| `PBICOMPASS_OUTPUT_BUCKET` | `pbicompass-outputs` | Supabase Storage bucket used when `PBICOMPASS_OUTPUT_STORE=supabase`. Keep it private. |
+| `PBICOMPASS_OUTPUT_PREFIX` | `outputs` | Object-key prefix inside the output bucket. |
 | `PBICOMPASS_QUEUE` | `inline` | `inline` runs jobs via FastAPI `BackgroundTasks` (default, no extra infra). `celery` enqueues onto Celery/Redis instead (see below). |
 | `PBICOMPASS_BROKER_URL` | — | Redis URL for the Celery broker, e.g. `redis://localhost:6379/0`. Required when `PBICOMPASS_QUEUE=celery`. |
 | `PBICOMPASS_RESULT_BACKEND` | same as broker | Celery result backend URL. Optional — this app polls job status via its own DB, not Celery results, so it's only used for Celery's own bookkeeping. |
@@ -124,6 +127,43 @@ gcloud run deploy pbicompass \
   redeploy/restart — mount a volume (Cloud Run volume mounts, or point them at
   Cloud SQL/managed Postgres once that backend lands) if accounts and jobs
   need to survive redeploys.
+
+**Current recommended Cloud Run setup (Supabase DB + Supabase Storage):** if
+`PBICOMPASS_DB` and `PBICOMPASS_JOBS_DB` both point at your Supabase Postgres
+URL, and `PBICOMPASS_OUTPUT_STORE=supabase`, Cloud Run no longer needs a
+persistent volume and completed downloads are not tied to one container's
+memory.
+
+Create a private Supabase Storage bucket first:
+
+```sql
+insert into storage.buckets (id, name, public)
+values ('pbicompass-outputs', 'pbicompass-outputs', false)
+on conflict (id) do nothing;
+```
+
+Then deploy:
+
+```bash
+gcloud run deploy pbicompass \
+  --source . \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --memory 4Gi \
+  --cpu 2 \
+  --concurrency 1 \
+  --timeout 1800 \
+  --max-instances 1 \
+  --min-instances 0 \
+  --cpu-boost \
+  --set-env-vars PBICOMPASS_REQUIRE_AUTH=1,PBICOMPASS_QUEUE=inline,PBICOMPASS_OUTPUT_STORE=supabase,PBICOMPASS_OUTPUT_BUCKET=pbicompass-outputs,PBICOMPASS_MAX_UPLOAD_MB=75,PBICOMPASS_JOB_TIMEOUT_SECONDS=900,SUPABASE_URL=https://YOUR_PROJECT.supabase.co,SUPABASE_ANON_KEY=YOUR_ANON_KEY,PBICOMPASS_BOOTSTRAP_ADMIN_EMAIL=you@example.com \
+  --set-secrets PBICOMPASS_DB=PBICOMPASS_DB:latest,PBICOMPASS_JOBS_DB=PBICOMPASS_DB:latest,SUPABASE_SERVICE_ROLE_KEY=SUPABASE_SERVICE_ROLE_KEY:latest,PBICOMPASS_ADMIN_TOKEN=PBICOMPASS_ADMIN_TOKEN:latest,MESHAPI_API_KEY=MESHAPI_API_KEY:latest
+```
+
+Keep `--max-instances 1` and `--concurrency 1` for the first cutover because
+the default inline worker still does heavy job execution inside the web
+container. The shared output store makes downloads restart-safe; Celery/Redis
+or Cloud Run Jobs are still the next step before raising instance count.
 
 ---
 

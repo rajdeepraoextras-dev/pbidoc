@@ -396,7 +396,7 @@ TOML is a warning, not a fatal error — the job runs without the overrides.
 
 A FastAPI app (`service/app.py`). Start with `pbicompass serve`. **Zero-retention:**
 each upload runs in a per-job sandbox (`sandbox.py`) shredded in a `finally`
-block; `jobs.py` holds only job status + rendered bytes with TTL expiry; no
+block; `jobs.py` holds job status while rendered bytes live in the configured output backend with TTL expiry; no
 extracted metadata is ever logged or persisted.
 
 ### Endpoints
@@ -483,7 +483,8 @@ required to run locally with the offline engine.
 |---|---|---|
 | `PBICOMPASS_REQUIRE_AUTH` | `0` | Require an API key on every request. |
 | `PBICOMPASS_DB` | `pbicompass.db` | Accounts + usage counts. SQLite path or `postgres://` URL. |
-| `PBICOMPASS_JOBS_DB` | `pbicompass_jobs.db` | Job status + rendered bytes (TTL-swept). |
+| `PBICOMPASS_JOBS_DB` | `pbicompass_jobs.db` | Job metadata/status. Use a Postgres URL for hosted deployments. |
+| `PBICOMPASS_OUTPUT_STORE` | `memory` | Rendered download bytes: `memory`, `filesystem`, or `supabase`. |
 | `PBICOMPASS_QUEUE` | `inline` | `inline` or `celery`. |
 | `PBICOMPASS_BROKER_URL` | `redis://localhost:6379/0` | Celery broker. |
 | `PBICOMPASS_RESULT_BACKEND` | = broker URL | Celery result backend. |

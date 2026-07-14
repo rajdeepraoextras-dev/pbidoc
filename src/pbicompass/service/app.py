@@ -39,6 +39,7 @@ from .ingest import ingest_to_model
 from .jobs import JobStatus, JobStore
 from .logging_config import configure_logging, job_id_var, request_id_var
 from .metrics import MetricsRegistry
+from .output_store import output_store_from_env
 from .ratelimit import RateLimiter
 from .sandbox import JobSandbox
 from .sentry_config import init_sentry
@@ -275,6 +276,7 @@ def create_app(
         store = JobStore(
             os.environ.get("PBICOMPASS_JOBS_DB", "pbicompass_jobs.db"),
             processing_timeout_seconds=_job_timeout_seconds(),
+            output_store=output_store_from_env(),
         )
     # Attach this app's metrics registry to whichever store it ends up using
     # (freshly constructed above, or explicitly passed in — e.g. by tests)
@@ -569,6 +571,7 @@ def create_app(
             pool.shutdown(wait=False)  # never wait on a hung probe thread
 
     @app.get("/healthz")
+    @app.get("/app/api/health")
     def healthz() -> JSONResponse:
         # Bounded probes (lock acquired with a timeout, one trivial query):
         # when the shared store lock is wedged behind a stuck DB call this

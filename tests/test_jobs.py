@@ -15,6 +15,7 @@ from pathlib import Path
 from unittest import mock
 
 from pbicompass.service.jobs import JobStatus, JobStore
+from pbicompass.service.output_store import FilesystemOutputStore
 
 try:
     from fastapi.testclient import TestClient
@@ -126,6 +127,25 @@ class PersistenceAcrossRestartTest(unittest.TestCase):
         finally:
             second.close()
 
+    def test_external_outputs_survive_a_restart(self):
+        output_root = Path(self._tmpdir.name) / "outputs"
+        first = JobStore(self.db_path, output_store=FilesystemOutputStore(output_root))
+        job = first.create("Model.pbix", tenant="acme")
+        first.mark_processing(job.id)
+        first.mark_done(job.id, ["md", "html"], usage={"agent": {"calls": 2}})
+        first.store_outputs(job.id, {"md": b"# Report", "html": b"<html>ok</html>"})
+        first.close()
+
+        second = JobStore(self.db_path, output_store=FilesystemOutputStore(output_root))
+        try:
+            revived = second.get(job.id)
+            self.assertIsNotNone(revived)
+            self.assertIs(revived.status, JobStatus.DONE)
+            self.assertEqual(second.get_output(job.id, "md"), b"# Report")
+            self.assertEqual(second.get_output(job.id, "html"), b"<html>ok</html>")
+        finally:
+            second.close()
+
     def test_in_flight_job_survives_a_restart(self):
         # The exact scenario A2-1 calls out: a second instance must not 404
         # on a job another instance is still (or was still) working on.
@@ -190,6 +210,21 @@ class SweepBehaviorTest(unittest.TestCase):
         self.assertIsNotNone(revived)                     # metadata kept
         self.assertIs(revived.status, JobStatus.DONE)
         self.assertIsNone(store.get_output(job.id, "md"))  # bytes gone
+
+    def test_expired_external_output_is_deleted_but_metadata_remains(self):
+        with tempfile.TemporaryDirectory() as td:
+            store = JobStore(
+                ttl_seconds=0.01,
+                output_store=FilesystemOutputStore(Path(td) / "outputs"),
+            )
+            job = store.create("x.zip")
+            store.mark_done(job.id, ["md"])
+            store.store_outputs(job.id, {"md": b"# Report"})
+            time.sleep(0.05)
+            self.assertIsNone(store.get_output(job.id, "md"))
+            revived = store.get(job.id)
+            self.assertIsNotNone(revived)
+            self.assertIs(revived.status, JobStatus.DONE)
 
 
 @unittest.skipUnless(_HAVE_SERVICE, "service extras (fastapi/httpx/multipart) not installed")

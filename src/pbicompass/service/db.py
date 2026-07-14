@@ -26,6 +26,43 @@ def is_postgres_url(db_path: str) -> bool:
     return db_path.startswith("postgres://") or db_path.startswith("postgresql://")
 
 
+class _PostgresReadCursor:
+    def __init__(self, conn, cursor) -> None:
+        self._conn = conn
+        self._cursor = cursor
+
+    def _finish_read(self):
+        try:
+            self._cursor.close()
+        except Exception:
+            pass
+        try:
+            self._conn.commit()
+        except Exception:
+            pass
+        try:
+            # Supavisor can keep the server connection "idle in transaction"
+            # even when the psycopg client believes the read is finished.
+            # An explicit SQL ROLLBACK is harmless after a read and reliably
+            # returns the pooled server connection to an idle state.
+            self._conn.cursor().execute("ROLLBACK")
+        except Exception:
+            pass
+
+    def fetchone(self):
+        row = self._cursor.fetchone()
+        self._finish_read()
+        return row
+
+    def fetchall(self):
+        rows = self._cursor.fetchall()
+        self._finish_read()
+        return rows
+
+    def __getattr__(self, name: str):
+        return getattr(self._cursor, name)
+
+
 class _Connection:
     """Unifies sqlite3/psycopg placeholder, row-access, and binary-type
     differences behind one surface (``execute``/``executemany``/
@@ -70,13 +107,15 @@ class _Connection:
         # deliberately NOT ``options="-c statement_timeout=..."``, which
         # PgBouncer/Supavisor transaction pooling rejects as an unsupported
         # startup parameter (it would break connecting at all).
-        return self._psycopg.connect(
+        conn = self._psycopg.connect(
             self._db_path,
             row_factory=self._psycopg.rows.dict_row,
             connect_timeout=10,
             keepalives=1, keepalives_idle=30, keepalives_interval=10, keepalives_count=3,
             tcp_user_timeout=30000,
         )
+        conn.autocommit = True
+        return conn
 
     def _pg_reconnect_and_retry(self, exc: Exception):
         """Reconnect once after a broken-connection error (never after an SQL
@@ -99,6 +138,10 @@ class _Connection:
         # Safe unconditionally: none of the callers' SQL text contains a
         # literal '?' outside of a placeholder position.
         return sql.replace("?", "%s") if self.is_postgres else sql
+
+    def _is_read_query(self, sql: str) -> bool:
+        head = sql.lstrip().split(None, 1)[0].lower() if sql.strip() else ""
+        return head in ("select", "with", "show")
 
     def execute(self, sql: str, params: tuple = ()):
         sql = self._sql(sql)
@@ -123,6 +166,8 @@ class _Connection:
             conn = self._pg_reconnect_and_retry(exc)
             cur = conn.cursor()
             cur.execute(sql, params)
+        if self.is_postgres and self._is_read_query(sql):
+            return _PostgresReadCursor(self._conn, cur)
         return cur
 
     def executemany(self, sql: str, seq) -> None:
@@ -137,13 +182,114 @@ class _Connection:
             conn = self._pg_reconnect_and_retry(exc)
             conn.cursor().executemany(sql, seq)
 
+    def column_exists(self, table: str, column: str) -> bool:
+        if self.is_postgres:
+            try:
+                row = self.execute(
+                    "SELECT 1 FROM information_schema.columns "
+                    "WHERE table_schema = current_schema() "
+                    "AND table_name = ? AND column_name = ? LIMIT 1",
+                    (table, column),
+                ).fetchone()
+                return row is not None
+            except Exception:
+                pass
+        try:
+            self.execute(f"SELECT {column} FROM {table} LIMIT 0").fetchone()
+            return True
+        except Exception:
+            return False
+
+    def ping(self) -> bool:
+        try:
+            if self.is_postgres:
+                cur = self._conn.cursor()
+                cur.execute("SELECT 1")
+                cur.fetchone()
+                try:
+                    cur.close()
+                except Exception:
+                    pass
+                self._conn.cursor().execute("ROLLBACK")
+                return True
+            self.execute("SELECT 1").fetchone()
+            return True
+        except Exception:
+            try:
+                self.rollback()
+            except Exception:
+                pass
+            return False
+
+    def _pg_script_statements(self, script: str) -> list[str]:
+        statements: list[str] = []
+        current: list[str] = []
+        in_single_quote = False
+        in_line_comment = False
+        i = 0
+        while i < len(script):
+            char = script[i]
+            next_char = script[i + 1] if i + 1 < len(script) else ""
+
+            if in_line_comment:
+                current.append(char)
+                if char == "\n":
+                    in_line_comment = False
+                i += 1
+                continue
+
+            if in_single_quote:
+                current.append(char)
+                if char == "'" and next_char == "'":
+                    current.append(next_char)
+                    i += 2
+                    continue
+                if char == "'":
+                    in_single_quote = False
+                i += 1
+                continue
+
+            if char == "-" and next_char == "-":
+                in_line_comment = True
+                current.append(char)
+                current.append(next_char)
+                i += 2
+                continue
+            if char == "'":
+                in_single_quote = True
+                current.append(char)
+                i += 1
+                continue
+            if char == ";":
+                statement = "".join(current).strip()
+                if statement:
+                    statements.append(statement)
+                current = []
+                i += 1
+                continue
+
+            current.append(char)
+            i += 1
+
+        statement = "".join(current).strip()
+        if statement:
+            statements.append(statement)
+        return statements
+
+    def _pg_executescript(self, conn, script: str) -> None:
+        # Supabase's pooler is happier with one DDL statement per execute()
+        # than with a sqlite-style semicolon-separated script.
+        cur = conn.cursor()
+        for statement in self._pg_script_statements(script):
+            cur.execute(statement)
+
     def executescript(self, script: str) -> None:
         # psycopg has no sqlite-style ``executescript``, but both engines
         # happily run a parameter-free, ';'-separated multi-statement string
         # through a single plain ``execute`` — used only for schema DDL.
         try:
             if self.is_postgres:
-                self._conn.cursor().execute(script)
+                self._pg_executescript(self._conn, script)
             else:
                 self._conn.executescript(script)
         except Exception as exc:
@@ -152,7 +298,7 @@ class _Connection:
             except Exception:
                 pass
             conn = self._pg_reconnect_and_retry(exc)
-            conn.cursor().execute(script)
+            self._pg_executescript(conn, script)
 
     def commit(self) -> None:
         self._conn.commit()

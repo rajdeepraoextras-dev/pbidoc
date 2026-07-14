@@ -30,6 +30,7 @@ from pathlib import Path
 from celery import Celery
 
 from .jobs import JobStore
+from .output_store import output_store_from_env
 from .sandbox import JobSandbox
 from .worker import process_job
 
@@ -67,7 +68,11 @@ celery_app.conf.update(
 @celery_app.task(name="pbicompass.process_job")
 def process_job_task(job_id: str, upload_path: str, sandbox_dir: str,
                       jobs_db_path: str, options: dict) -> None:
-    store = JobStore(jobs_db_path, processing_timeout_seconds=_job_timeout_seconds())
+    store = JobStore(
+        jobs_db_path,
+        processing_timeout_seconds=_job_timeout_seconds(),
+        output_store=output_store_from_env(),
+    )
     try:
         sandbox = JobSandbox.at(sandbox_dir)
         process_job(store, job_id, Path(upload_path), sandbox, options)

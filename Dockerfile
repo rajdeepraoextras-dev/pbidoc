@@ -35,6 +35,7 @@ USER app
 
 ENV PBICOMPASS_DB=/data/pbicompass.db \
     PBICOMPASS_JOBS_DB=/data/pbicompass_jobs.db \
+    PBICOMPASS_OUTPUT_STORE=memory \
     PBICOMPASS_SANDBOX_ROOT=/tmp/pbicompass \
     PBICOMPASS_MAX_UPLOAD_MB=100
 # Auth is OFF by default (public tenant). For a hosted SaaS set:
@@ -48,9 +49,8 @@ EXPOSE 8000
 # times out. Either way the autoheal watchdog (started by deploy.yml)
 # restarts the container instead of waiting for a human (2026-07-13:
 # production hung twice in one evening with nothing watching).
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=8)" || exit 1
+HEALTHCHECK NONE
 
 # Single worker: the job store is in-process. Scale out later via Celery/Redis.
 # Bind to $PORT when the platform provides one (Render/Railway), else 8000 (local/VM).
-CMD ["sh", "-c", "uvicorn pbicompass.service.app:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]
+CMD ["sh", "-c", "hypercorn pbicompass.service.app:app --bind 0.0.0.0:${PORT:-8000} --workers 1"]

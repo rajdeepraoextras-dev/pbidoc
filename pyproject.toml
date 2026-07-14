@@ -25,7 +25,7 @@ pbix = ["pbixray; python_version < '3.14'"]
 enrich = ["PyYAML"]
 diagram = ["grandalf"]  # pure-Python Sugiyama layout for the >12-table model diagram; absent = denser star layout, never broken
 agents = ["anthropic", "google-genai", "cohere", "openai"]  # Claude / Gemini / Cohere / MeshAPI providers (offline engine needs nothing)
-service = ["fastapi", "uvicorn", "python-multipart"]  # async web service + upload UI
+service = ["fastapi", "uvicorn", "hypercorn[h2]", "python-multipart"]  # async web service + upload UI
 postgres = ["psycopg[binary]"]  # managed Postgres backend for AccountStore (PBICOMPASS_DB=postgres://...); sqlite stays the self-host default
 queue = ["celery", "redis"]  # async worker (PBICOMPASS_QUEUE=celery); BackgroundTasks stays the self-host default
 observability = ["sentry-sdk"]  # error tracking (SENTRY_DSN); off and dependency-free by default

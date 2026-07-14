@@ -1,0 +1,32 @@
+.git/
+.gitignore
+.gcloudignore
+
+.env
+.env.local
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+*.egg-info/
+
+*.db
+*.db-journal
+.pbicompass_history.json
+.pbicompass_cache.db
+
+latest output/
+pre prod version/
+build/
+dist/
+out/
+tmp_jobs/
+
+*.pbix
+*.pbip
+examples/*.zip
+
+.claude/
+.vscode/
+.idea/

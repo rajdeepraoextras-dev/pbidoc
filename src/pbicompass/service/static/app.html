@@ -1265,10 +1265,13 @@ $("gen-form").addEventListener("submit", async e => {
 
   let res;
   try { res = await fetch("/jobs", { method: "POST", body: fd, headers: authHeaders() }); }
-  catch { setStatus("Connection failed. Is the backend service running?", "err"); setBusy(false); return; }
+  catch (err) {
+    setStatus("Connection failed during upload: " + (err && err.message ? err.message : "backend service did not accept the file"), "err");
+    setBusy(false); return;
+  }
   if (!res.ok) {
     const j = await res.json().catch(() => ({}));
-    setStatus("Error: " + (j.detail || "Upload failed"), "err"); setBusy(false); return;
+    setStatus("Error: " + (j.detail || ("Upload failed (HTTP " + res.status + ")")), "err"); setBusy(false); return;
   }
   startProgress();
   poll((await res.json()).job_id);

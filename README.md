@@ -332,7 +332,7 @@ src/pbicompass/
     _wireframe.py  _lineage.py   # report wireframe + data-lineage diagrams
   service/        # zero-retention web service + auth
     sandbox.py    # per-job temp dir + best-effort shred
-    jobs.py       # job registry (Postgres-capable via PBICOMPASS_JOBS_DB; rendered bytes stay in-memory)
+    jobs.py       # job registry (Postgres-capable via PBICOMPASS_JOBS_DB; rendered bytes via output backend)
     ingest.py     # upload -> SemanticModel (.pbix / zipped .pbip, zip-slip guard)
     worker.py     # queue-agnostic job worker (Celery-ready; celery_app.py wires it when enabled)
     accounts.py   # accounts, API keys, monthly plan quotas (SQLite or Postgres via PBICOMPASS_DB)

@@ -110,6 +110,23 @@ class ConnectionAutoRollbackTest(unittest.TestCase):
         self.assertEqual(conn.rollback_calls, 1)
         wrapper.execute("SELECT 1")  # connection usable again
 
+    def test_postgres_script_splitter_ignores_semicolons_inside_comments_and_strings(self):
+        wrapper, _conn = self._connection()
+        statements = wrapper._pg_script_statements(
+            """
+            -- comment text; not a statement boundary
+            CREATE TABLE first (note TEXT DEFAULT 'literal; value');
+            CREATE TABLE second (id INTEGER);
+            """
+        )
+        self.assertEqual(
+            statements,
+            [
+                "-- comment text; not a statement boundary\n            CREATE TABLE first (note TEXT DEFAULT 'literal; value')",
+                "CREATE TABLE second (id INTEGER)",
+            ],
+        )
+
     def test_executescript_also_rolls_back_on_failure(self):
         wrapper, conn = self._connection()
         with self.assertRaises(RuntimeError):
