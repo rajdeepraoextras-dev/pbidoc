@@ -201,7 +201,7 @@ PYTHONPATH=src python -m pbicompass generate path/to/Project.pbip --provider gem
 PYTHONPATH=src python -m pbicompass generate path/to/Project.pbip --provider cohere    -o report.md   # COHERE_API_KEY
 
 # Or one key for any of 1000+ models via https://developers.meshapi.ai (model ids are "provider/model-name";
-# defaults to mistralai/mistral-nemo, overridable with the MESHAPI_MODEL env var — MeshAPI's Bedrock-routed
+# defaults to inclusionai/ling-2.6-flash, overridable with the MESHAPI_MODEL env var — MeshAPI's Bedrock-routed
 # Anthropic models don't yet support the structured JSON output every agent here needs, per MeshAPI's own
 # structured-output docs):
 PYTHONPATH=src python -m pbicompass generate path/to/Project.pbip --provider meshapi -o report.md   # MESHAPI_API_KEY

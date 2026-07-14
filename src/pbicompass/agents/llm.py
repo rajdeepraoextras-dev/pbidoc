@@ -404,9 +404,9 @@ class MeshAPIClient:
     model ids, which use hyphens (``claude-opus-4-8``, as
     :class:`AnthropicClient` expects) — the two are not interchangeable.
 
-    Defaults to ``mistralai/mistral-nemo`` (2026-07-14, switched from
-    ``google/gemini-3.5-flash`` for cost and schema reliability). MeshAPI's
-    live catalog marks it as structured-output capable, and a smoke call with
+    Defaults to ``inclusionai/ling-2.6-flash`` (2026-07-14, switched from
+    ``mistralai/mistral-nemo`` for cost and speed). MeshAPI's live catalog
+    marks it as structured-output capable, and a smoke call with
     ``response_format=json_schema`` returned clean JSON. A Claude default
     remains off the table: MeshAPI routes at least some Anthropic model ids
     through AWS Bedrock's Converse API, which doesn't support the
@@ -429,7 +429,7 @@ class MeshAPIClient:
     """
 
     _BASE_URL = "https://api.meshapi.ai/v1"
-    _FALLBACK_MODEL = "mistralai/mistral-nemo"
+    _FALLBACK_MODEL = "inclusionai/ling-2.6-flash"
 
     def __init__(
         self,
@@ -471,7 +471,7 @@ class MeshAPIClient:
         # wildly varying reasoning-effort support with no per-model signal
         # exposed here, so it's only ever sent when the routed model id
         # itself looks reasoning-capable (o-series/gpt-5); every other model
-        # — including the ``mistralai/mistral-nemo`` default — never
+        # — including the ``inclusionai/ling-2.6-flash`` default — never
         # receives it.
         resolved_effort = effort if effort is not None else self.effort
         reasoning_effort = (
@@ -550,7 +550,7 @@ _DEFAULT_MODEL = {
     "gemini": "gemini-3.5-flash",
     "cohere": "command-a-03-2025",
     # None: MeshAPIClient resolves its own default (MESHAPI_MODEL env var,
-    # else mistralai/mistral-nemo — never a Claude id; see its docstring:
+    # else inclusionai/ling-2.6-flash — never a Claude id; see its docstring:
     # MeshAPI routes at least some Anthropic ids through AWS Bedrock's
     # Converse API, which rejects the structured-output parameter every
     # agent here needs).
