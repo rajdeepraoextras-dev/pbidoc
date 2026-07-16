@@ -414,7 +414,10 @@ class AuditReportGenerator:
         )
         if ai_context is not None:
             ai_context.checks_ledger = ledger
-        discrepancies = consistency.find_human_claim_discrepancies(security_notes, len(model.roles))
+        discrepancies = consistency.find_human_claim_discrepancies(
+            security_notes, len(model.roles),
+            rls_readable=(getattr(model.meta, "source_format", "") or "").lower() != "pbix",
+        )
 
         doc = AuditDocument(
             metadata=meta,

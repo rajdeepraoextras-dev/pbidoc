@@ -126,6 +126,11 @@ FINDING_RULES = {
     # memberships quarterly" seen in a live run. They are now distinct checks.
     "rls": "PBIC-GOV-001",
     "rls_absent": "PBIC-GOV-011",
+    # A .pbix parse can never see RLS (pbixray doesn't expose roles), so an
+    # empty role list there means "unknown", not "none". Claiming "no RLS is
+    # defined" on a .pbix is a false security statement — the report may well
+    # be fully protected. Absence and unreadability are different findings.
+    "rls_unknown": "PBIC-GOV-012",
     "descriptions": "PBIC-GOV-002",
     "ownership": "PBIC-GOV-003",
     "sensitive_columns": "PBIC-GOV-004",
@@ -279,6 +284,10 @@ RULE_METADATA = {
                      "No row-level security roles are defined in this model, so every viewer sees every row.",
                      "If any of this data should be restricted by user, define RLS roles; otherwise "
                      "confirm that unrestricted access is intended."),
+    "PBIC-GOV-012": ("governance", "Low", "Row-level security could not be read from this file",
+                     "This report was read from a .pbix, whose RLS roles cannot be extracted — so its "
+                     "row-level security status is unknown, not necessarily absent.",
+                     "Export the project as .pbip (or use a TMSL/TOM extractor) to document RLS."),
     "PBIC-GOV-002": ("governance", "Medium", "Missing descriptions coverage",
                      "Fewer than 50% of measures and visible columns have descriptions.",
                      "Add descriptions to columns and measures to document their business purpose."),
@@ -1194,11 +1203,25 @@ def check_governance(
     security_note_suffix = f' Per the intake form: "{security_notes.strip()}"' if security_notes else ""
 
     if not model.roles:
-        findings.append(GovernanceFinding(
-            area="rls_absent",
-            detail="No row-level security roles are defined in this model." + security_note_suffix,
-            severity="Medium",
-        ))
+        # An empty role list means two very different things depending on where
+        # the model came from. A .pbip/TMDL parse genuinely lists every role, so
+        # empty == none. A .pbix parse never sees roles at all (pbixray doesn't
+        # expose them), so empty == unknown — and reporting "no RLS is defined"
+        # there would be a false security claim about a report that may be fully
+        # protected. Say what is actually known.
+        if (getattr(model.meta, "source_format", "") or "").lower() == "pbix":
+            findings.append(GovernanceFinding(
+                area="rls_unknown",
+                detail=("Row-level security cannot be read from a .pbix file, so this report's RLS "
+                        "status is unknown — it may or may not define roles." + security_note_suffix),
+                severity="Low",
+            ))
+        else:
+            findings.append(GovernanceFinding(
+                area="rls_absent",
+                detail="No row-level security roles are defined in this model." + security_note_suffix,
+                severity="Medium",
+            ))
     else:
         for r in model.roles:
             if not r.members:
@@ -1533,6 +1556,11 @@ _GOVERNANCE_TEMPLATES = {
         "Every viewer of this report can see every row, including any data intended for a narrower audience.",
         "Decide whether this data should be restricted by user. If it should, define RLS roles and assign members; if not, record that unrestricted access is intended.",
         "A deliberate, documented decision about who can see which rows."),
+    "rls_unknown": ("Low",
+        "Row-level security could not be read from this .pbix file.",
+        "A .pbix does not expose its RLS roles to this tool, so this report's row-level security is unknown — it may be fully configured, or absent. Neither can be concluded from this file.",
+        "Export the project as .pbip (File > Save as > Power BI project) and regenerate, to document RLS accurately.",
+        "An accurate, evidence-based picture of who can see which rows."),
     "descriptions": ("Medium",
         "Description coverage across measures and columns is low.",
         "Missing descriptions increase onboarding time and the risk of misinterpreting a field's meaning.",

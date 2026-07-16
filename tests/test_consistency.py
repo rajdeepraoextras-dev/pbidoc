@@ -93,6 +93,52 @@ class HumanClaimRlsDiscrepancyTest(unittest.TestCase):
         self.assertEqual(find_human_claim_discrepancies(None, 0), [])
         self.assertEqual(find_human_claim_discrepancies("", 5), [])
 
+    def test_unreadable_rls_raises_no_false_contradiction(self):
+        """A .pbix never exposes its roles, so a zero count there means
+        "unknown", not "none". Claiming the owner's note contradicts the file
+        would manufacture a false security alarm about a report that may be
+        fully protected."""
+        note = "RLS restricts each department head to their own cost centers."
+        self.assertEqual(find_human_claim_discrepancies(note, 0, rls_readable=False), [])
+        # ...but the same note against a readable model is a real contradiction.
+        self.assertTrue(find_human_claim_discrepancies(note, 0, rls_readable=True))
+
+
+class PbixRlsHonestyTest(unittest.TestCase):
+    """A .pbix parse cannot see RLS. Reporting "No row-level security roles are
+    defined in this model" there states as fact something the file cannot
+    support — the report may be fully protected. Absence and unreadability must
+    be different findings."""
+
+    def _audit(self, source_format: str):
+        from pbicompass.schemas.model import ModelMeta, Table
+        from pbicompass.agents.generators import AuditReportGenerator
+        model = SemanticModel(report_name="R", tables=[Table(name="Sales")],
+                              meta=ModelMeta(source_format=source_format))
+        return AuditReportGenerator.generate(model, None)
+
+    def _rls_finding(self, doc):
+        return next((g for g in doc.governance if "row-level" in (g.detail or "").lower()), None)
+
+    def test_pbix_reports_unknown_not_absent(self):
+        finding = self._rls_finding(self._audit("pbix"))
+        self.assertEqual(finding.rule_id, "PBIC-GOV-012")
+        self.assertIn("unknown", finding.detail.lower())
+        self.assertNotIn("no row-level security roles are defined", finding.detail.lower())
+
+    def test_pbip_still_reports_genuine_absence(self):
+        finding = self._rls_finding(self._audit("pbip-tmdl"))
+        self.assertEqual(finding.rule_id, "PBIC-GOV-011")
+        self.assertIn("no row-level security roles are defined", finding.detail.lower())
+
+    def test_pbix_technical_doc_does_not_claim_absence(self):
+        from pbicompass.agents import generate_document
+        from pbicompass.schemas.model import ModelMeta, Table
+        model = SemanticModel(report_name="R", tables=[Table(name="Sales")],
+                              meta=ModelMeta(source_format="pbix"))
+        constraint = generate_document(model, None).security.workspace_constraints[0]
+        self.assertIn("cannot be read from a .pbix", constraint)
+
 
 class BuildAuditVerdictsTest(unittest.TestCase):
     def test_verdicts_reflect_the_audit_documents_own_computation(self):

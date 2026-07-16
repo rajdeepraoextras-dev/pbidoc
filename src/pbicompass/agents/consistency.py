@@ -167,7 +167,7 @@ _RLS_NOT_NEEDED_RE = re.compile(
 
 
 def find_human_claim_discrepancies(
-    security_notes: Optional[str], rls_role_count: int,
+    security_notes: Optional[str], rls_role_count: int, *, rls_readable: bool = True,
 ) -> list[HumanClaimDiscrepancy]:
     """Compare the intake form's Security & RLS Validation Notes against the
     model's actual RLS role count. A human claiming RLS is "validated"/
@@ -182,6 +182,12 @@ def find_human_claim_discrepancies(
     building the very document ``AuditVerdicts`` is normally read back
     from — never needs an already-built :class:`AuditDocument` to call it."""
     if not security_notes:
+        return []
+    # ``rls_readable=False`` (a .pbix, whose roles this tool cannot see) makes a
+    # zero role count meaningless: the owner saying "RLS restricts each region"
+    # doesn't contradict the file, it just can't be checked against it. Claiming
+    # a contradiction here would manufacture a false security alarm.
+    if not rls_readable:
         return []
     discrepancies: list[HumanClaimDiscrepancy] = []
 

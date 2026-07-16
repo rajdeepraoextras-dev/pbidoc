@@ -609,8 +609,19 @@ def _security(model: SemanticModel, security_notes: Optional[str] = None) -> Sec
             "reviewed there against this catalog."
         ]
     else:
-        constraints = ["No row-level security roles are defined in this model."]
-    discrepancies = find_human_claim_discrepancies(security_notes, len(model.roles))
+        # Same absence-vs-unreadability distinction the audit makes: a .pbix
+        # never exposes its roles, so "none are defined" would be a claim this
+        # file cannot support.
+        if (getattr(model.meta, "source_format", "") or "").lower() == "pbix":
+            constraints = ["Row-level security cannot be read from a .pbix file, so this report's "
+                           "RLS status is unknown — it may or may not define roles. Export the "
+                           "project as .pbip to document it."]
+        else:
+            constraints = ["No row-level security roles are defined in this model."]
+    discrepancies = find_human_claim_discrepancies(
+        security_notes, len(model.roles),
+        rls_readable=(getattr(model.meta, "source_format", "") or "").lower() != "pbix",
+    )
     return SecurityGovernance(roles=roles, workspace_constraints=constraints,
                               discrepancies=[dataclasses.asdict(d) for d in discrepancies])
 

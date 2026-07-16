@@ -118,6 +118,75 @@ def _narrative_duplicate_issues(docs: dict[str, Any]) -> list[GateIssue]:
     return issues
 
 
+# -- Self-contradicting ask (SENSE) -------------------------------------------
+#
+# The gate scored a live bundle 59/61 while it shipped this, verbatim:
+#
+#   consequence: "Since row-level security is not configured, there is no risk
+#                 of role misalignment, but all report viewers have unrestricted
+#                 access to spend data."
+#   ask:         "Review RLS role memberships quarterly and adjust as
+#                 departments change."
+#
+# — i.e. review the memberships of roles the same sentence says don't exist.
+# Every structural check passed, because none of them read for *sense*. This
+# closes that hole for the provable class: a risk whose ask applies a
+# maintenance verb to a thing its own consequence declares absent.
+#
+# Deliberately narrow. It requires a *definite* absence assertion ("X is not
+# configured"), not a hedged one ("without X (if needed) ..."), and it treats
+# create-verbs (define/configure/set up) as correct responses to absence. The
+# fixed live output — consequence "Without row-level security (if needed),
+# department heads could see each other's spend data" + ask "verify that RLS
+# roles are correctly applied" — must NOT trip it: "verify" is a legitimate ask
+# when an intake note claims RLS exists but the model has none.
+
+# Concept groups: terms that name the same thing across a consequence/ask pair.
+_SENSE_CONCEPTS: dict[str, str] = {
+    "row-level security": r"(?:row-?level security|RLS)(?:\s+roles?)?|(?<!\w)roles?(?!\w)",
+    "relationships": r"relationships?",
+    "descriptions": r"descriptions?",
+}
+# A definite claim the concept does not exist. Hedges ("without X, if needed")
+# are excluded on purpose — they don't assert absence, they suppose it.
+_ABSENT_TMPL = (
+    r"(?:{t})\b[^.]{{0,30}}?\b(?:is|are|was|were)\s+not\s+(?:configured|defined|set\s?up|enabled|present|in place)"
+    r"|\bno\b[^.]{{0,20}}?\b(?:{t})\b[^.]{{0,30}}?\b(?:are|is)?\s*(?:defined|configured|exist|set\s?up|in place)"
+    r"|\bnot?\s+(?:{t})\b[^.]{{0,20}}?\b(?:defined|configured|exist)"
+)
+# Verbs that only make sense if the thing already exists. "verify"/"confirm" are
+# excluded (reasonable when a human claim conflicts with the model), as are
+# create-verbs (define/configure/add/set up), which absence properly calls for.
+_MAINTAIN_TMPL = r"\b(?:review|adjust|update|maintain|re-?validate|audit|reassign|refresh|tune|keep)\w*\b[^.]{{0,45}}?\b(?:{t})\b"
+
+
+def _self_contradicting_ask_issues(docs: dict[str, Any]) -> list[GateIssue]:
+    """Flag a risk whose ask presupposes something its consequence calls absent."""
+    issues: list[GateIssue] = []
+    for dtype, doc in docs.items():
+        risks = getattr(doc, "top_risks", None) or []
+        for i, risk in enumerate(risks):
+            consequence = (getattr(risk, "consequence", "") or "").strip()
+            ask = (getattr(risk, "ask", "") or "").strip()
+            if not consequence or not ask:
+                continue
+            for concept, terms in _SENSE_CONCEPTS.items():
+                absent = re.search(_ABSENT_TMPL.format(t=terms), consequence, re.IGNORECASE)
+                if not absent:
+                    continue
+                presupposed = re.search(_MAINTAIN_TMPL.format(t=terms), ask, re.IGNORECASE)
+                if presupposed:
+                    issues.append(GateIssue(
+                        "SENSE",
+                        f"{dtype}:top_risks[{i}] contradicts itself — the consequence says "
+                        f"{concept} is not configured, but the ask is to "
+                        f"'{presupposed.group(0).strip()}'. An ask must not maintain what the "
+                        f"same risk says does not exist.",
+                    ))
+                    break
+    return issues
+
+
 def validate_bundle(docs: dict[str, Any], model: Any, *,
                     html_filenames: dict[str, str] | None = None,
                     ai_context: Any = None) -> dict[str, str]:
@@ -130,6 +199,7 @@ def validate_bundle(docs: dict[str, Any], model: Any, *,
             location_text = f" Locations: {', '.join(result.locations)}." if result.locations else ""
             issues.append(GateIssue(result.check_id, result.detail + location_text))
     issues.extend(_narrative_duplicate_issues(docs))
+    issues.extend(_self_contradicting_ask_issues(docs))
 
     rendered = _render_html_bundle(docs, html_filenames)
     names = html_filenames or {dtype: f"{dtype}.html" for dtype in docs}

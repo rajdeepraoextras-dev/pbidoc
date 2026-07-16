@@ -410,6 +410,66 @@ class FieldParamPerspectiveCultureTest(unittest.TestCase):
         parse_tmdl_text(text, agg, [])
         self.assertEqual(agg["cultures"], [])
 
+    def test_perspective_syntax_from_the_microsoft_tmdl_spec(self):
+        """Syntax taken verbatim from Microsoft's TMDL spec ("Named object
+        references"): perspective -> perspectiveTable -> perspectiveMeasure.
+        None of the real models on hand contain a perspective, so the spec is
+        the ground truth here rather than a fixture of our own assumptions."""
+        from pbicompass.parsers.tmdl import parse_tmdl_text
+        text = ("perspective Product\n"
+                "\tperspectiveTable Product\n"
+                "\t\tperspectiveMeasure '# Products'\n"
+                "\tperspectiveTable Sales\n")
+        agg = {"tables": [], "relationships": [], "roles": [], "expressions": [],
+               "perspectives": [], "cultures": [], "model_name": None}
+        parse_tmdl_text(text, agg, [])
+        p = agg["perspectives"][0]
+        self.assertEqual(p.name, "Product")
+        self.assertEqual(p.tables, ["Product", "Sales"])
+        self.assertEqual(p.measures, ["# Products"])
+
+    def test_measure_dynamic_format_string_is_an_expression_property(self):
+        """The TMDL spec lists FormatStringDefinition with Expression as its
+        default property (DAX), i.e. assigned with '=' — distinct from the
+        static `formatString:` property."""
+        from pbicompass.parsers.tmdl import parse_tmdl_text
+        text = ("table S\n"
+                "\tmeasure M = SUM(x)\n"
+                '\t\tformatStringDefinition = IF([M]>0, "#,0", "(#,0)")\n'
+                "\t\tformatString: 0\n")
+        agg = {"tables": [], "relationships": [], "roles": [], "expressions": [],
+               "perspectives": [], "cultures": [], "model_name": None}
+        parse_tmdl_text(text, agg, [])
+        m = agg["tables"][0].measures[0]
+        self.assertEqual(m.format_string_expression, 'IF([M]>0, "#,0", "(#,0)")')
+        self.assertEqual(m.format_string, "0")     # static property kept separate
+        self.assertEqual(m.expression, "SUM(x)")   # neither leaked into the DAX
+
+    def test_refresh_policy_accepts_both_declaration_shapes(self):
+        """The spec doesn't pin down refreshPolicy's TMDL declaration and no real
+        export on hand has one, so both plausible shapes are supported rather
+        than betting on a guess. Property names are confirmed via the TMSL form
+        in Microsoft's incremental-refresh docs."""
+        from pbicompass.parsers.tmdl import parse_tmdl_text
+
+        def _parse(text):
+            agg = {"tables": [], "relationships": [], "roles": [], "expressions": [],
+                   "perspectives": [], "cultures": [], "model_name": None}
+            parse_tmdl_text(text, agg, [])
+            return agg["tables"][0].refresh_policy
+
+        inline = _parse("table S\n\trefreshPolicy: basic\n"
+                        "\t\trollingWindowGranularity: month\n\t\trollingWindowPeriods: 3\n"
+                        "\t\tincrementalGranularity: day\n\t\tincrementalPeriods: 10\n")
+        self.assertEqual(inline.policy_type, "basic")
+        self.assertEqual((inline.rolling_window_periods, inline.rolling_window_granularity), (3, "month"))
+        self.assertEqual((inline.incremental_periods, inline.incremental_granularity), (10, "day"))
+
+        nested = _parse("table S\n\trefreshPolicy\n\t\tpolicyType: basic\n"
+                        "\t\trollingWindowGranularity: month\n\t\trollingWindowPeriods: 3\n")
+        self.assertEqual(nested.policy_type, "basic")
+        self.assertEqual(nested.rolling_window_periods, 3)
+
     def test_field_parameter_extraction(self):
         from pbicompass.schemas.model import Table, Column, Partition, Relationship
         from pbicompass.agents.report_facts import extract_field_parameters

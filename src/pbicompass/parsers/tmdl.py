@@ -291,9 +291,26 @@ def _parse_calculation_group(header: Line, sub: list[Line], table: Table) -> Non
 
 
 def _parse_refresh_policy(header: Line, sub: list[Line]) -> RefreshPolicy:
-    # `refreshPolicy: basic` — the policy type is the value after the colon.
+    """Parse a table's incremental-refresh policy.
+
+    Both declaration shapes are accepted, because the TMDL spec doesn't pin this
+    one down and no real export on hand contains a refresh policy to check
+    against (the property *names* below are confirmed against Microsoft's docs
+    via the TMSL/JSON form, which TMDL mirrors):
+
+        refreshPolicy: basic          |   refreshPolicy
+            rollingWindowPeriods: 3   |       policyType: basic
+            ...                       |       rollingWindowPeriods: 3
+
+    The type is read from after the colon when present, else from a
+    ``policyType`` property — so whichever shape a real file uses, it parses.
+    """
     _, policy_type = split_prop(header.text)
     props = props_at_level(sub, header.indent + 1)
+    # A bare `refreshPolicy` header yields split_prop's "true" placeholder; the
+    # type then lives in a policyType property instead.
+    if policy_type == "true" or not policy_type:
+        policy_type = props.get("policyType") or ""
 
     def _int(key: str) -> Optional[int]:
         try:
@@ -302,7 +319,7 @@ def _parse_refresh_policy(header: Line, sub: list[Line]) -> RefreshPolicy:
             return None
 
     return RefreshPolicy(
-        policy_type=(policy_type or None) if policy_type != "true" else None,
+        policy_type=policy_type or None,
         mode=props.get("mode"),
         rolling_window_granularity=props.get("rollingWindowGranularity"),
         rolling_window_periods=_int("rollingWindowPeriods"),
