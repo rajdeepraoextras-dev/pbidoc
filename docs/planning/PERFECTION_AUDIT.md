@@ -379,5 +379,53 @@ the model a *"star schema"* when the audit said otherwise → auto-corrected to
 configured model. On a cheap model the judge **hallucinates failures**. Judge-method
 checks should be read as advisory; deterministic checks are the trustworthy ones.
 
-**Next up:** C1 "Ask about this report" (Phase-5 Q&A, the big net-new surface);
-C4 live cross-provider verification; the three live-prose defects above.
+### 2026-07-16 — "Make the tool 10/10": gate sense, spec-checked parsers, .pbix honesty, and a broken default
+
+**The default engine could not pass this tool's own output gate.** Measured on the
+Corporate Spend fixture, full 4-doc bundle:
+
+| Engine | Runs | Result | ~cost |
+|---|---|---|---|
+| `inclusionai/ling-2.6-flash` (**was the default**) | **2/2 BLOCKED** on T4 (user-guide prose contradicting the audit, same locations both times) → `rc=1`, **zero documents** | fail | ~$0.005 |
+| `deepseek/deepseek-v4-flash` (**now the default**) | 3/3 pass, **59/61** | pass | ~$0.06 |
+
+12× the cost of a default that produces nothing is not a trade-off worth having,
+so the MeshAPI default is now `deepseek/deepseek-v4-flash` — which is also
+reasoning-capable, so the effort machinery actually runs (ling is not, meaning
+"max reasoning by default" was silently unreachable on the shipped default).
+`MESHAPI_MODEL` remains the per-deploy override. Read positively: **the gate
+works** — it caught real contradictions and refused to ship them.
+
+**#1 Prose-coherence gate (SENSE).** The gate scored 59/61 while shipping a risk
+whose ask ("review RLS role memberships quarterly") contradicted its own
+consequence ("row-level security is not configured"). Structure passed; nothing
+read for *sense*. New check flags an ask that applies a maintenance verb to
+something its consequence declares absent. Proven against both real live strings:
+fires on the broken one, silent on the fixed one. Narrow by design — needs a
+definite absence claim, and treats create-verbs / verify / confirm as correct.
+
+**#2 The three unproven parsers, checked against Microsoft's TMDL spec** instead
+of fixtures encoding our own assumptions (the circularity that hid `cultureInfo`).
+Spec **confirms** `perspective → perspectiveTable → perspectiveMeasure` and
+`FormatStringDefinition` as an `=`-assigned DAX default property — both already
+correct. `refreshPolicy`'s TMDL declaration is **not** pinned down by the spec and
+no real export on hand has one, so both plausible shapes now parse rather than
+betting on a guess; its property names are confirmed via the TMSL form.
+
+**#4 The `.pbix` honesty bug — worse than a limitation.** pbixray cannot expose
+RLS, yet the audit fired on `not model.roles` regardless of format, so every
+`.pbix` report was told *"No row-level security roles are defined in this model"* —
+a **false statement of fact** about a report that may be fully protected. Absence
+and unreadability are now distinct (new `PBIC-GOV-012`, Low: "RLS status is
+unknown — export as .pbip"). The technical doc's constraint and the human-claim
+discrepancy check are fixed the same way (the latter would otherwise raise a false
+security contradiction against an owner's accurate note). Note prod is fine on
+Python 3.12 per the Dockerfile; pbixray only fails to install on 3.14.
+
+**#3 partially blocked, honestly.** Live validation widened to **2 models** (above).
+Widening to *multiple real reports* would send the owner's own business files'
+content to MeshAPI — outside the local-only consent under which those files were
+examined. Not done without explicit consent for that different action.
+
+**Still true:** `refreshPolicy`/`perspective` remain unseen in any real file;
+live scoring is still one report; C8's judge false-negatives on a cheap judge.

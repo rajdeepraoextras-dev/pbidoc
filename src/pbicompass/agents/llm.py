@@ -474,11 +474,16 @@ class MeshAPIClient:
     model ids, which use hyphens (``claude-opus-4-8``, as
     :class:`AnthropicClient` expects) — the two are not interchangeable.
 
-    Defaults to ``inclusionai/ling-2.6-flash`` (2026-07-14, switched from
-    ``mistralai/mistral-nemo`` for cost and speed). MeshAPI's live catalog
-    marks it as structured-output capable, and a smoke call with
-    ``response_format=json_schema`` returned clean JSON. A Claude default
-    remains off the table: MeshAPI routes at least some Anthropic model ids
+    Defaults to ``deepseek/deepseek-v4-flash`` (2026-07-16, switched from
+    ``inclusionai/ling-2.6-flash``, which was itself chosen for cost on
+    2026-07-14). The reason for the switch is measured, not stylistic: ling
+    could not pass this tool's own output gate — 2/2 full-bundle runs were
+    blocked on T4 (user-guide prose contradicting the audit's verdict), leaving
+    the user with an error and no documents, whereas v4-flash passed 3/3 at
+    59/61. It is also reasoning-capable, so the effort machinery actually
+    applies. Both are structured-output capable per MeshAPI's catalog and a
+    live smoke call. A Claude default remains off the table: MeshAPI routes at
+    least some Anthropic model ids
     through AWS Bedrock's Converse API, which doesn't support the
     structured-output parameter MeshAPI's translation layer attaches for
     them (every ``complete_json`` call fails with a Bedrock
@@ -499,7 +504,19 @@ class MeshAPIClient:
     """
 
     _BASE_URL = "https://api.meshapi.ai/v1"
-    _FALLBACK_MODEL = "inclusionai/ling-2.6-flash"
+    # The default engine has to be able to pass this tool's own output gate.
+    # Measured on the Corporate Spend fixture, full 4-doc bundle:
+    #   inclusionai/ling-2.6-flash  2/2 runs BLOCKED by the gate (T4: user-guide
+    #                               prose contradicting the audit's verdict, same
+    #                               locations both times) -> the user gets an
+    #                               error and zero documents. ~$0.005/bundle.
+    #   deepseek/deepseek-v4-flash  3/3 runs pass, scoring 59/61. ~$0.06/bundle,
+    #                               and unlike ling it is reasoning-capable, so
+    #                               the effort/reasoning machinery actually runs.
+    # 12x the cost of a default that produces nothing is not a trade-off worth
+    # having. Override per-deploy with MESHAPI_MODEL if cost matters more than
+    # output on a given install.
+    _FALLBACK_MODEL = "deepseek/deepseek-v4-flash"
 
     def __init__(
         self,
@@ -540,9 +557,9 @@ class MeshAPIClient:
         # failing every single agent call. MeshAPI fronts 1000+ models of
         # wildly varying reasoning-effort support with no per-model signal
         # exposed here, so it's only ever sent when the routed model id
-        # itself looks reasoning-capable (o-series/gpt-5); every other model
-        # — including the ``inclusionai/ling-2.6-flash`` default — never
-        # receives it.
+        # itself looks reasoning-capable (o-series/gpt-5 and the deepseek
+        # reasoning families, which the default ``deepseek/deepseek-v4-flash``
+        # belongs to); every other model never receives it.
         resolved_effort = effort if effort is not None else self.effort
         reasoning_effort = (
             _MESHAPI_REASONING_EFFORT.get(resolved_effort)
@@ -620,7 +637,7 @@ _DEFAULT_MODEL = {
     "gemini": "gemini-3.5-flash",
     "cohere": "command-a-03-2025",
     # None: MeshAPIClient resolves its own default (MESHAPI_MODEL env var,
-    # else inclusionai/ling-2.6-flash — never a Claude id; see its docstring:
+    # else deepseek/deepseek-v4-flash — never a Claude id; see its docstring:
     # MeshAPI routes at least some Anthropic ids through AWS Bedrock's
     # Converse API, which rejects the structured-output parameter every
     # agent here needs).
