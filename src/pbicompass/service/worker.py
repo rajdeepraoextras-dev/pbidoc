@@ -41,7 +41,7 @@ from ..agents.assist import build_report_summary, complete_metadata_fields
 from ..agents.context import JobAIContext, build_job_context
 from ..agents.generators import DOCUMENT_TYPES
 from ..render import pandoc, registry
-from ..render._shared import format_timestamp
+from ..render._shared import GROUNDED_DEFAULT_REFRESH_PREFIX, GROUNDED_DEFAULT_TEXT, format_timestamp
 from ..render.audit import _top_cluster as _audit_top_cluster
 from ..render.hub import doc_switcher_links, hub_stats, render_hub
 from .ingest import ingest_to_model
@@ -131,26 +131,13 @@ def _complete_metadata(model, client, meta: dict, warn: Callable[[str], None]) -
 
     modes = sorted({p.mode for t in model.tables for p in t.partitions if p.mode})
     mode_text = ", ".join(modes) if modes else "not exposed"
-    defaults = {
-        "owner": "Owner not identified in report metadata; assign a named report owner.",
-        "audience": "Report consumers, business owners, and BI support staff.",
-        "refresh": ("Schedule not stored in the uploaded model metadata; verify the Power BI "
-                    f"Service schedule and gateway configuration. Model partition mode: {mode_text}."),
-        "version": "Generated baseline",
-        "status": "Draft for owner review",
-        "author": "PBICompass",
-        "reviewer": "Reviewer not assigned; nominate the report owner or BI lead.",
-        "classification": "Classification not provided; confirm before distribution.",
-        "business_decision": "Use the documented pages and measures to support the report's model-visible analysis workflows.",
-        "requirements": "Validate the documented measures, filters, security behavior, and refresh operation against business acceptance criteria.",
-        "security_notes": "Security documentation is limited to roles and filters present in the uploaded model; validate workspace and app permissions separately.",
-        "refresh_notes": "Confirm the Power BI Service schedule, credentials, gateway mapping, failure alerts, and typical duration; these operational settings are not stored in the model metadata.",
-        "deployment_notes": "Deployment environments and workspace links are not stored in the model metadata; record the approved Dev, Test, and Production path.",
-        "access_notes": "Workspace and app membership are not stored in the model metadata; verify least-privilege access with the report owner.",
-        "glossary": "Model-derived business terms are listed in the generated glossary; the report owner should confirm organization-specific wording.",
-        "assumptions": "This documentation is derived from uploaded model metadata and does not inspect source data values or Power BI Service tenant settings.",
-        "support_notes": "Support contacts and service levels are not stored in the model metadata; assign an owner, escalation route, and review cadence.",
-    }
+    # Sourced from render._shared.GROUNDED_DEFAULT_TEXT (the single copy of
+    # this wording) so compute_completeness() can recognize a defaulted
+    # field as still "not provided" by exact match rather than drifting out
+    # of sync with a second, independently-edited copy of the same text.
+    defaults = dict(GROUNDED_DEFAULT_TEXT)
+    defaults["audience"] = defaults.pop("target_audience")
+    defaults["refresh"] = f"{GROUNDED_DEFAULT_REFRESH_PREFIX} {mode_text}."
     for key, value in defaults.items():
         if not completed.get(key):
             completed[key] = value

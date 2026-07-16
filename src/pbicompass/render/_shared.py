@@ -30,6 +30,36 @@ OPTIONAL_CONTEXT_FIELDS = (
     "glossary", "assumptions", "support_notes",
 )
 
+# Grounded-default text ``service/worker.py``'s ``_complete_metadata()``
+# substitutes in for any of the fields above the user (or enrichment file)
+# never supplied — kept here, not duplicated in worker.py, so
+# ``compute_completeness()`` below can recognize a defaulted field as still
+# "not provided" by exact match instead of guessing from wording. Every
+# value is static except ``refresh_schedule``, whose real text also appends
+# the model's own partition mode — matched by prefix instead.
+GROUNDED_DEFAULT_TEXT: dict[str, str] = {
+    "owner": "Owner not identified in report metadata; assign a named report owner.",
+    "target_audience": "Report consumers, business owners, and BI support staff.",
+    "version": "Generated baseline",
+    "status": "Draft for owner review",
+    "author": "PBICompass",
+    "reviewer": "Reviewer not assigned; nominate the report owner or BI lead.",
+    "classification": "Classification not provided; confirm before distribution.",
+    "business_decision": "Use the documented pages and measures to support the report's model-visible analysis workflows.",
+    "requirements": "Validate the documented measures, filters, security behavior, and refresh operation against business acceptance criteria.",
+    "security_notes": "Security documentation is limited to roles and filters present in the uploaded model; validate workspace and app permissions separately.",
+    "refresh_notes": "Confirm the Power BI Service schedule, credentials, gateway mapping, failure alerts, and typical duration; these operational settings are not stored in the model metadata.",
+    "deployment_notes": "Deployment environments and workspace links are not stored in the model metadata; record the approved Dev, Test, and Production path.",
+    "access_notes": "Workspace and app membership are not stored in the model metadata; verify least-privilege access with the report owner.",
+    "glossary": "Model-derived business terms are listed in the generated glossary; the report owner should confirm organization-specific wording.",
+    "assumptions": "This documentation is derived from uploaded model metadata and does not inspect source data values or Power BI Service tenant settings.",
+    "support_notes": "Support contacts and service levels are not stored in the model metadata; assign an owner, escalation route, and review cadence.",
+}
+GROUNDED_DEFAULT_REFRESH_PREFIX = (
+    "Schedule not stored in the uploaded model metadata; verify the Power BI "
+    "Service schedule and gateway configuration. Model partition mode:"
+)
+
 
 def refresh_policy_summary(rp: dict) -> str:
     """Plain-language one-liner for an extracted incremental-refresh policy
@@ -217,14 +247,26 @@ def html_table(
 
 
 def compute_completeness(metadata: Any) -> tuple[int, int, list[str]]:
-    """Report optional context coverage without treating absent input as a quality score."""
+    """Report optional context coverage without treating absent input as a quality score.
+
+    A field whose value is exactly the grounded-default text ``worker.py``'s
+    ``_complete_metadata()`` substitutes in (see ``GROUNDED_DEFAULT_TEXT``
+    above) still counts as missing -- by the time a generated document's
+    metadata reaches this function every optional field already has *some*
+    non-empty string in it (that's the whole point of the grounded-default
+    fallback), so a plain truthiness check alone would always report every
+    field "supplied" even when the user provided nothing at all."""
     fields = OPTIONAL_CONTEXT_FIELDS
-    from typing import Any as TypAny
     filled = 0
     missing = []
     for f in fields:
         val = getattr(metadata, f, None)
-        if val and "✎" not in str(val) and "TBC" not in str(val) and "not specified" not in str(val).lower():
+        text = str(val) if val else ""
+        is_default = (
+            text == GROUNDED_DEFAULT_TEXT.get(f)
+            or (f == "refresh_schedule" and text.startswith(GROUNDED_DEFAULT_REFRESH_PREFIX))
+        )
+        if val and not is_default and "✎" not in text and "TBC" not in text and "not specified" not in text.lower():
             filled += 1
         else:
             missing.append(f)
