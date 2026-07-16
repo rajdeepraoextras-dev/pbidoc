@@ -480,7 +480,7 @@ class _FakeAllAgentsClient:
 
 
 class SharedJobContextTest(unittest.TestCase):
-    """Phase 0 (``AI_NATIVE_PLAN.md``): ``build_job_context`` runs the DAX
+    """Shared per-job AI context: ``build_job_context`` runs the DAX
     Translator once for the whole job; every ``DOCUMENT_TYPES`` generator
     given that same ``ai_context`` must consume its ``.translations``
     instead of re-calling the agent — previously up to 3x redundant spend
@@ -508,7 +508,7 @@ class SharedJobContextTest(unittest.TestCase):
 
 
 class ReportIntelligenceTest(unittest.TestCase):
-    """Phase 2 (``AI_NATIVE_PLAN.md``): the one whole-model Report
+    """Report Intelligence: the one whole-model Report
     Intelligence call, wired into ``build_job_context`` and stored on
     ``JobAIContext.insights`` (the field Phase 0 reserved for it)."""
 

@@ -1,4 +1,4 @@
-"""Shared per-job AI context (Phase 0 of ``AI_NATIVE_PLAN.md``).
+"""Shared per-job AI context.
 
 Before this module, ``technical.py::_measure_catalog``,
 ``executive.py::_key_kpis``, and ``user_guide.py::_build_glossary`` each ran

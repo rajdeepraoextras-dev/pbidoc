@@ -1,4 +1,4 @@
-"""Report Intelligence pass (Phase 2 of ``AI_NATIVE_PLAN.md``): one
+"""Report Intelligence pass: one
 whole-model synthesis call per job that finally lets the LLM reason about
 the report *as a whole*, instead of the narrow per-agent slices every other
 prompt receives (a page batch, a measure batch, a table/relationship list).

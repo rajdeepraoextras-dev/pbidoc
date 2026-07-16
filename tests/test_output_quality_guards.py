@@ -1,5 +1,4 @@
-"""Sprint 1 Day 5 (PRODUCTION_ROADMAP.md Sec 10.1): consolidated, end-to-end
-output-quality guards.
+"""Consolidated, end-to-end output-quality guards.
 
 Days 1-4 fixed D1/D2/D3/D4/D6 and each added unit/wiring-level regression
 tests near the fix itself (test_sanitize.py, test_critic.py, test_grounding.py,
@@ -204,8 +203,8 @@ class OutputQualityGuardsTest(unittest.TestCase):
 # an 11-table galaxy schema (2 tables classified "fact"), Auto Date/Time
 # hidden tables, a hardcoded Dropbox path, a 20-visual "Plan Variance
 # Analysis" page, and bare select/select1 field-parameter tokens: exactly
-# the shape the 2026-07-05/07 real output review (Part H/I/J of
-# DOCUMENTATION_QUALITY_PLAN.md, and the ed24be3 P0/P1/P2 commit) was
+# the shape the 2026-07-05/07 real output review (and the ed24be3
+# P0/P1/P2 commit) was
 # reviewing when it found these defects — this fixture proves the fixes
 # hold on the real data that motivated them, not just on hand-built
 # snippets exercising one code path.

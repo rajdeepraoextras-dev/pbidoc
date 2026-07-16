@@ -57,7 +57,34 @@ layer that upgrades the prose sections.
 | **Zero-retention service** | Each upload is processed in a per-job sandbox that is shredded in a `finally` block. Only rendered documents survive, for a short TTL. No customer metadata is ever logged or persisted. |
 | **Zero-dependency core** | The parser and schemas use the Python **standard library only**. FastAPI, the AI SDKs, Celery, PyYAML, etc. are optional extras pulled in only by later phases. |
 | **Deterministic by default** | Every document section can be produced with no API key. The AI layer only *upgrades* the prose agents; it can never downgrade a deterministic fact. The §orphaned-measure audit is always a set difference, never a guess. |
-| **Graceful degradation** | Unrecognised constructs are recorded in `meta.warnings` rather than raised. Missing optional tools (Pandoc, pbixray) degrade to a clear message, not a crash. |
+| **Graceful degradation** | Unrecognised constructs are recorded in `meta.warnings` rather than raised. Missing optional tools (Pandoc, pbixray) degrade to a clear message, not a crash. An LLM failure never fails a job — each agent falls back per-agent, and the fully deterministic bundle still passes the output gate. |
+| **Never blank, never fabricated** | Optional intake fields are enrichment only; leaving them blank must never make a document look unfinished. So `_complete_metadata` fills every missing field — first via a grounded AI pass instructed to *"never invent people, URLs, gateways, schedules, SLAs…"*, then via defaults that state the limitation and name the action (*"Schedule not stored in the model metadata; verify the Service schedule and gateway"*). A blank looks unfinished; an invented contact is worse. |
+| **Say what is known, not what is assumed** | Absence and unreadability are different findings. A `.pbix` cannot expose RLS, so its RLS is reported *unknown*, never "none defined". A human claim that contradicts the model is surfaced for the reader to reconcile, not silently resolved. |
+
+### Validating the parsers against reality
+
+A fixture written from our own reading of a format encodes our own
+misunderstandings, so it can never catch them. That is not hypothetical: the
+parser once dispatched on `culture`, while real exports write `cultureInfo` — so
+cultures parsed as **zero on every real model** while the synthetic tests stayed
+green.
+
+Parsers are therefore validated against **real, non-synthetic output**:
+
+| Path | Evidence |
+|---|---|
+| TMDL | Four real `.pbip` exports, plus TMDL emitted by Microsoft's own `TmdlSerializer` for the two features no local file contained (`refreshPolicy`, `perspective`). |
+| TMSL | Three real `.pbit` `DataModelSchema` documents — genuine Power BI output, including a 69-table / 216-measure model. |
+
+`scripts/validate_real_models.py` makes this repeatable against any `.pbip` or
+`.pbit`: it greps the source for each feature's declaration keyword and compares
+against what the parser produced, exiting with the mismatch count. Source > 0 while
+parsed == 0 is silent data loss. It prints counts only — never table names, DAX, or
+business content — and runs entirely locally.
+
+> Scan `definition/` only when establishing ground truth: a `.SemanticModel` may
+> also carry scratch folders (e.g. `TMDLScripts/`) whose `.tmdl` files are not part
+> of the model and will inflate the count.
 
 ---
 
@@ -140,8 +167,8 @@ stages, and `sandbox.py` shreds the working directory when done.
 | Module | Role |
 |---|---|
 | `base.py` | TMDL tokenizer + indentation helpers. |
-| `tmdl.py` | TMDL semantic-model parser (modern `.pbip`). |
-| `tmsl.py` | `model.bim` JSON parser (older `.pbip` / extracted `.pbix`). |
+| `tmdl.py` | TMDL semantic-model parser (modern `.pbip`) — tables/columns/measures/partitions, relationships, RLS roles, M expressions, plus calculation groups (items, ordinal, dynamic format, precedence), hierarchies, measure KPIs, dynamic format strings, incremental-refresh policy, perspectives, and translation cultures (`cultureInfo`). |
+| `tmsl.py` | `model.bim` JSON parser (older `.pbip` / extracted `.pbix` / a `.pbit`'s `DataModelSchema`) — same coverage in TMSL's JSON shape. |
 | `pbir.py` | Report-layout parser (PBIR enhanced **and** legacy). |
 | `m_steps.py` | Power Query / M step parsing. |
 | `pbip.py` | Orchestrator: detects the format, runs the right parsers, and enriches with data-source and table-kind inference. Exposes `detect_and_parse`. |
@@ -152,13 +179,33 @@ stages, and `sandbox.py` shreds the working directory when done.
 |---|---|
 | `pbixray_adapter.py` | Reads the semantic model from a `.pbix` via the optional `pbixray` library (metadata frames only — never row data), plus report layout from the ZIP. Degrades to layout-only if `pbixray` is unavailable. `--stats` opts into VertiPaq **aggregate** stats (column cardinality/size), never row-level data. |
 
+`pbixray` exposes no RLS roles, hierarchies, or calculation-group items, so those
+are **unknown rather than absent** on the `.pbix` path — the audit reports
+`PBIC-GOV-012` ("RLS status could not be read from this file") instead of falsely
+stating no row-level security is defined. Prefer `.pbip` for complete extraction.
+
+### `publish/` — delivery targets (stdlib `urllib`, no new dependency)
+
+| Module | Role |
+|---|---|
+| `base.py` | Shared plumbing: `PublishError`/`PublishResult`, an HTTP helper, and `collect_documents` (loads a single file or a bundle dir, skipping `model.json`/`index.html`). |
+| `filesystem.py` | Copies files verbatim into a directory; optional `git` stage+commit, and opt-in push. |
+| `confluence.py` | Page per document, created **or updated in place** (idempotent — re-publishing never duplicates). `html_to_storage` reduces a full HTML doc to Confluence storage format. |
+| `sharepoint.py` | Verbatim upload to a Microsoft Graph drive folder. Takes an already-issued Graph token — token acquisition is tenant-specific, so no OAuth flow is embedded. Graph's 4 MB simple-upload limit is flagged, never silently truncated. |
+| `teams.py` | Incoming-webhook notification card. Document content never enters the payload. |
+
 ### `agents/` — assembly (deterministic + optional AI)
 
 | Module | Role |
 |---|---|
 | `orchestrator.py` | `generate_document` — turns `model.json` into `document.json`, fanning out to the agents with a deterministic reducer. |
 | `deterministic.py` | Offline, rule-based generators for every section (DAX explanations, model narrative, business prose). No API key needed. |
-| `llm.py` | `LLMClient` protocol + concrete Anthropic (Claude), Gemini, Cohere, and MeshAPI clients. Handles each provider's native reasoning knob and a retry-without-reasoning fallback. |
+| `llm.py` | `LLMClient` protocol + concrete Anthropic (Claude), Gemini, Cohere, and MeshAPI clients. Handles each provider's native reasoning knob and a retry-without-reasoning fallback, plus bounded retry/backoff on transient errors (429/5xx/network; never 400/401/**402**, which don't self-clear). `PBICOMPASS_LLM_MAX_RETRIES` tunes it. |
+| `model_diff.py` | The version-diff engine behind `pbicompass diff` — a structured delta with severity and impact analysis. Also backs the change log embedded in the technical/audit docs. |
+| `benchmark.py` | The executable v3.0 benchmark: 5 pillars, 100 points, stable check IDs, hard gates. `auto` checks are scored deterministically from the artifacts; only genuine judgment is left to the reviewer. |
+| `output_gate.py` | The last line before export. Blocks a defective bundle rather than shipping it: blocking benchmark failures, duplicate cross-document narrative, duplicate/broken HTML anchors, and `SENSE` — a risk whose ask contradicts its own consequence. |
+| `consistency.py` | Cross-artifact consistency (prose vs. the audit's verdicts) **and** human-claim discrepancies — an intake note that contradicts the model ("RLS restricts each department head" vs. zero roles) is surfaced, never silently resolved either way. |
+| `traceability.py` | Requirements Traceability Matrix — each stated requirement matched to evidence, with a deterministic verdict floor the AI may upgrade but not downgrade. |
 | `io.py` | Agent prompts + JSON-schema output contracts (structured outputs). |
 | `context.py` | Shared per-job AI context — one DAX-Translator pass reused across every requested document type (avoids redundant LLM calls). |
 | `insights.py` | Report Intelligence pass — one whole-model reasoning pass. |
@@ -267,12 +314,54 @@ defaults, explicit flags win): `--owner`, `--audience`, `--refresh`,
 
 ### `pbicompass diff`
 
-Compare two `model.json` files and print a change log.
+Compare two `model.json` snapshots and produce a change summary with **impact
+analysis** — see `agents/model_diff.py`.
 
 | Flag | Effect |
 |---|---|
 | `old`, `new` | The two `model.json` files. |
-| `-o, --out` | Write the change log here instead of stdout. |
+| `-o, --out` | Write the output here instead of stdout. |
+| `--format` | `md` (default, reviewer-ready markdown) or `html` (a self-contained styled "What Changed" page — no external assets). |
+
+Covers tables/columns (incl. type changes), measures (logic **and** format),
+relationships (**modified properties**, not just add/remove), RLS roles and their
+filter expressions, pages, and every model feature (calculation items, KPIs,
+refresh policy, hierarchies, perspectives, cultures).
+
+Every change carries a **severity** (Critical→Info) and a plain-language
+**impact**, derived from a page/visual usage index: a removed measure a visual
+still binds to is Critical and names the pages; a changed cross-filter is High
+("can silently alter every number that crosses this join"); an RLS filter change
+is High and security-flagged.
+
+The same engine powers the change log embedded in the technical and audit
+documents (via the enrichment round-trip's `--diff-against` / history).
+
+### `pbicompass publish`
+
+Push generated documentation to where a team's docs live, or announce it in Teams.
+Nothing is published without this explicit command **and** that destination's own
+credentials.
+
+    pbicompass publish <filesystem|confluence|sharepoint|teams> <path> [flags]
+
+`<path>` is a generated `.html`/`.md` document or a bundle directory.
+
+| Flag | Effect |
+|---|---|
+| `--dry-run` | Print exactly what would be published and send nothing. |
+| `--prefer` | `html` (default) or `md`, for the page/notification targets. |
+| `--dest`, `--git`, `--git-push`, `-m` | filesystem: destination dir; stage+commit; also push; commit message. |
+| `--url`, `--email`, `--space`, `--parent-id` | confluence: wiki base URL, account email, space key, optional parent page. |
+| `--drive-id`, `--folder` | sharepoint: Graph drive id and destination folder. |
+| `--webhook`, `--link` | teams: Incoming Webhook URL, and a link to where the docs live. |
+| `--token` | API token — **prefer the env var**; a token passed as a flag lands in shell history. |
+
+Credentials resolve from `PBICOMPASS_*` env vars when the flag is omitted (see
+[.env.example](../.env.example)). Fidelity differs by destination **by design**:
+`filesystem`/`sharepoint` copy files verbatim (HTML/DOCX/PDF/diagrams intact);
+`confluence` converts to storage format (text/tables/code carry, diagrams don't);
+`teams` posts a notice only — **document content never enters a chat channel**.
 
 ### `pbicompass serve`
 
@@ -609,8 +698,8 @@ pbicompass/
     TOOL_DETAILS.md           # this file
     IMPLEMENTATION_PLAN.md    # architecture + phased roadmap
     DEPLOYMENT.md             # Cloud Run production runbook
-    planning/                 # AI_NATIVE_PLAN, PRODUCTION_ROADMAP,
-                              #   ROADMAP_PROGRESS, DOCUMENTATION_QUALITY_PLAN
+    planning/                 # PERFECTION_AUDIT — architecture audit,
+                              #   task plan, and measured progress log
     design/                   # wireframe / lineage HTML mockups
   assets/                     # logo + brand images
   examples/                   # sample Power BI export (zipped)

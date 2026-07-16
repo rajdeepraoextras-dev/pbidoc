@@ -2,8 +2,9 @@
 
 Generated once from Google Fonts' latin-subset static woff2 files (v24) and
 vendored here so every rendered document is fully self-contained: no
-fonts.googleapis.com / fonts.gstatic.com network call, ever (air-gap and
-zero-leakage guarantees -- see 1.11 in DOCUMENTATION_QUALITY_PLAN.md).
+fonts.googleapis.com / fonts.gstatic.com network call, ever — an air-gap and
+zero-leakage guarantee, asserted by ``tests/test_render.py``'s
+``test_no_external_network_calls``.
 """
 
 POPPINS_FONT_STACK = "'Poppins', sans-serif"

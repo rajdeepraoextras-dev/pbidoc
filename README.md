@@ -161,11 +161,33 @@ by later phases (declared as optional extras in `pyproject.toml`).
 | Tables | name, hidden flag, fact/dimension/calculation kind (heuristic) |
 | Columns | data type, summarize-by, calculated-column DAX, sort-by, key flags |
 | Measures | full DAX expression (multi-line preserved), format string, home table, display folder |
+| **Measure KPIs** | target / status / trend DAX, status graphic |
+| **Dynamic format strings** | a measure's `formatStringDefinition` DAX, distinct from its static format |
+| **Calculation groups** | every calculation item's DAX, ordinal, dynamic format, and group precedence |
+| **Hierarchies** | user-defined drill paths, level → column mapping |
+| **Incremental refresh** | policy type, rolling + incremental window granularity/periods, M source expression |
+| **Field parameters** | first-class: which fields each parameter actually exposes, read from its own DAX |
+| **Perspectives** | the tables/measures each perspective exposes |
+| **Translations** | cultures and their translated-caption counts |
 | Relationships | from/to table+column, cardinality, cross-filter direction, active flag |
 | RLS roles | model permission, per-table filter DAX, members |
 | M / Power Query | shared expressions + parameters; partition source per table |
 | Data sources | connector + server/database inferred from M (credentials stripped) |
 | Report | pages (ordinal/hidden/drill-through), visuals (type, title, fields, slicers) |
+
+Every parser above is verified against **real, non-synthetic output** — four real
+`.pbip` exports, three real `.pbit` `DataModelSchema` documents (including a
+69-table / 216-measure model), and, for the two features no local file contained,
+TMDL emitted by Microsoft's own `TmdlSerializer`. `scripts/validate_real_models.py`
+re-runs that check against any model you point it at: it greps the source for each
+feature's declaration and fails if the parser found fewer, so a silent parsing loss
+can't pass unnoticed.
+
+> **Format note:** the bolded rows above come through on the modern `.pbip`/TMDL
+> and TMSL paths. A legacy `.pbix` is read via `pbixray`, which doesn't expose RLS,
+> hierarchies, or calculation groups — so those are reported as **unknown rather
+> than absent** (`PBIC-GOV-012`), never as a false "no row-level security is
+> defined". Export as `.pbip` for complete documentation.
 
 ---
 
@@ -204,11 +226,20 @@ PYTHONPATH=src python -m pbicompass generate path/to/Project.pbip --provider gem
 PYTHONPATH=src python -m pbicompass generate path/to/Project.pbip --provider cohere    -o report.md   # COHERE_API_KEY
 
 # Or one key for any of 1000+ models via https://developers.meshapi.ai (model ids are "provider/model-name";
-# defaults to inclusionai/ling-2.6-flash, overridable with the MESHAPI_MODEL env var — MeshAPI's Bedrock-routed
+# defaults to deepseek/deepseek-v4-flash, overridable with the MESHAPI_MODEL env var — MeshAPI's Bedrock-routed
 # Anthropic models don't yet support the structured JSON output every agent here needs, per MeshAPI's own
 # structured-output docs):
 PYTHONPATH=src python -m pbicompass generate path/to/Project.pbip --provider meshapi -o report.md   # MESHAPI_API_KEY
 ```
+
+> **On the MeshAPI default:** it is `deepseek/deepseek-v4-flash`, chosen by
+> measurement rather than price. The previous default (`inclusionai/ling-2.6-flash`,
+> ~12× cheaper) could not pass this tool's *own* output gate — 2/2 full-bundle runs
+> were blocked on user-guide prose contradicting the audit, so the user got an error
+> and **zero documents**. v4-flash passes 3/3 at 61/61 and is reasoning-capable, so
+> the `--effort` knob actually applies. 12× the cost of a default that produces
+> nothing is not a trade-off worth having; set `MESHAPI_MODEL` if your install
+> weighs cost differently.
 
 Output format is inferred from the `-o` extension (or forced with `--format`):
 
@@ -227,6 +258,60 @@ The offline engine fills every section; `--provider anthropic` upgrades only the
 three prose agents (Executive Summary, DAX translations, model narrative) and
 falls back to the deterministic engine per-agent on any error. The §VII
 orphaned-measure audit is always deterministic (a set difference, never a guess).
+
+### See what changed between two versions
+
+Documentation is a one-shot artifact; a report isn't. `diff` compares two
+`model.json` snapshots and answers the question a reviewer actually has — *what
+changed, and what does it break?*
+
+```bash
+PYTHONPATH=src python -m pbicompass diff old/model.json new/model.json
+PYTHONPATH=src python -m pbicompass diff old/model.json new/model.json --format html -o changed.html
+```
+
+It covers tables/columns, measures (logic **and** format), relationships —
+including *modified* properties, not just add/remove — RLS roles and their filter
+expressions, pages, and every model feature above. Each change carries a
+**severity** and a plain-language **impact** derived from a page/visual usage
+index, so the output reads like a reviewer, not a changelog:
+
+```
+**1 critical, 3 high, 2 info**
+
+**Critical**
+- Measure `Margin` — removed. Impact: Referenced by visuals on 1 page: Overview.
+
+**High**
+- RLS role `Regional` — modified: row filter changed on Geo.
+  Impact: Security-sensitive — re-validate who can see what.
+- Relationship `Sales[Region] -> Geo[Region]` — modified: cross_filter.
+  Impact: can silently alter every number that crosses this join.
+```
+
+### Publish it where your docs live
+
+Documentation nobody can find isn't documentation. Nothing is ever published
+without an explicit command **and** that destination's own credentials
+(`PBICOMPASS_*` env vars are preferred over flags, which leak into shell history).
+`--dry-run` shows exactly what would be sent and sends nothing.
+
+```bash
+PYTHONPATH=src python -m pbicompass publish filesystem  ./bundle --dest ../wiki --git
+PYTHONPATH=src python -m pbicompass publish confluence  ./bundle --dry-run
+PYTHONPATH=src python -m pbicompass publish sharepoint  ./bundle
+PYTHONPATH=src python -m pbicompass publish teams       ./bundle --link https://wiki/docs
+```
+
+| Target | Behaviour | Fidelity |
+|---|---|---|
+| `filesystem` | Copies into a directory; `--git` stages+commits, `--git-push` pushes | **Verbatim** — HTML/DOCX/PDF/diagrams intact |
+| `sharepoint` | Uploads to a Microsoft Graph drive folder | **Verbatim** |
+| `confluence` | A page per document, created **or updated in place** (re-publishing never duplicates) | HTML→storage format: text, tables and code carry over; interactive diagrams don't |
+| `teams` | An Incoming Webhook notification card | Notice only — **document content never enters a chat** |
+
+SharePoint takes an already-issued Graph token rather than embedding an OAuth
+flow, since token acquisition is tenant-specific; see [.env.example](.env.example).
 
 ### Run the web service
 
@@ -309,7 +394,7 @@ pbicompass/
   docs/                   # all documentation
     TOOL_DETAILS.md       # complete start-to-end reference
     IMPLEMENTATION_PLAN.md  DEPLOYMENT.md
-    planning/             # AI_NATIVE_PLAN, PRODUCTION_ROADMAP, ROADMAP_PROGRESS, DOCUMENTATION_QUALITY_PLAN
+    planning/             # PERFECTION_AUDIT — architecture audit + measured progress log
     design/               # wireframe / lineage HTML mockups
   assets/                 # logo and brand images
   examples/               # sample Power BI export (zipped)
@@ -378,6 +463,25 @@ report layout and records a clear warning.
 > the `.pbix` path requires Python ≤ 3.13. The `.pbip` path has no such
 > constraint (stdlib only).
 
+## Quality bar
+
+The tool is measured against its own executable benchmark
+(`agents/benchmark.py`, 5 pillars / 100 points), and every job is gated by
+`agents/output_gate.py` — a defective bundle is refused, not shipped.
+
+| | Measured |
+|---|---|
+| Live benchmark score | **61/61 evaluated checks, zero unresolved** (`deepseek/deepseek-v4-flash`, full 4-document bundle) |
+| Real reports | 4/4 real `.pbip` exports generate and pass the gate |
+| Parsers | verified against real `.pbip`, real `.pbit` TMSL (incl. a 69-table model), and Microsoft's own TMDL serializer |
+| Tests | 1083 passing |
+
+Three guarantees are enforced rather than asserted: the **deterministic engine**
+fills every section with no API key at all; an **LLM failure never fails a job**
+(each agent falls back per-agent, and the offline bundle still ships); and the
+**grounding + consistency passes** correct claims that contradict the model or the
+sibling documents before they reach you.
+
 ## Roadmap (next)
 
 The product runs end-to-end: **parse → agents → render → web service → API-key
@@ -385,6 +489,8 @@ multi-tenancy with freemium quotas**. Remaining for scale/commercial:
 
 - **Payment collection** — Pro and Business remain disabled until checkout,
   webhook verification, subscription state, cancellation, and refunds are implemented.
+- **"Ask about this report"** — grounded interactive Q&A over a finished job
+  (`agents/assist.py` today is intake form-fill, not job Q&A).
 - Swap the in-process worker for **Celery + Redis** (the worker signature is
   already queue-agnostic) for horizontal scale — job metadata already lives in
   Postgres.
@@ -413,7 +519,7 @@ multi-tenancy with freemium quotas**. Remaining for scale/commercial:
 | [SECURITY.md](SECURITY.md) | Data-handling model, zero-leakage guarantees, reporting a vulnerability |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Dev setup, test workflow, ground rules for changes |
 | [.env.example](.env.example) | Every environment variable the app reads, with defaults |
-| [docs/planning/](docs/planning/) | AI-native plan, production roadmap, roadmap progress, documentation-quality plan |
+| [docs/planning/PERFECTION_AUDIT.md](docs/planning/PERFECTION_AUDIT.md) | Full-tree architecture audit, the task plan it produced, and a measured log of what shipped |
 | [docs/design/](docs/design/) | Design artifacts (wireframe/lineage HTML mockups) |
 
 ## License

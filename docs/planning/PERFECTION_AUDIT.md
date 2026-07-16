@@ -308,7 +308,7 @@ Decisions worth keeping:
 
 The audit's own warning ("synthetic fixtures encode our own assumptions") proved
 correct. Validated the Track-B parsers against **4 real Power BI exports** on the
-owner's machine (HR Sample, Corporate Spend, Zomato, RCL demo — parsed locally,
+the maintainer's machine (four real reports, anonymised here as A–D — parsed locally,
 counts only, no content read into any transcript).
 
 **Bug found and fixed — `cultureInfo`.** Real TMDL declares a culture as
@@ -430,15 +430,15 @@ examined. Not done without explicit consent for that different action.
 ### 2026-07-16 — Validation widened to 4 REAL reports: the tool shipped nothing on any of them
 
 With the owner's explicit consent, the real CLI was run over four real `.pbip`
-reports (HR Sample, Zomato, Corporate Spend, RCL demo). **All four were blocked
+reports (anonymised A–D; D is the only one with calculation groups). **All four were blocked
 by the output gate — 0/4 produced documents.** So was `--provider none`.
 
 | Report | live score | unresolved | gate | LLM failures |
 |---|---|---|---|---|
-| HR Sample | 59/61 | C8 | BLOCKED | 0 |
-| Zomato | 48/61 | T2, C5, C8, D6 | BLOCKED | 0 |
-| Corporate Spend | 48/61 | T2, C5, C8, D6 | BLOCKED | 0 |
-| RCL demo | 42/61 | T2, T4, C5, C8, D6 | BLOCKED | 0 |
+| Report A | 59/61 | C8 | BLOCKED | 0 |
+| Report B | 48/61 | T2, C5, C8, D6 | BLOCKED | 0 |
+| Report C | 48/61 | T2, C5, C8, D6 | BLOCKED | 0 |
+| Report D | 42/61 | T2, T4, C5, C8, D6 | BLOCKED | 0 |
 
 **Two root causes, both now fixed — all 4 reports pass offline (4/4, was 0/4):**
 

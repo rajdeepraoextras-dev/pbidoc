@@ -1,4 +1,4 @@
-"""The grounding & verification pass (Phase 3 of ``AI_NATIVE_PLAN.md``): the
+"""The grounding & verification pass: the
 trust layer on top of the critic pass (5.3).
 
 The critic (``agents/critic.py``) only judges *style* — banned words,

@@ -1,5 +1,5 @@
-"""Tests for the grounding & verification pass (Phase 3 of
-``AI_NATIVE_PLAN.md``): ``agents/grounding.py``'s LLM-routed fact-check over
+"""Tests for the grounding & verification pass:
+``agents/grounding.py``'s LLM-routed fact-check over
 a document's own narrative fields, plus end-to-end wiring into the
 technical-document generator."""
 
