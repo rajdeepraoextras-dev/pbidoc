@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import re
 import unittest
 from pathlib import Path
 
@@ -15,6 +16,56 @@ from pbicompass.parsers import detect_and_parse
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "SampleSales" / "SampleSales.pbip"
+
+
+class OfflineFallbackShipsTest(unittest.TestCase):
+    """The deterministic fallback must produce documents. It didn't.
+
+    The user guide reused the Business Analyst's page summary verbatim, so its
+    page prose was byte-identical to the technical document's — which the gate
+    correctly rejects as duplicated narrative, blocking the entire bundle. An
+    offline run (`--provider none`) therefore yielded ZERO documents, breaking
+    the project's core "an LLM failure never fails a job" guarantee.
+
+    1074 tests missed it because they all run against SampleSales, whose
+    normalized page prose is 106-113 chars — under the gate's 120-char duplicate
+    threshold by seven characters. Corporate Spend's is 135-152, so it fires.
+    This test therefore uses Corporate Spend deliberately: a fixture that
+    actually reaches the threshold.
+    """
+
+    CS = Path(__file__).parent / "fixtures" / "CorporateSpend" / "model.json"
+
+    def _docs(self, model):
+        from pbicompass.agents.generators import DOCUMENT_TYPES
+        return {d: g.generate(model, None, owner="BI Team") for d, g in DOCUMENT_TYPES.items()}
+
+    def _model(self):
+        from pbicompass.schemas.model import SemanticModel
+        return SemanticModel.from_json(self.CS.read_text(encoding="utf-8"))
+
+    def test_deterministic_bundle_passes_the_gate(self):
+        model = self._model()
+        validate_bundle(self._docs(model), model)  # raises OutputQualityError on regression
+
+    def test_user_guide_page_prose_differs_from_the_technical_doc(self):
+        docs = self._docs(self._model())
+        tech_summaries = {
+            re.sub(r"\W+", " ", p.summary.casefold()).strip()
+            for p in docs["technical"].executive_summary.pages
+        }
+        for page in docs["user-guide"].pages:
+            normalized = re.sub(r"\W+", " ", page.purpose.casefold()).strip()
+            self.assertNotIn(normalized, tech_summaries,
+                             f"user-guide page '{page.page_title}' reuses the technical summary")
+
+    def test_user_guide_purpose_is_business_facing(self):
+        """The technical summary it used to copy is a visual inventory
+        ("Presents 5 visuals - 2 cards, 1 bar chart"); a business guide must not
+        talk that way."""
+        for page in self._docs(self._model())["user-guide"].pages:
+            self.assertNotIn("presents", page.purpose.casefold())
+            self.assertNotIn("visuals —", page.purpose.casefold())
 
 
 class SelfContradictingAskTest(unittest.TestCase):

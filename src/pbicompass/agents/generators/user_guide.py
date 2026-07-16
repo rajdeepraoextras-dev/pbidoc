@@ -329,6 +329,37 @@ def _faq(
     return entries
 
 
+def _business_page_purpose(metrics: list[str], filters: list[str]) -> str:
+    """The deterministic seed for a page's purpose in the *business* guide.
+
+    Deliberately not the Business Analyst's page summary, which this used to
+    reuse verbatim. That summary is a technical inventory ("Presents 5 visuals —
+    2 cards, 1 bar chart. Key fields: ..."), so reusing it was wrong twice over:
+    it put technical vocabulary in the one document whose rule is to exclude it,
+    and it made the user guide's page prose byte-identical to the technical
+    document's — which the output gate correctly rejects as duplicated
+    narrative, blocking the whole bundle. That is why an offline/deterministic
+    run produced no documents at all on any report whose page prose cleared the
+    gate's 120-character duplicate threshold (the SampleSales fixture's sat at
+    106–113, seven characters short, so the suite never saw it).
+
+    Answers a business reader's question — what do I use this page for — from
+    the same facts, in their language.
+    """
+    def _join(items: list[str]) -> str:
+        items = [i for i in items if i]
+        if len(items) > 1:
+            return ", ".join(items[:-1]) + f" and {items[-1]}"
+        return items[0] if items else ""
+
+    if not metrics:
+        return "This page provides supporting detail for the rest of the report."
+    text = f"Use this page to track {_join(metrics[:3])}"
+    if filters:
+        text += f", broken down by {_join(filters[:2])}"
+    return text + "."
+
+
 def _getting_started(pages: list[PageGuide]) -> list[str]:
     tips = []
     if pages:
@@ -486,7 +517,7 @@ class BusinessGuideGenerator:
 
             pages.append(PageGuide(
                 page_title=name,
-                purpose=page_summary_by_title.get(name, f"This page covers {', '.join(metrics[:3]) or 'supporting detail'}."),
+                purpose=_business_page_purpose(metrics, page_filters),
                 main_kpis=metrics[:5],
                 visual_descriptions=visual_descriptions,
                 filters=page_filters,
