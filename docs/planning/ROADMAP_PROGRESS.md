@@ -6,6 +6,21 @@ Status legend: ✅ Done · 🔶 Partial · ⬜ Not started
 
 ---
 
+## Session Note (Jul 16)
+
+The current tool set now matches the shipped workflow more closely:
+
+- AI-selected runs stay on the chosen provider end-to-end; offline generation
+  is only used when `--provider none` is selected.
+- Gate/repair failures keep the best grounded output available instead of
+  silently dropping the job to offline mode.
+- HTML output now includes editable save mode, the embedded Poppins font is
+  back in the shell, and the visible AI Fill control is gone.
+- PDF output follows the rendered HTML path when the PDF runtime is present;
+  the legacy Pandoc adapter remains as compatibility fallback.
+- The `pbicompass.com` / `www.pbicompass.com` domain mapping is documented in
+  the production runbook.
+
 ## Sprint 1 — Output credibility (Jul 8–14 · Days 1–5)
 
 | Day | Date | Task | Status |

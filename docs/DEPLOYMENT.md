@@ -8,6 +8,10 @@ This is the production deployment guide for the current hosted setup:
 - **Auth:** Supabase Auth plus the PBICompass account/quota tables
 - **Secrets:** Google Secret Manager
 - **Public service URL:** `https://pbicompass-3phuqyy4ba-uc.a.run.app`
+- **Custom domain:** `pbicompass.com` and `www.pbicompass.com` are mapped to the
+  same Cloud Run service through Google-managed domain mapping. DNS propagation
+  and certificate provisioning happen automatically after the records are in
+  place.
 
 Older VM/Caddy/Render/Railway/Fly instructions were removed from this runbook.
 The VM path is not the production target anymore.
@@ -51,6 +55,27 @@ physical deletion is retried if Supabase Storage is temporarily unavailable.
 | Health endpoint | `/app/api/health` |
 | Supabase project ref | `pxruqotkfozeadkenbth` |
 | Supabase Storage bucket | `pbicompass-outputs` |
+
+### Custom Domain DNS
+
+For Domain India, the records currently used for `pbicompass.com` are:
+
+| Type | Host | Value |
+|---|---|---|
+| A | `@` | `216.239.32.21` |
+| A | `@` | `216.239.34.21` |
+| A | `@` | `216.239.36.21` |
+| A | `@` | `216.239.38.21` |
+| AAAA | `@` | `2001:4860:4802:32:0:0:0:15` |
+| AAAA | `@` | `2001:4860:4802:34:0:0:0:15` |
+| AAAA | `@` | `2001:4860:4802:36:0:0:0:15` |
+| AAAA | `@` | `2001:4860:4802:38:0:0:0:15` |
+| CNAME | `www` | `ghs.googlehosted.com` |
+
+Keep the existing `google-site-verification` TXT record in place. After DNS
+propagates, Google finishes the HTTPS certificate automatically. Until the
+certificate is ready, the domain mapping can look closed or pending even though
+the records are correct.
 
 ---
 

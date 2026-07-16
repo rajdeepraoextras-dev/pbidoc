@@ -4,6 +4,8 @@
 
 **Guiding principle:** *Freemium-first.* Every layer is built on open-source or free-tier tooling so you can ship an MVP at ~$0/month and only pay as you scale. Paid services are flagged explicitly with their free-tier limits.
 
+**As-built note (2026-07-16):** the shipped app now uses editable HTML output, embedded Poppins in the HTML shell, and an HTML-first PDF path when the PDF runtime is available. AI-selected jobs stay on the chosen provider end-to-end; offline generation is only used when explicitly selected. The sections below remain the original planning blueprint, so some of their stack labels are historical.
+
 ---
 
 ## 0. Architecture at a Glance
@@ -50,7 +52,7 @@
 | **AI orchestration** | [LangGraph](https://github.com/langchain-ai/langgraph) | MIT, free | Deterministic multi-agent graph, structured (JSON-schema) outputs. |
 | **LLM — dev / free tier** | Ollama (local), Groq free, **Google Gemini Flash free tier** | free | Use cheap/local models for dev + low-tier users. |
 | **LLM — prod** | **BYOK** (user's own OpenAI/Anthropic/Gemini key) or Claude Haiku | usage-based | BYOK keeps your inference cost at $0 and strengthens the zero-retention story. |
-| **Doc generation** | Jinja2 → Markdown → **Pandoc** (PDF/DOCX), `python-docx`, WeasyPrint | free | Canonical structured JSON renders to MD/PDF/Word. |
+| **Doc generation** | Jinja2 → Markdown → HTML-first PDF runtime, `python-docx`, WeasyPrint; legacy Pandoc adapter | free | Canonical structured JSON renders to MD/PDF/Word. |
 | **API** | FastAPI | free | Async, OpenAPI built-in. |
 | **Queue / broker** | Celery + **Upstash Redis** | free tier (10k cmd/day) | Handles large-upload timeouts. |
 | **Frontend** | Next.js + **Vercel** | free (hobby) | Upload UI, polling, download. |
@@ -158,7 +160,7 @@ technical summary. Return JSON: { "model_shape": "<star/snowflake/flat + why>",
 
 ## 4. Document Generation Layer (The Output)
 
-Render the canonical `document.json` through **Jinja2** templates → Markdown → **Pandoc** (PDF/DOCX) or WeasyPrint. Sections in this **exact order**:
+Render the canonical `document.json` through **Jinja2** templates → Markdown → HTML-first PDF runtime or WeasyPrint, with the legacy Pandoc adapter kept for compatibility. Sections in this **exact order**:
 
 ```
 I.   Document Metadata        — report name, ownership, refresh schedule, target audience
@@ -171,9 +173,9 @@ VI.  Security & Governance     — RLS role definitions + workspace access const
 VII. Tech Debt / Audit        — orphaned/unused measures (Auditor)
 ```
 
-- **Output formats:** Markdown (always), PDF + DOCX via Pandoc. Offer all three as downloads.
+- **Output formats:** Markdown (always), PDF + DOCX via the HTML-first PDF runtime path, with Pandoc kept as compatibility fallback. Offer all three as downloads.
 - **Measure Catalog layout:** two-column table — raw DAX (monospace) | plain-English + caveats.
-- **Branding (paid SaaS tier):** swap a Pandoc reference doc / CSS for white-labeled output.
+- **Branding (paid SaaS tier):** swap the shared HTML shell / CSS for white-labeled output.
 
 ---
 
@@ -268,6 +270,6 @@ def process_job(job_id, upload_ref):
 1. Lock the `model.json` / `document.json` schemas (Phase 0) — everything keys off these.
 2. Build the `.pbip` parser first (simplest, safest, modern).
 3. Stand up the Business Analyst + DAX Translator agents against a real sample.
-4. Wire Pandoc rendering for the 7-section template.
+4. Wire HTML-first PDF rendering for the 7-section template.
 
 > Want me to scaffold the repo (FastAPI + Celery + LangGraph) and write the Phase 0 schemas and the `.pbip` parser to start? I can generate the actual code next.

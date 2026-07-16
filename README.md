@@ -96,7 +96,7 @@ client (`claude-opus-4-8`, structured outputs, adaptive thinking).
 
 ## Status — Phases 0–5 complete
 
-The foundation is in place and tested (951 tests passing):
+The foundation is in place and tested (955 tests passing):
 
 - **Canonical schemas** — the `model.json` and `document.json` contracts that
   every parser and AI agent keys off ([src/pbicompass/schemas](src/pbicompass/schemas)).
@@ -112,12 +112,15 @@ The foundation is in place and tested (951 tests passing):
   Audit & Health, Executive, and Business User Guide — one generator per type,
   [src/pbicompass/agents/generators](src/pbicompass/agents/generators)). A
   **deterministic offline engine** produces every document with no API key;
-  pass `--provider anthropic` to use Claude (Opus 4.8, structured outputs) for
-  the prose agents.
+  pass `--provider anthropic` / `gemini` / `cohere` / `meshapi` to keep the job
+  on that provider for the prose agents. AI-selected jobs stay on the AI path
+  end-to-end; offline is only used when you explicitly choose it.
 - **Renderers** — `document.json` → **Markdown, HTML, and DOCX** with no external
-  tools (the styled HTML prints to PDF from any browser; the `.docx` is
-  hand-written OOXML — no `python-docx`/`lxml`), plus **PDF** via an optional
-  Pandoc adapter that degrades gracefully when Pandoc is absent
+  tools (the styled HTML now includes an edit/save mode and prints to PDF from
+  any browser; the `.docx` is hand-written OOXML — no `python-docx`/`lxml`),
+  plus **PDF** from the rendered HTML when WeasyPrint is available. A separate
+  Pandoc adapter still exists for legacy Markdown-to-PDF flows and degrades
+  gracefully when the toolchain is absent
   ([src/pbicompass/render](src/pbicompass/render)).
 - **Short-retention web service** — a FastAPI app: upload a `.pbix` or a zipped
   `.pbip`, it processes inside a per-job sandbox (shredded in a `finally` block)
@@ -212,13 +215,13 @@ Output format is inferred from the `-o` extension (or forced with `--format`):
 ```bash
 PYTHONPATH=src python -m pbicompass generate Project.pbip -o report.html   # styled HTML (print → PDF)
 PYTHONPATH=src python -m pbicompass generate Project.pbip -o report.docx   # Word, no external tools
-PYTHONPATH=src python -m pbicompass generate Project.pbip -o report.pdf    # needs Pandoc + a PDF engine
+PYTHONPATH=src python -m pbicompass generate Project.pbip -o report.pdf    # needs WeasyPrint + native PDF libs
 PYTHONPATH=src python -m pbicompass generate Project.pbip --format md      # Markdown to stdout
 ```
 
 `md`, `json`, `html`, and `docx` need nothing beyond the standard library; `pdf`
-uses Pandoc and prints an actionable message (pointing to the HTML→print path) if
-Pandoc or a PDF engine is missing.
+uses WeasyPrint and prints an actionable message (pointing to the HTML→print
+path) if the PDF runtime is missing.
 
 The offline engine fills every section; `--provider anthropic` upgrades only the
 three prose agents (Executive Summary, DAX translations, model narrative) and
@@ -233,8 +236,8 @@ PYTHONPATH=src python -m pbicompass serve            # http://127.0.0.1:8000
 ```
 
 Open the URL, drop a `.pbix` or a `.zip` of a `.pbip` project, choose the engine,
-and download the docs (HTML / DOCX / Markdown / JSON, plus PDF when Pandoc is
-available). **Zero-retention:** each upload is processed in a per-job sandbox
+and download the docs (HTML / DOCX / Markdown / JSON, plus PDF when the PDF
+runtime is available). **Zero-retention:** each upload is processed in a per-job sandbox
 that is shredded the moment rendering finishes — only the rendered documents
 survive, for a short TTL, and no extracted metadata is ever logged or persisted.
 

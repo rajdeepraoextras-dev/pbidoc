@@ -12,6 +12,14 @@ Standing constraints respected throughout: metadata-only (never row-level
 data), stdlib-only parsers, graceful degradation, free-tier infra, and the
 "Big 4 consultant handover, not ChatGPT" editorial bar.
 
+Current shipped-state note (2026-07-16): the app now keeps AI-selected runs on
+the chosen provider end-to-end, repairs toward the best grounded output when
+gates fail, restores embedded Poppins in the HTML shell, exposes editable HTML
+output, and uses the HTML-first PDF path when the PDF runtime is available. The
+roadmap below remains a useful historical backlog, but the items above should be
+treated as already reflected in the shipped tool unless a later section says
+otherwise.
+
 > **Status (2026-07-05): Step 0, Phase 1, and Phase 2 implemented and
 > test-verified.**
 >
@@ -128,7 +136,7 @@ parsers (pbip / tmdl / tmsl / pbir — stdlib only)      adapters (pbixray, opti
 agents (orchestrator → generators per doc type; LLMClient protocol;
         deterministic fallback; audit_rules = pure rules, no AI)
    ↓ produce Document dataclasses
-render (registry → md/html/docx per doc type; pandoc → pdf with fallback)
+render (registry → md/html/docx per doc type; HTML-first PDF runtime with legacy Pandoc fallback)
    ↓ dispatched by
 service (FastAPI; queue-agnostic process_job; per-job sandbox, shredded
          in finally; in-memory JobStore + TTL; SQLite accounts/quotas)

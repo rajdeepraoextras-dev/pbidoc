@@ -110,7 +110,7 @@ decompressor has no 3.14 wheel yet); the `.pbip` path has no such constraint.
           │
           ▼
    ┌──────────────┐   render/
-   │   RENDER     │   Markdown · HTML · DOCX · (PDF via Pandoc)
+   │   RENDER     │   Markdown · HTML · DOCX · PDF (HTML-first; legacy Pandoc adapter)
    └──────┬───────┘
           ▼
    report.md / .html / .docx / .pdf / .json  (+ a documentation hub for multi-doc)
@@ -176,14 +176,14 @@ stages, and `sandbox.py` shreds the working directory when done.
 | Module | Output |
 |---|---|
 | `markdown.py` | `document.json` → Markdown. |
-| `html.py` | `document.json` → styled, self-contained HTML (prints to PDF from any browser). |
+| `html.py` | `document.json` → styled, self-contained HTML with editable save mode (prints to PDF from rendered HTML). |
 | `docx.py` / `_docx_writer.py` | Word `.docx` via hand-written OOXML — **no** `python-docx`/`lxml`. |
-| `pandoc.py` | Optional Pandoc adapter for PDF; degrades gracefully when Pandoc or a PDF engine is absent. |
+| `pandoc.py` | Optional legacy Pandoc adapter for PDF compatibility; degrades gracefully when Pandoc or a PDF engine is absent. |
 | `registry.py` | `RENDERERS` — maps each document type to its `{md, html, docx}` renderers. |
 | `hub.py` | The documentation-hub index page linking every document in a multi-doc run. |
 | `audit.py`, `executive.py`, `user_guide.py` | Per-document-type renderers. |
 | `_lineage.py`, `_wireframe.py`, `_measure_deps.py`, `_nav_map.py` | Visual artifacts: lineage graph, report wireframe, measure dependencies, navigation map. |
-| `_dax_highlight.py`, `_html_shell.py`, `_shared.py`, `_poppins_font.py` | HTML shell, DAX syntax highlighting, shared helpers, embedded font. |
+| `_dax_highlight.py`, `_html_shell.py`, `_shared.py`, `_poppins_font.py` | HTML shell, DAX syntax highlighting, shared helpers, embedded Poppins font (no CDN dependency). |
 
 ### `service/` — the web service
 
@@ -325,9 +325,9 @@ Chosen by `-o` suffix or forced with `--format`:
 |---|---|---|
 | `md` | stdlib | Markdown to stdout or file. |
 | `json` | stdlib | The structured `document.json`. |
-| `html` | stdlib | Styled, self-contained HTML — print to PDF from any browser. |
+| `html` | stdlib | Styled, self-contained HTML with editable save mode — print to PDF from any browser. |
 | `docx` | stdlib | Word via hand-written OOXML (no `python-docx`/`lxml`). Requires `-o`. |
-| `pdf` | Pandoc + a PDF engine | Prints an actionable message pointing to the HTML→print path if missing. Requires `-o`. |
+| `pdf` | HTML render + PDF runtime | Uses the rendered HTML path first; falls back to the legacy Pandoc adapter when present. Requires `-o`. |
 
 `--bundle` renders every format for the requested type(s) into one zip, and for a
 multi-document run also writes an `index.html` documentation hub linking them.
@@ -336,9 +336,11 @@ multi-document run also writes an `index.html` documentation hub linking them.
 
 ## 9. The AI pipeline
 
-The offline (deterministic) engine fills **every** section with no API key.
-Passing `--provider` upgrades only the prose agents; each falls back to the
-deterministic engine per-agent on any error.
+The offline (deterministic) engine fills **every** section only when
+`--provider none` is chosen. Passing `--provider` keeps the job on that
+selected provider end-to-end; repair and validation loops may ask the same
+provider to re-issue malformed content, but the worker does not silently switch
+the job back to offline mode.
 
 **Providers** (`agents/llm.py`): Anthropic (Claude), Gemini, Cohere, and MeshAPI
 (one key routes to 1000+ models; use `provider/model-name` ids). Keys come from
@@ -355,9 +357,9 @@ retry-without-reasoning fallback covers models/providers that reject the knob.
 **Structured-output validation:** every agent response is checked twice where
 possible: first by the provider's structured-output mode, then by
 PBICompass's dependency-free schema validator before the response can be cached
-or rendered. This second gate also covers cached responses and MeshAPI's
-plain-JSON fallback path; invalid shapes degrade to deterministic output for
-that agent.
+or rendered. If a response fails a gate, the worker tries to repair it on the
+selected provider and keeps the best grounded output available instead of
+switching the whole job to offline mode.
 
 **Passes** (beyond the four base agents — Business Analyst, DAX Translator, Data
 Modeler, deterministic Auditor):
@@ -376,11 +378,13 @@ Modeler, deterministic Auditor):
 - **Critic** (`critic.py`) — a senior-reviewer whole-document pass.
 
 **Guardrails:** the AI may only *improve* prose, never downgrade a deterministic
-description or invent facts. Mechanically-obvious columns must not be labelled
-"Unknown / requires business confirmation." The orphaned-measure audit is always
-a deterministic set difference. Report metadata is treated as untrusted source
-text: table/page/measure names, descriptions, visual titles, and DAX/M
-expressions may be cited as evidence but never followed as instructions.
+description or invent facts. When a gate fails, the worker repairs toward the
+best available grounded output already produced by that provider. Mechanically-
+obvious columns must not be labelled "Unknown / requires business
+confirmation." The orphaned-measure audit is always a deterministic set
+difference. Report metadata is treated as untrusted source text:
+table/page/measure names, descriptions, visual titles, and DAX/M expressions
+may be cited as evidence but never followed as instructions.
 
 **Cache** (`cache.py`): the CLI defaults an on-disk SQLite response cache
 (`PBICOMPASS_LLM_CACHE`); the service uses a sandbox-scoped cache file for the
@@ -424,7 +428,7 @@ extracted metadata is ever logged or persisted.
 | `GET /admin` | Token-gated admin panel (`static/admin.html`). |
 | `POST /jobs` | Multipart upload → starts a job (rate-limited per IP). |
 | `GET /jobs/{id}` | Job status. |
-| `GET /jobs/{id}/download?format=html\|docx\|md\|json\|pdf` | Download a rendered doc. |
+| `GET /jobs/{id}/download?format=html\|docx\|md\|json\|pdf` | Download a rendered doc; `pdf` is available when the PDF runtime is installed. |
 | `GET /me` | Caller's plan + remaining quota. |
 | `GET /app/api/health` | Public health check used by production smoke tests. |
 | `GET /healthz` | Internal/readiness health check. |
