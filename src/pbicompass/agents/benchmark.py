@@ -617,22 +617,6 @@ def _eval_c13(docs, renders, model, ai_context):
     technical = docs.get("technical")
     if technical is None:
         return None, "technical document not present", []
-    # Rationale-signalling stems. These must be true morphological *stems*,
-    # not full words with a trailing ``\w*`` — the two originally spelled
-    # ``compare``/``use`` silently failed to match their most common
-    # inflections ("comparing"/"comparison" don't start with "compare"; "using"
-    # doesn't start with "use"), producing false C13 failures on measure prose
-    # that plainly explained its business purpose (real 2026 finding: the live
-    # "Var Plan %" measure — "…indicator for comparing cost centers … when
-    # selecting … Using Plan as the denominator…"). Every entry here is a stem;
-    # the change is strictly a superset of the old set, so no measure that
-    # previously passed can regress.
-    rationale_re = re.compile(
-        r"\b(?:so|because|us(?:e|ing)|track|compar|assess|interpret|ensure|prevent|"
-        r"estimat|proxy|assumption|limit|exclud|avoid|support|identif|monitor|"
-        r"indicat|decid|decision|highlight|signal|flag|help)\w*\b",
-        re.IGNORECASE,
-    )
     weak = []
     for i, measure in enumerate(technical.measure_catalog.measures):
         plain = (measure.plain_english or "").strip()
@@ -644,12 +628,49 @@ def _eval_c13(docs, renders, model, ai_context):
             f"the {name_words}", f"{name_words} measure", f"the {name_words} measure",
         }
         same_as_mechanics = plain_words == re.sub(r"\W+", " ", logic.casefold()).strip()
-        if not plain or not logic or too_thin or name_echo or same_as_mechanics \
-                or not rationale_re.search(f"{plain} {logic}"):
+        if (not plain or not logic or too_thin or name_echo or same_as_mechanics
+                or not _adds_meaning(plain, measure.name, logic)):
             weak.append(f"technical:measure_catalog.measures[{i}].plain_english")
     if weak:
         return False, "measure definitions lack distinct business meaning or interpretation rationale", weak
     return True, "all measure definitions include meaning and interpretation rationale", []
+
+
+# Words that carry no meaning of their own when deciding whether a measure
+# description says anything the name and the mechanics didn't already.
+_C13_STOPWORDS = frozenset(
+    "a an the this that these those and or but of in on at for to with by as is are was were be "
+    "been being it its from into over under per each any all no not calculates calculated "
+    "calculate computes compute returns return measure value values amount total sum count number "
+    "based which when where than then if else via using".split()
+)
+
+
+def _adds_meaning(plain: str, name: str, logic: str) -> bool:
+    """Does ``plain`` say anything the measure's name and mechanics didn't?
+
+    C13 asks whether a measure description explains business meaning rather than
+    echoing the name. That used to be approximated with a whitelist of
+    "rationale" keywords (so/because/track/compare/...), which is whack-a-mole:
+    every unlisted phrasing reads as a failure. It false-flagged real prose
+    twice — first "…indicator for comparing cost centers…", then, after the word
+    list was widened, "…core metric for budget performance and corrective
+    action" and "…critical trigger for budget review and re-forecasting". Both
+    plainly explain the why; neither contained a listed word. A whitelist cannot
+    enumerate how people write.
+
+    So measure the thing the check actually cares about: information *added*.
+    A description that contributes several content words beyond the measure's
+    own name and its restated mechanics is saying something extra — whatever
+    vocabulary it chose. One that doesn't ("The total spend.") is exactly the
+    echo C13 exists to catch.
+    """
+    def _tokens(text: str) -> set[str]:
+        return {w for w in re.findall(r"[a-z]+", (text or "").casefold())
+                if len(w) > 2 and w not in _C13_STOPWORDS}
+
+    novel = _tokens(plain) - _tokens(name) - _tokens(logic)
+    return len(novel) >= 3
 
 
 def _eval_c8_floor(docs, renders, model, ai_context):

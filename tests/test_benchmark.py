@@ -41,10 +41,38 @@ def _c13_docs(*measures):
 
 
 class C13RationaleStemTest(unittest.TestCase):
-    """C13 flags measures whose plain-English lacks business rationale. A real
-    2026 finding: a genuinely well-explained live measure was false-flagged
-    because the rationale stems ``compare``/``use`` don't match the common
-    inflections "comparing"/"using". The stems are now morphological."""
+    """C13 flags measures whose plain-English lacks business rationale.
+
+    It false-flagged real, well-written prose twice. First a live "Var Plan %"
+    ("…indicator for comparing cost centers…") because the rationale whitelist
+    spelled ``compare``/``use`` and so missed "comparing"/"using". Widening the
+    word list then failed again on "…core metric for budget performance and
+    corrective action" and "…critical trigger for budget review and
+    re-forecasting" — both plainly explain the why, neither uses a listed word.
+
+    A whitelist cannot enumerate how people write, so the check now measures
+    information *added* beyond the measure's name and its restated mechanics.
+    These tests keep both real regressions pinned.
+    """
+
+    def test_the_second_real_false_flag_passes(self):
+        """Verbatim from the final live run's measures[9] and [13]."""
+        from pbicompass.agents.benchmark import _adds_meaning
+        self.assertTrue(_adds_meaning(
+            "Calculates the variance between Actual spend and Plan; core metric for "
+            "budget performance and corrective action.",
+            "Var Plan", "Subtracts [Plan] from [Actual]."))
+        self.assertTrue(_adds_meaning(
+            "Calculates the percent variance of Actual spend against Plan; critical "
+            "trigger for budget review and re-forecasting.",
+            "Var Plan %", "Divides [Var Plan] by [Plan], returning BLANK when [Plan] is blank."))
+
+    def test_an_echo_of_the_name_still_fails(self):
+        from pbicompass.agents.benchmark import _adds_meaning
+        self.assertFalse(_adds_meaning("The total spend.", "Total Spend",
+                                       "Sums the amount column."))
+        self.assertFalse(_adds_meaning("Total sales value.", "Total Sales",
+                                       "Sums Sales[Amount]."))
 
     ai = SimpleNamespace(translations={"x": {}})  # C13 only applies when AI ran
 
