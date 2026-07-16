@@ -360,6 +360,14 @@ def create_app(
             "font-src 'self' data: https://fonts.gstatic.com; "
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
             "script-src 'self' 'unsafe-inline'; "
+            # The landing hero's Earth-loop video and its fallback clip are the
+            # only cross-origin media on any page. Without this, <video> falls
+            # back to default-src 'self' and both sources are blocked — the
+            # page's own error handler then quietly degrades to the black
+            # gradient, so the video simply "disappears" with no visible error.
+            # Hosts are pinned exactly (not *.cloudfront.net, which would allow
+            # anyone's distribution); keep in step with SOURCES in index.html.
+            "media-src 'self' https://d8j0ntlcm91z4.cloudfront.net https://videos.pexels.com; "
             "connect-src 'self' https://*.supabase.co wss://*.supabase.co"
         )
         if request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https":

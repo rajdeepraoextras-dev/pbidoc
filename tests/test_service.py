@@ -60,6 +60,31 @@ class ServiceTest(unittest.TestCase):
             time.sleep(0.05)
         self.fail("job did not finish in time")
 
+    def test_csp_allows_every_media_source_the_landing_page_uses(self):
+        """The hero video vanished in production because the CSP hardening added
+        `default-src 'self'` with no `media-src`, so <video> fell back to
+        same-origin and both the CloudFront clip and its Pexels fallback were
+        refused. Nothing looked broken: the page's own error handler degraded to
+        the black gradient, so the video silently "disappeared".
+
+        Derived from index.html rather than hard-coded, so adding a source there
+        without allowing it in the CSP fails here instead of in a browser.
+        """
+        import re
+
+        html = (Path(__file__).parent.parent / "src" / "pbicompass" / "service"
+                / "static" / "index.html").read_text(encoding="utf-8")
+        hosts = {re.match(r"https://[^/]+", s).group(0)
+                 for s in re.findall(r'"(https://[^"]+\.mp4)"', html)}
+        self.assertTrue(hosts, "landing page should reference at least one video source")
+
+        csp = self.client.get("/").headers["Content-Security-Policy"]
+        media = re.search(r"media-src ([^;]+)", csp)
+        self.assertIsNotNone(media, "CSP must set media-src, or <video> falls back to default-src")
+        for host in hosts:
+            self.assertIn(host, media.group(1),
+                          f"{host} is used by the hero video but blocked by the CSP")
+
     def test_healthz_and_index(self):
         health = self.client.get("/healthz")
         self.assertEqual(health.status_code, 200)
