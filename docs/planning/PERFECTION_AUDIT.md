@@ -499,7 +499,25 @@ loudly rather than quietly implying the model has no incremental refresh. Closin
 this needs one artifact: a real `.pbip` whose table has an incremental-refresh
 policy.
 
-**Standing:** 1079 tests; 4/4 real reports ship (was 0/4); live 60/61 with a
-bundle produced; deterministic fallback ships again. C13 remains judge-method by
-design and can still be wrong — that is the nature of a judgment check, not a
-defect.
+**C13 — the last false-failing check, fixed at the root.** I had reported C13 as
+"judge-method by design, so it can be wrong". **That was wrong**: C13 is `auto`,
+so its failures were always findings about our own scorer. It approximated
+"does this explain why" with a whitelist of rationale keywords — whack-a-mole,
+and it false-flagged real prose *twice*: first "…indicator for **comparing** cost
+centers…" (the list spelled `compare`/`use`, missing "comparing"/"using"), then,
+after widening, "…**core metric for budget performance and corrective action**"
+and "…**critical trigger for budget review and re-forecasting**". Both plainly
+explain the why; neither used a listed word. A whitelist cannot enumerate how
+people write. C13 now measures **information added** — content words beyond the
+measure's own name and its restated mechanics — which is the thing it actually
+asks. Echoes ("The total spend.") still fail. Both regressions pinned as tests.
+
+**Standing: live run 61/61, zero unresolved, bundle produced** (was 59/61 with C8
+and C13 both false-failing). 1081 tests. 4/4 real reports ship (was 0/4). The
+deterministic fallback ships again.
+
+**The one genuinely open item** is not code: `refreshPolicy` cannot be verified
+until a real `.pbip` containing an incremental-refresh policy exists to test
+against. Both plausible shapes parse and an unknown third warns loudly, so the
+failure mode is loud rather than silent — but "probably right" is not "verified",
+and it should not be recorded as anything stronger.
