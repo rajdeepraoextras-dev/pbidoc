@@ -154,6 +154,257 @@ class TmdlFenceTest(unittest.TestCase):
         self.assertIn("RANKX", expr)
 
 
+class CalcGroupAndHierarchyTest(unittest.TestCase):
+    """Track B1: calculation-group items and user-defined hierarchies were
+    previously dropped (calc groups only set the host table's ``kind``;
+    hierarchies weren't parsed at all). Both now flow through TMDL and TMSL."""
+
+    def test_tmdl_calculation_group_items(self):
+        from pbicompass.parsers.tmdl import parse_tmdl_text
+        text = (
+            "table 'Time Intelligence'\n"
+            "\tcalculationGroup\n"
+            "\t\tprecedence: 10\n\n"
+            "\t\tcalculationItem Current = SELECTEDMEASURE()\n\n"
+            "\t\tcalculationItem YTD = ```\n"
+            "\t\t\t\tCALCULATE(SELECTEDMEASURE(), DATESYTD('Date'[Date]))\n"
+            "\t\t\t\t```\n"
+            "\t\t\tformatStringDefinition = \"#,##0\"\n"
+            "\t\t\tordinal: 1\n"
+        )
+        agg = {"tables": [], "relationships": [], "roles": [], "expressions": [], "model_name": None}
+        parse_tmdl_text(text, agg, [])
+        t = agg["tables"][0]
+        self.assertEqual(t.kind, "calculation-group")
+        self.assertEqual(t.calculation_group_precedence, 10)
+        self.assertEqual([ci.name for ci in t.calculation_items], ["Current", "YTD"])
+        ytd = t.calculation_items[1]
+        self.assertIn("DATESYTD", ytd.expression)
+        self.assertNotIn("```", ytd.expression)
+        self.assertEqual(ytd.ordinal, 1)
+        self.assertEqual(ytd.format_string_expression, '"#,##0"')
+
+    def test_tmdl_hierarchy_levels(self):
+        from pbicompass.parsers.tmdl import parse_tmdl_text
+        text = (
+            "table 'Date'\n"
+            "\tcolumn Year\n\t\tdataType: int64\n"
+            "\thierarchy 'Calendar'\n"
+            "\t\tlevel Year\n\t\t\tcolumn: Year\n"
+            "\t\tlevel Quarter\n\t\t\tcolumn: Quarter\n"
+        )
+        agg = {"tables": [], "relationships": [], "roles": [], "expressions": [], "model_name": None}
+        parse_tmdl_text(text, agg, [])
+        h = agg["tables"][0].hierarchies[0]
+        self.assertEqual(h.name, "Calendar")
+        self.assertEqual([(lv.name, lv.column, lv.ordinal) for lv in h.levels],
+                         [("Year", "Year", 0), ("Quarter", "Quarter", 1)])
+
+    def test_tmsl_calc_group_and_hierarchy(self):
+        bim = {"model": {"tables": [
+            {"name": "TI", "calculationGroup": {"precedence": 5, "calculationItems": [
+                {"name": "MTD", "expression": ["TOTALMTD(", "SELECTEDMEASURE())"], "ordinal": 0,
+                 "formatStringDefinition": {"expression": "\"0.0%\""}},
+            ]}},
+            {"name": "Date", "hierarchies": [
+                {"name": "Cal", "levels": [
+                    {"name": "Q", "column": "Quarter", "ordinal": 1},
+                    {"name": "Y", "column": "Year", "ordinal": 0},
+                ]},
+            ]},
+        ]}}
+        agg = parse_semantic_model_tmsl(bim, [])
+        ti = agg["tables"][0]
+        self.assertEqual(ti.kind, "calculation-group")
+        self.assertEqual(ti.calculation_group_precedence, 5)
+        self.assertEqual(ti.calculation_items[0].expression, "TOTALMTD(\nSELECTEDMEASURE())")
+        self.assertEqual(ti.calculation_items[0].format_string_expression, '"0.0%"')
+        # levels arrive out of order in TMSL; ordinal is authoritative
+        self.assertEqual([lv.name for lv in agg["tables"][1].hierarchies[0].levels], ["Y", "Q"])
+
+    def test_counts_include_calc_items_and_hierarchies(self):
+        bim = {"model": {"tables": [
+            {"name": "TI", "calculationGroup": {"calculationItems": [
+                {"name": "A", "expression": "SELECTEDMEASURE()"},
+                {"name": "B", "expression": "SELECTEDMEASURE()"}]}},
+            {"name": "Date", "hierarchies": [{"name": "Cal", "levels": [{"name": "Y", "column": "Year"}]}]},
+        ]}}
+        agg = parse_semantic_model_tmsl(bim, [])
+        model = SemanticModel(report_name="x", tables=agg["tables"])
+        model.compute_counts()
+        self.assertEqual(model.meta.counts["calculation_items"], 2)
+        self.assertEqual(model.meta.counts["hierarchies"], 1)
+
+    def test_round_trip_preserves_calc_items_and_hierarchies(self):
+        from pbicompass.schemas.model import (
+            Table, CalculationItem, Hierarchy, HierarchyLevel,
+        )
+        model = SemanticModel(report_name="x", tables=[
+            Table(name="TI", kind="calculation-group", calculation_group_precedence=3,
+                  calculation_items=[CalculationItem(name="A", expression="SELECTEDMEASURE()",
+                                                     ordinal=0, format_string_expression='"0"')]),
+            Table(name="Date", hierarchies=[Hierarchy(name="Cal", levels=[
+                HierarchyLevel(name="Y", column="Year", ordinal=0)])]),
+        ])
+        reloaded = SemanticModel.from_json(model.to_json())
+        self.assertEqual(reloaded.to_dict(), model.to_dict())
+
+
+class KpiAndRefreshPolicyTest(unittest.TestCase):
+    """Track B3/B4: measure KPIs (target/status/trend) and table incremental-
+    refresh policies now parse through TMDL and TMSL."""
+
+    def test_tmdl_measure_kpi(self):
+        from pbicompass.parsers.tmdl import parse_tmdl_text
+        text = (
+            "table Sales\n"
+            "\tmeasure 'Sales KPI' = [Total]\n"
+            "\t\tkpi\n"
+            "\t\t\ttargetExpression = [Target]\n"
+            "\t\t\tstatusGraphic: \"Traffic Light - Single\"\n"
+            "\t\t\tstatusExpression = ```\n"
+            "\t\t\t\t\tDIVIDE([Total], [Target])\n"
+            "\t\t\t\t\t```\n"
+            "\tmeasure Plain = SUM(Sales[Amt])\n"
+        )
+        agg = {"tables": [], "relationships": [], "roles": [], "expressions": [], "model_name": None}
+        parse_tmdl_text(text, agg, [])
+        measures = {m.name: m for m in agg["tables"][0].measures}
+        self.assertIsNone(measures["Plain"].kpi)
+        kpi = measures["Sales KPI"].kpi
+        self.assertIsNotNone(kpi)
+        self.assertEqual(kpi.target_expression, "[Target]")
+        self.assertEqual(kpi.status_graphic, "Traffic Light - Single")
+        self.assertIn("DIVIDE", kpi.status_expression)
+        self.assertNotIn("```", kpi.status_expression)
+
+    def test_tmdl_refresh_policy(self):
+        from pbicompass.parsers.tmdl import parse_tmdl_text
+        text = (
+            "table Sales\n"
+            "\trefreshPolicy: basic\n"
+            "\t\tmode: import\n"
+            "\t\trollingWindowGranularity: month\n"
+            "\t\trollingWindowPeriods: 3\n"
+            "\t\tincrementalGranularity: day\n"
+            "\t\tincrementalPeriods: 10\n"
+            "\t\tsourceExpression = let Source = 1 in Source\n"
+        )
+        agg = {"tables": [], "relationships": [], "roles": [], "expressions": [], "model_name": None}
+        parse_tmdl_text(text, agg, [])
+        rp = agg["tables"][0].refresh_policy
+        self.assertEqual(rp.policy_type, "basic")
+        self.assertEqual((rp.rolling_window_periods, rp.rolling_window_granularity), (3, "month"))
+        self.assertEqual((rp.incremental_periods, rp.incremental_granularity), (10, "day"))
+        self.assertIn("Source", rp.source_expression)
+
+    def test_tmsl_kpi_and_refresh_policy(self):
+        bim = {"model": {"tables": [{
+            "name": "Sales",
+            "measures": [{"name": "K", "expression": "[Total]", "kpi": {
+                "targetExpression": "[Target]", "statusGraphic": "Shapes",
+                "statusExpression": ["DIVIDE(", "[Total],[Target])"]}}],
+            "refreshPolicy": {"policyType": "basic", "rollingWindowPeriods": 2,
+                              "rollingWindowGranularity": "year", "incrementalPeriods": 5,
+                              "incrementalGranularity": "month"},
+        }]}}
+        agg = parse_semantic_model_tmsl(bim, [])
+        t = agg["tables"][0]
+        self.assertEqual(t.measures[0].kpi.target_expression, "[Target]")
+        self.assertEqual(t.measures[0].kpi.status_expression, "DIVIDE(\n[Total],[Target])")
+        self.assertEqual(t.refresh_policy.rolling_window_periods, 2)
+        self.assertEqual(t.refresh_policy.incremental_granularity, "month")
+
+    def test_round_trip_preserves_kpi_and_refresh_policy(self):
+        from pbicompass.schemas.model import Table, Measure, MeasureKPI, RefreshPolicy
+        model = SemanticModel(report_name="x", tables=[
+            Table(name="Sales",
+                  measures=[Measure(name="K", expression="[T]",
+                                    kpi=MeasureKPI(target_expression="[Tgt]", status_graphic="TL"))],
+                  refresh_policy=RefreshPolicy(policy_type="basic", rolling_window_periods=3,
+                                               rolling_window_granularity="month")),
+        ])
+        self.assertEqual(SemanticModel.from_json(model.to_json()).to_dict(), model.to_dict())
+
+
+class FieldParamPerspectiveCultureTest(unittest.TestCase):
+    """Track B5/B6: field parameters (first-class), perspectives, translation
+    cultures, and measure dynamic format strings."""
+
+    def test_tmdl_perspective_culture_and_dynamic_format(self):
+        from pbicompass.parsers.tmdl import parse_tmdl_text
+        text = "\n".join([
+            "perspective 'Exec View'",
+            "\tperspectiveTable Sales",
+            "\t\tperspectiveMeasure 'Total Sales'",
+            "\tperspectiveTable Date",
+            "culture fr-FR",
+            "\ttranslations",
+            "\t\ttranslatedCaption: Ventes",
+            "\t\ttranslatedCaption: Date",
+            "table Sales",
+            "\tmeasure 'Total Sales' = SUM(Sales[Amt])",
+            "\t\tformatStringDefinition = ```",
+            "\t\t\t\tIF([Total Sales] > 1000, \"#,0,K\", \"#,0\")",
+            "\t\t\t\t```",
+        ])
+        agg = {"tables": [], "relationships": [], "roles": [], "expressions": [],
+               "perspectives": [], "cultures": [], "model_name": None}
+        parse_tmdl_text(text, agg, [])
+        self.assertEqual(agg["perspectives"][0].tables, ["Sales", "Date"])
+        self.assertEqual(agg["perspectives"][0].measures, ["Total Sales"])
+        self.assertEqual(agg["cultures"][0].name, "fr-FR")
+        self.assertEqual(agg["cultures"][0].translated_object_count, 2)
+        fmt = agg["tables"][0].measures[0].format_string_expression
+        self.assertIn("IF(", fmt)
+        self.assertNotIn("```", fmt)
+
+    def test_tmsl_perspective_culture_and_dynamic_format(self):
+        bim = {"model": {
+            "tables": [{"name": "Sales", "measures": [{"name": "T", "expression": "1",
+                        "formatStringDefinition": {"expression": "\"#,0\""}}]}],
+            "perspectives": [{"name": "P", "tables": [
+                {"name": "Sales", "measures": [{"name": "T"}]}, {"name": "Date"}]}],
+            "cultures": [{"name": "es-ES", "translations": {"model": {"tables": [
+                {"name": "Sales", "translatedCaption": "Ventas",
+                 "columns": [{"name": "Amt", "translatedCaption": "Monto"}]}]}}}],
+        }}
+        agg = parse_semantic_model_tmsl(bim, [])
+        self.assertEqual(agg["tables"][0].measures[0].format_string_expression, '"#,0"')
+        self.assertEqual(agg["perspectives"][0].tables, ["Sales", "Date"])
+        self.assertEqual(agg["cultures"][0].translated_object_count, 2)
+
+    def test_field_parameter_extraction(self):
+        from pbicompass.schemas.model import Table, Column, Partition, Relationship
+        from pbicompass.agents.report_facts import extract_field_parameters
+        fp_dax = ('{("Sales Amount", NAMEOF(\'Sales\'[Amt]), 0), '
+                  '("Quantity", NAMEOF(\'Sales\'[Qty]), 1)}')
+        model = SemanticModel(report_name="R", tables=[
+            Table(name="Sales", columns=[Column(name="Amt")]),
+            Table(name="Date", columns=[Column(name="D")]),
+            Table(name="Field Parameter", is_calculated=True,
+                  partitions=[Partition(name="p", source_kind="calculated", expression=fp_dax)]),
+        ], relationships=[Relationship(from_table="Sales", from_column="D",
+                                       to_table="Date", to_column="D")])
+        fps = extract_field_parameters(model)
+        self.assertEqual(len(fps), 1)
+        self.assertEqual(fps[0].fields, ["Sales[Amt]", "Sales[Qty]"])
+        self.assertEqual(fps[0].display_names, ["Sales Amount", "Quantity"])
+
+    def test_round_trip_preserves_new_features(self):
+        from pbicompass.schemas.model import (
+            Table, Measure, FieldParameter, Perspective, Culture,
+        )
+        model = SemanticModel(report_name="x",
+            tables=[Table(name="Sales", measures=[
+                Measure(name="T", format_string_expression='IF(1,"a","b")')])],
+            field_parameters=[FieldParameter(table="FP", fields=["Sales[Amt]"],
+                                             display_names=["Amount"])],
+            perspectives=[Perspective(name="P", tables=["Sales"], measures=["T"])],
+            cultures=[Culture(name="fr-FR", translated_object_count=3)])
+        self.assertEqual(SemanticModel.from_json(model.to_json()).to_dict(), model.to_dict())
+
+
 class SemanticModelRoundTripTest(unittest.TestCase):
     """``SemanticModel.from_dict``/``from_json`` (Day 7): lets an
     already-parsed ``model.json`` be reloaded directly as a fixture,

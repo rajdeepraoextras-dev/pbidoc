@@ -31,6 +31,23 @@ OPTIONAL_CONTEXT_FIELDS = (
 )
 
 
+def refresh_policy_summary(rp: dict) -> str:
+    """Plain-language one-liner for an extracted incremental-refresh policy
+    (``{table, policy_type, mode, rolling_window_*, incremental_*}``). Shared by
+    all three renderers so the wording is identical everywhere."""
+    parts = []
+    rwp, rwg = rp.get("rolling_window_periods"), rp.get("rolling_window_granularity")
+    if rwp and rwg:
+        parts.append(f"stores the last {rwp} {pluralize(str(rwg), rwp)}")
+    ip, ig = rp.get("incremental_periods"), rp.get("incremental_granularity")
+    if ip and ig:
+        parts.append(f"refreshes the last {ip} {pluralize(str(ig), ip)} incrementally")
+    detail = "; ".join(parts) if parts else "incremental refresh configured"
+    ptype = rp.get("policy_type")
+    prefix = f"{ptype} policy" if ptype else "Incremental refresh"
+    return f"{prefix} — {detail}."
+
+
 def pluralize(word: str, count: int, plural: str | None = None) -> str:
     """Regular-English pluralization for microcopy. Kills the "asset(s)"
     pattern scattered across the audit engine and generators — grammatically

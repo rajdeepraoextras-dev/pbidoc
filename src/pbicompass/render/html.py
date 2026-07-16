@@ -34,6 +34,7 @@ from ._shared import html_table as _table
 from ._shared import html_todo as _todo
 from ._shared import is_local_path as _is_local_path
 from ._shared import non_data_note as _non_data_note
+from ._shared import refresh_policy_summary as _refresh_policy_summary
 from ._shared import section_provenance
 from ._shared import slicer_field_label as _slicer_label
 
@@ -312,6 +313,52 @@ def render_html(
                       _e(f'{ed.get("from_card")}-to-{ed.get("to_card")}'),
                       _e(ed.get("cross_filter")), "Yes" if ed.get("is_active") else "No"]
                      for ed in sm.relationship_edges], "No relationships defined."))
+    if sm.hierarchies:
+        o.append("<h3>Hierarchies</h3>")
+        items = []
+        for h in sm.hierarchies:
+            path = " &rarr; ".join(
+                _e(f'{lvl["name"]} ({lvl["column"]})'
+                   if lvl.get("column") and lvl["name"] != lvl.get("column")
+                   else lvl.get("name", ""))
+                for lvl in h.get("levels", [])
+            )
+            items.append(f"<li><strong>{_e(h.get('table',''))}[{_e(h.get('name',''))}]</strong> "
+                         f"&mdash; {path or '<span class=\"muted\">no levels</span>'}</li>")
+        o.append("<ul>" + "".join(items) + "</ul>")
+    if sm.calculation_groups:
+        o.append("<h3>Calculation groups</h3>")
+        for cg in sm.calculation_groups:
+            prec = cg.get("precedence")
+            prec_s = f' <span class="muted">&middot; precedence {_e(prec)}</span>' if prec is not None else ""
+            o.append(f"<h4>{_e(cg.get('table',''))}{prec_s}</h4>")
+            rows = []
+            for it in cg.get("items", []):
+                fmt = it.get("format_string")
+                expr = str(it.get("expression", "")).strip()
+                rows.append([
+                    _e(it.get("name", "")),
+                    f"<code>{_e(expr)}</code>" if expr else "&mdash;",
+                    f"<code>{_e(fmt)}</code>" if fmt else "&mdash;",
+                ])
+            o.append(_table(["Calculation item", "DAX", "Dynamic format"], rows,
+                            "No calculation items."))
+    if sm.field_parameters:
+        o.append("<h3>Field parameters</h3><ul>")
+        for fp in sm.field_parameters:
+            fields = ", ".join(_e(f) for f in fp.get("fields", [])) or '<span class="muted">none</span>'
+            o.append(f"<li><strong>{_e(fp.get('table',''))}</strong> exposes: {fields}</li>")
+        o.append("</ul>")
+    if sm.perspectives:
+        o.append("<h3>Perspectives</h3><ul>")
+        for pv in sm.perspectives:
+            o.append(f"<li><strong>{_e(pv.get('name',''))}</strong> &mdash; "
+                     f"{len(pv.get('tables', []))} tables, {len(pv.get('measures', []))} measures</li>")
+        o.append("</ul>")
+    if sm.cultures:
+        langs = ", ".join(_e(f"{c.get('name','')} ({c.get('translated_object_count', 0)} translated)")
+                          for c in sm.cultures)
+        o.append(f"<p><strong>Translations / languages:</strong> {langs}</p>")
     o.append("<h3>Data dictionary</h3>")
     row_ids = dedupe_ids([f"column-{anchor_slug(r.get('table', ''))}-{anchor_slug(r.get('column', ''))}"
                           for r in sm.data_dictionary])
@@ -321,6 +368,21 @@ def render_html(
 
     # 7. Measures & Calculations (DAX Dictionary)
     o.append(f'<h2 id="sec7">7. Measures &amp; Calculations (DAX Dictionary){_header_badge(7)}</h2>')
+    if sm.kpis:
+        o.append("<h3>KPI targets</h3>")
+        def _kc(v):
+            v = str(v or "").strip()
+            return f"<code>{_e(v)}</code>" if v else "&mdash;"
+        rows = [[_e(f'{k.get("table","")}[{k.get("measure","")}]'), _kc(k.get("target")),
+                 _kc(k.get("status")), _kc(k.get("trend")), _e(k.get("status_graphic") or "—")]
+                for k in sm.kpis]
+        o.append(_table(["Measure", "Target", "Status", "Trend", "Indicator"], rows))
+    if sm.dynamic_formats:
+        o.append("<h3>Dynamic format strings</h3>")
+        rows = [[_e(f'{d.get("table","")}[{d.get("measure","")}]'),
+                 f'<code>{_e(str(d.get("expression","")).strip())}</code>']
+                for d in sm.dynamic_formats]
+        o.append(_table(["Measure", "Format expression"], rows))
     if doc.measure_catalog.dependency_svg:
         # o.append("<h3>Measure dependency graph</h3>")
         # o.append(doc.measure_catalog.dependency_svg)
@@ -509,6 +571,11 @@ def render_html(
         ]
         o.append(_table(["Field", "Value / Status"], placeholder_rows))
         o.append(_todo("Detail performance considerations and gateway configurations."))
+    if sm.refresh_policies:
+        o.append("<h3>Incremental refresh policies <span class=\"muted\">(extracted)</span></h3>")
+        o.append("<ul>" + "".join(
+            f"<li><strong>{_e(rp.get('table',''))}</strong> &mdash; {_e(_refresh_policy_summary(rp))}</li>"
+            for rp in sm.refresh_policies) + "</ul>")
 
     # 12. Deployment & Environment
     o.append(f'<h2 id="sec12">12. Deployment &amp; Environment{_header_badge(12)}</h2>')

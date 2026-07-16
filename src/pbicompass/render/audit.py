@@ -249,8 +249,8 @@ def render_markdown(doc: AuditDocument) -> str:
 
     out.append(f"\n## {_SECTION_TITLES[6]}\n")
     out.append(_table(["Asset Type", "Count", "Items"], _unused_rows(doc.unused_assets)))
-    out.append("\n_Hierarchies and calculation groups are not yet parsed by PBICompass, so they are "
-               "excluded from this audit._\n")
+    out.append("\n_Hierarchies and calculation groups are documented in the technical document's "
+               "Data Model section; this unused-asset audit covers tables, columns, and measures._\n")
     auto_dt_note = _auto_datetime_note(doc.unused_assets)
     if auto_dt_note:
         out.append(f"\n_{auto_dt_note}_\n")
@@ -426,8 +426,8 @@ def render_html(
     o.append(f'<h2 id="sec7">{_e(_SECTION_TITLES[6])}</h2>')
     o.append(_html_table(["Asset Type", "Count", "Items"],
                          [[_e(row[0]), _e(row[1]), _e(row[2])] for row in _unused_rows(doc.unused_assets)]))
-    o.append('<p class="caveat">Hierarchies and calculation groups are not yet parsed by PBICompass, '
-             'so they are excluded from this audit.</p>')
+    o.append('<p class="caveat">Hierarchies and calculation groups are documented in the technical '
+             'document\'s Data Model section; this unused-asset audit covers tables, columns, and measures.</p>')
     auto_dt_note = _auto_datetime_note(doc.unused_assets)
     if auto_dt_note:
         o.append(f'<p class="caveat">{_e(auto_dt_note)}</p>')
@@ -608,8 +608,8 @@ def render_docx(doc: AuditDocument, out_path) -> Path:
 
     d.heading(1, _SECTION_TITLES[6])
     d.table(["Asset Type", "Count", "Items"], _t(_unused_rows(doc.unused_assets)))
-    d.para([d._run("Hierarchies and calculation groups are not yet parsed by PBICompass, so they are "
-                   "excluded from this audit.", italic=True)])
+    d.para([d._run("Hierarchies and calculation groups are documented in the technical document's Data "
+                   "Model section; this unused-asset audit covers tables, columns, and measures.", italic=True)])
     auto_dt_note = _auto_datetime_note(doc.unused_assets)
     if auto_dt_note:
         d.para([d._run(auto_dt_note, italic=True)])

@@ -159,11 +159,20 @@ def _assemble(agg: dict, pages: list, report_name: str,
         expressions=agg.get("expressions", []),
         pages=pages,
         bookmarks=bookmarks or [],
+        perspectives=agg.get("perspectives", []),
+        cultures=agg.get("cultures", []),
         meta=ModelMeta(source_format=source_format, source_path=source_path,
                        warnings=warnings),
     )
     model.data_sources = _infer_data_sources(model)
     _classify_tables(model)
+    # Field parameters are derived from table DAX (B5a). Local import keeps the
+    # parser layer free of a module-level dependency on the agents package.
+    try:
+        from ..agents.report_facts import extract_field_parameters
+        model.field_parameters = extract_field_parameters(model)
+    except Exception as exc:  # never let enrichment abort a parse
+        warnings.append(f"field-parameter extraction skipped: {exc}")
     model.compute_counts()
     return model
 

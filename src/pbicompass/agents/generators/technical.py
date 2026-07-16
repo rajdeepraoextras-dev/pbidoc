@@ -423,8 +423,54 @@ def _semantic_model(model: SemanticModel, client, warn, col_descs: dict,
         for r in model.relationships
         if r.from_table not in diagram_excluded and r.to_table not in diagram_excluded
     ]
+    hierarchies = [
+        {"table": t.name, "name": h.name,
+         "levels": [{"name": lvl.name, "column": lvl.column} for lvl in h.levels]}
+        for t in model.tables for h in t.hierarchies
+    ]
+    calculation_groups = [
+        {"table": t.name, "precedence": t.calculation_group_precedence,
+         "items": [{"name": ci.name, "expression": ci.expression,
+                    "format_string": ci.format_string_expression} for ci in t.calculation_items]}
+        for t in model.tables if t.kind == "calculation-group" or t.calculation_items
+    ]
+    kpis = [
+        {"table": t.name, "measure": m.name, "target": m.kpi.target_expression,
+         "status": m.kpi.status_expression, "trend": m.kpi.trend_expression,
+         "status_graphic": m.kpi.status_graphic}
+        for t in model.tables for m in t.measures if m.kpi
+    ]
+    dynamic_formats = [
+        {"table": t.name, "measure": m.name, "expression": m.format_string_expression}
+        for t in model.tables for m in t.measures if m.format_string_expression
+    ]
+    refresh_policies = [
+        {"table": t.name, "policy_type": t.refresh_policy.policy_type,
+         "mode": t.refresh_policy.mode,
+         "rolling_window_periods": t.refresh_policy.rolling_window_periods,
+         "rolling_window_granularity": t.refresh_policy.rolling_window_granularity,
+         "incremental_periods": t.refresh_policy.incremental_periods,
+         "incremental_granularity": t.refresh_policy.incremental_granularity}
+        for t in model.tables if t.refresh_policy
+    ]
+    field_parameters = [
+        {"table": fp.table, "fields": fp.fields, "display_names": fp.display_names}
+        for fp in model.field_parameters
+    ]
+    perspectives = [
+        {"name": pv.name, "tables": pv.tables, "measures": pv.measures}
+        for pv in model.perspectives
+    ]
+    cultures = [
+        {"name": cu.name, "translated_object_count": cu.translated_object_count}
+        for cu in model.cultures
+    ]
     return SemanticModelDoc(summary=summary, data_dictionary=data_dictionary, relationships=rels,
-                            risks=risks, tables=tables, relationship_edges=edges)
+                            risks=risks, tables=tables, relationship_edges=edges,
+                            hierarchies=hierarchies, calculation_groups=calculation_groups,
+                            kpis=kpis, refresh_policies=refresh_policies,
+                            dynamic_formats=dynamic_formats, field_parameters=field_parameters,
+                            perspectives=perspectives, cultures=cultures)
 
 
 def _join_caveat(existing: str, note: str) -> str:

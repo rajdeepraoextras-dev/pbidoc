@@ -11,9 +11,13 @@ dependency installed:
 * :func:`build_model_from_frames` — a *pure* transform from those records onto
   the canonical schema. No third-party imports; fully unit-testable.
 
-Note: ``pbixray`` does **not** expose RLS roles or the report layout. Roles are
-flagged as unavailable for ``.pbix`` here; the report layout is read separately
-from the ``.pbix`` ZIP (see ``parsers.pbip``).
+Note: ``pbixray`` does **not** expose RLS roles, the report layout, user-defined
+hierarchies, or calculation-group items. Roles are flagged as unavailable for
+``.pbix`` here; the report layout is read separately from the ``.pbix`` ZIP (see
+``parsers.pbip``); hierarchies and calculation-group items are simply absent on
+the legacy ``.pbix`` path (they come through on the modern ``.pbip``/TMDL and
+TMSL paths) — a graceful-degradation gap, not an error. Prefer a ``.pbip`` export
+for models that lean on calculation groups or hierarchies.
 
 Runtime requirement: ``pbixray`` currently needs Python <= 3.13 (its ``xpress9``
 decompressor has no 3.14 wheel yet). The transform layer runs on any version.

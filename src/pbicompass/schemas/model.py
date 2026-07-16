@@ -42,6 +42,17 @@ class Column:
 
 
 @dataclass
+class MeasureKPI:
+    """A measure's KPI definition — the target/status/trend that turns a bare
+    measure into a goal-tracked indicator. Expressions are DAX, kept verbatim."""
+    target_expression: Optional[str] = None
+    target_format_string: Optional[str] = None
+    status_expression: Optional[str] = None
+    status_graphic: Optional[str] = None
+    trend_expression: Optional[str] = None
+
+
+@dataclass
 class Measure:
     name: str
     expression: str = ""
@@ -51,6 +62,11 @@ class Measure:
     description: Optional[str] = None
     is_hidden: bool = False
     provenance: Optional[str] = None
+    kpi: Optional[MeasureKPI] = None
+    # Dynamic format string (formatStringDefinition) — a DAX expression that
+    # computes the measure's format at query time, distinct from the static
+    # ``format_string``.
+    format_string_expression: Optional[str] = None
 
 
 @dataclass
@@ -63,6 +79,54 @@ class Partition:
 
 
 @dataclass
+class CalculationItem:
+    """One item inside a calculation group (e.g. ``YTD``, ``MTD``, ``PY``).
+
+    Calculation groups are the backbone of enterprise time-intelligence: each
+    item is a DAX expression applied over ``SELECTEDMEASURE()``. Parsed but
+    previously dropped — the parser only tagged the host table's ``kind``.
+    """
+    name: str
+    expression: str = ""
+    ordinal: Optional[int] = None
+    format_string_expression: Optional[str] = None  # formatStringDefinition (dynamic format)
+    description: Optional[str] = None
+    is_hidden: bool = False
+
+
+@dataclass
+class HierarchyLevel:
+    """One level of a user-defined hierarchy, mapped to a column."""
+    name: str
+    column: Optional[str] = None  # the column this level surfaces
+    ordinal: Optional[int] = None
+
+
+@dataclass
+class Hierarchy:
+    """A user-defined drill hierarchy on a table (e.g. Year > Quarter > Month)."""
+    name: str
+    levels: list[HierarchyLevel] = field(default_factory=list)
+    description: Optional[str] = None
+    is_hidden: bool = False
+
+
+@dataclass
+class RefreshPolicy:
+    """An incremental-refresh policy on a table — the actual refresh strategy
+    (rolling window + incremental window), extracted from the model rather than
+    only described in a human-supplied note."""
+    policy_type: Optional[str] = None            # e.g. "basic"
+    mode: Optional[str] = None                   # import | directQuery ...
+    rolling_window_granularity: Optional[str] = None  # day | month | quarter | year
+    rolling_window_periods: Optional[int] = None
+    incremental_granularity: Optional[str] = None
+    incremental_periods: Optional[int] = None
+    source_expression: Optional[str] = None
+    polling_expression: Optional[str] = None
+
+
+@dataclass
 class Table:
     name: str
     is_hidden: bool = False
@@ -72,6 +136,11 @@ class Table:
     columns: list[Column] = field(default_factory=list)
     measures: list[Measure] = field(default_factory=list)
     partitions: list[Partition] = field(default_factory=list)
+    hierarchies: list[Hierarchy] = field(default_factory=list)
+    # Populated only for calculation-group tables (kind == "calculation-group").
+    calculation_items: list[CalculationItem] = field(default_factory=list)
+    calculation_group_precedence: Optional[int] = None
+    refresh_policy: Optional[RefreshPolicy] = None
 
 
 @dataclass
@@ -123,6 +192,34 @@ class DataSource:
     detail: Optional[str] = None   # url / path / other first argument
     # Human-supplied, from the enrichment file (5.1) — never inferred.
     authentication_status: Optional[str] = None
+
+
+@dataclass
+class FieldParameter:
+    """A Power BI field parameter — a disconnected table whose rows let a user
+    swap which field a visual shows. First-class here (rather than only
+    heuristically flagged) so docs can list exactly which fields it exposes."""
+    table: str
+    fields: list[str] = field(default_factory=list)         # "Table[Column]" references
+    display_names: list[str] = field(default_factory=list)  # parallel display labels
+
+
+@dataclass
+class Perspective:
+    """A named subset (view) of the model — the tables/measures a perspective
+    exposes. Common in enterprise models to tailor what a persona sees."""
+    name: str
+    tables: list[str] = field(default_factory=list)
+    measures: list[str] = field(default_factory=list)
+
+
+@dataclass
+class Culture:
+    """A translation culture (language) defined on the model, with a count of
+    translated captions — the useful documentation signal for multi-language
+    models without dumping every translated string."""
+    name: str                       # e.g. "fr-FR"
+    translated_object_count: int = 0
 
 
 @dataclass
@@ -185,6 +282,9 @@ class SemanticModel:
     data_sources: list[DataSource] = field(default_factory=list)
     pages: list[Page] = field(default_factory=list)
     bookmarks: list[Bookmark] = field(default_factory=list)
+    field_parameters: list[FieldParameter] = field(default_factory=list)
+    perspectives: list[Perspective] = field(default_factory=list)
+    cultures: list[Culture] = field(default_factory=list)
     meta: ModelMeta = field(default_factory=ModelMeta)
 
     # -- convenience -----------------------------------------------------
@@ -201,6 +301,11 @@ class SemanticModel:
             "pages": len(self.pages),
             "visuals": sum(len(p.visuals) for p in self.pages),
             "data_sources": len(self.data_sources),
+            "hierarchies": sum(len(t.hierarchies) for t in self.tables),
+            "calculation_items": sum(len(t.calculation_items) for t in self.tables),
+            "field_parameters": len(self.field_parameters),
+            "perspectives": len(self.perspectives),
+            "cultures": len(self.cultures),
         }
 
     def to_dict(self) -> dict[str, Any]:
@@ -229,8 +334,23 @@ class SemanticModel:
                 description=t.get("description"), kind=t.get("kind", "unknown"),
                 is_calculated=t.get("is_calculated", False),
                 columns=[Column(**c) for c in t.get("columns", [])],
-                measures=[Measure(**m) for m in t.get("measures", [])],
+                measures=[
+                    Measure(**{k: v for k, v in m.items() if k != "kpi"},
+                            kpi=MeasureKPI(**m["kpi"]) if m.get("kpi") else None)
+                    for m in t.get("measures", [])
+                ],
                 partitions=[Partition(**p) for p in t.get("partitions", [])],
+                refresh_policy=RefreshPolicy(**t["refresh_policy"]) if t.get("refresh_policy") else None,
+                hierarchies=[
+                    Hierarchy(
+                        name=h["name"], description=h.get("description"),
+                        is_hidden=h.get("is_hidden", False),
+                        levels=[HierarchyLevel(**lvl) for lvl in h.get("levels", [])],
+                    )
+                    for h in t.get("hierarchies", [])
+                ],
+                calculation_items=[CalculationItem(**ci) for ci in t.get("calculation_items", [])],
+                calculation_group_precedence=t.get("calculation_group_precedence"),
             )
             for t in data.get("tables", [])
         ]
@@ -258,12 +378,16 @@ class SemanticModel:
             for p in data.get("pages", [])
         ]
         bookmarks = [Bookmark(**b) for b in data.get("bookmarks", [])]
+        field_parameters = [FieldParameter(**fp) for fp in data.get("field_parameters", [])]
+        perspectives = [Perspective(**pv) for pv in data.get("perspectives", [])]
+        cultures = [Culture(**cu) for cu in data.get("cultures", [])]
         meta = ModelMeta(**data["meta"]) if data.get("meta") else ModelMeta()
         return cls(
             report_name=data["report_name"], model_name=data.get("model_name"),
             tables=tables, relationships=relationships, roles=roles,
             expressions=expressions, data_sources=data_sources, pages=pages,
-            bookmarks=bookmarks, meta=meta,
+            bookmarks=bookmarks, field_parameters=field_parameters,
+            perspectives=perspectives, cultures=cultures, meta=meta,
         )
 
     @classmethod

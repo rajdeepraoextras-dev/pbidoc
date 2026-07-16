@@ -14,10 +14,17 @@ from pathlib import Path
 from typing import Iterator, Optional
 
 from ..schemas.model import (
+    CalculationItem,
     Column,
+    Culture,
+    Hierarchy,
+    HierarchyLevel,
     Measure,
+    MeasureKPI,
     MExpression,
     Partition,
+    Perspective,
+    RefreshPolicy,
     Relationship,
     Role,
     Table,
@@ -60,6 +67,12 @@ PARTITION_PROPS = {
 EXPRESSION_PROPS = {
     "mode", "lineageTag", "queryGroup", "annotation", "changedProperty",
     "description", "sourceLineageTag",
+}
+# Properties that sit alongside a calculationItem's DAX body and must be
+# skipped when reconstructing the expression (see ``capture_expression``).
+CALC_ITEM_PROPS = {
+    "formatStringDefinition", "ordinal", "displayFolder", "description",
+    "isHidden", "lineageTag", "annotation", "changedProperty", "sourceLineageTag",
 }
 
 
@@ -158,9 +171,47 @@ def _parse_column(header: Line, sub: list[Line]) -> Column:
     return col
 
 
+def _extract_expr_prop(sub: list[Line], level: int, name: str) -> Optional[str]:
+    """Extract a ``name = ...`` expression sub-block (inline or multi-line) that
+    sits at ``level`` within ``sub``. Returns the combined expression or None."""
+    for i, ln in enumerate(sub):
+        if ln.indent == level and _first_token(ln.text) == name:
+            _, inline = parse_decl(ln.text, name)
+            stop = next((k for k, x in enumerate(sub[i + 1:]) if x.indent <= level), None)
+            inner = sub[i + 1:] if stop is None else sub[i + 1:i + 1 + stop]
+            return _combine_expr(inline, inner, level, set()) or None
+    return None
+
+
+def _parse_kpi(sub: list[Line], base_indent: int) -> Optional[MeasureKPI]:
+    """Parse a measure's ``kpi`` sub-block (its children sit at base_indent+1)."""
+    level = base_indent + 1
+    props = props_at_level(sub, level)
+    graphic = unquote(props.get("statusGraphic", "")).strip()
+    if len(graphic) >= 2 and graphic.startswith('"') and graphic.endswith('"'):
+        graphic = graphic[1:-1]
+    kpi = MeasureKPI(
+        target_expression=_extract_expr_prop(sub, level, "targetExpression"),
+        target_format_string=props.get("targetFormatString"),
+        status_expression=_extract_expr_prop(sub, level, "statusExpression"),
+        status_graphic=graphic or None,
+        trend_expression=_extract_expr_prop(sub, level, "trendExpression"),
+    )
+    # Ignore an empty kpi block (nothing meaningful captured).
+    if any((kpi.target_expression, kpi.status_expression, kpi.trend_expression,
+            kpi.status_graphic, kpi.target_format_string)):
+        return kpi
+    return None
+
+
 def _parse_measure(header: Line, sub: list[Line]) -> Measure:
     name, inline = parse_decl(header.text, "measure")
     props = props_at_level(sub, header.indent + 1)
+    kpi = None
+    for child, csub in _iter_children(sub, header.indent):
+        if _first_token(child.text).rstrip(":") == "kpi":
+            kpi = _parse_kpi(csub, child.indent)
+            break
     return Measure(
         name=unquote(name),
         expression=_combine_expr(inline, sub, header.indent, MEASURE_PROPS),
@@ -168,6 +219,8 @@ def _parse_measure(header: Line, sub: list[Line]) -> Measure:
         display_folder=props.get("displayFolder"),
         description=props.get("description"),
         is_hidden=to_bool(props.get("isHidden")) or "isHidden" in props,
+        kpi=kpi,
+        format_string_expression=_extract_expr_prop(sub, header.indent + 1, "formatStringDefinition"),
     )
 
 
@@ -192,6 +245,97 @@ def _parse_partition(header: Line, sub: list[Line]) -> Partition:
             part.expression = _combine_expr(inline, inner, src_level, set())
             break
     return part
+
+
+def _parse_calculation_item(header: Line, sub: list[Line]) -> CalculationItem:
+    name, inline = parse_decl(header.text, "calculationItem")
+    props = props_at_level(sub, header.indent + 1)
+    ordinal = None
+    if props.get("ordinal") is not None:
+        try:
+            ordinal = int(props["ordinal"])
+        except ValueError:
+            ordinal = None
+    # The format-string definition is a dynamic DAX expression in its own
+    # `formatStringDefinition = ...` sub-block (or an inline value).
+    fmt = None
+    fmt_level = header.indent + 1
+    for i, ln in enumerate(sub):
+        if ln.indent == fmt_level and _first_token(ln.text) == "formatStringDefinition":
+            _, fmt_inline = parse_decl(ln.text, "formatStringDefinition")
+            stop = next((k for k, x in enumerate(sub[i + 1:]) if x.indent <= fmt_level), None)
+            inner = sub[i + 1:] if stop is None else sub[i + 1:i + 1 + stop]
+            fmt = _combine_expr(fmt_inline, inner, fmt_level, set()) or None
+            break
+    return CalculationItem(
+        name=unquote(name),
+        expression=_combine_expr(inline, sub, header.indent, CALC_ITEM_PROPS),
+        ordinal=ordinal,
+        format_string_expression=fmt,
+        description=props.get("description"),
+        is_hidden=to_bool(props.get("isHidden")) or "isHidden" in props,
+    )
+
+
+def _parse_calculation_group(header: Line, sub: list[Line], table: Table) -> None:
+    """Populate ``table`` with a calculation group's precedence + items."""
+    props = props_at_level(sub, header.indent + 1)
+    if props.get("precedence") is not None:
+        try:
+            table.calculation_group_precedence = int(props["precedence"])
+        except ValueError:
+            pass
+    for child, csub in _iter_children(sub, header.indent):
+        if _first_token(child.text) == "calculationItem":
+            table.calculation_items.append(_parse_calculation_item(child, csub))
+
+
+def _parse_refresh_policy(header: Line, sub: list[Line]) -> RefreshPolicy:
+    # `refreshPolicy: basic` — the policy type is the value after the colon.
+    _, policy_type = split_prop(header.text)
+    props = props_at_level(sub, header.indent + 1)
+
+    def _int(key: str) -> Optional[int]:
+        try:
+            return int(props[key]) if props.get(key) is not None else None
+        except ValueError:
+            return None
+
+    return RefreshPolicy(
+        policy_type=(policy_type or None) if policy_type != "true" else None,
+        mode=props.get("mode"),
+        rolling_window_granularity=props.get("rollingWindowGranularity"),
+        rolling_window_periods=_int("rollingWindowPeriods"),
+        incremental_granularity=props.get("incrementalGranularity"),
+        incremental_periods=_int("incrementalPeriods"),
+        source_expression=_extract_expr_prop(sub, header.indent + 1, "sourceExpression"),
+        polling_expression=_extract_expr_prop(sub, header.indent + 1, "pollingExpression"),
+    )
+
+
+def _parse_hierarchy(header: Line, sub: list[Line]) -> Hierarchy:
+    name, _ = parse_decl(header.text, "hierarchy")
+    props = props_at_level(sub, header.indent + 1)
+    hierarchy = Hierarchy(
+        name=unquote(name),
+        description=props.get("description"),
+        is_hidden=to_bool(props.get("isHidden")) or "isHidden" in props,
+    )
+    ordinal = 0
+    for child, csub in _iter_children(sub, header.indent):
+        if _first_token(child.text) != "level":
+            continue
+        lvl_name, _ = parse_decl(child.text, "level")
+        lvl_props = props_at_level(csub, child.indent + 1)
+        # `column: Name` maps a level to its column (a bare name on this table).
+        col = lvl_props.get("column")
+        hierarchy.levels.append(HierarchyLevel(
+            name=unquote(lvl_name),
+            column=unquote(col) if col else None,
+            ordinal=ordinal,
+        ))
+        ordinal += 1
+    return hierarchy
 
 
 def _parse_table(header: Line, body: list[Line], warnings: list[str]) -> Table:
@@ -219,6 +363,11 @@ def _parse_table(header: Line, body: list[Line], warnings: list[str]) -> Table:
                     table.kind = "calculation"
             elif kw == "calculationGroup":
                 table.kind = "calculation-group"
+                _parse_calculation_group(child, sub, table)
+            elif kw == "hierarchy":
+                table.hierarchies.append(_parse_hierarchy(child, sub))
+            elif kw.rstrip(":") == "refreshPolicy":
+                table.refresh_policy = _parse_refresh_policy(child, sub)
         except Exception as exc:  # defensive: never abort a whole table
             warnings.append(f"table '{table.name}': failed to parse {kw}: {exc}")
     return table
@@ -261,6 +410,28 @@ def _parse_role(header: Line, body: list[Line]) -> Role:
     return role
 
 
+def _parse_perspective(header: Line, body: list[Line]) -> Perspective:
+    name, _ = parse_decl(header.text, "perspective")
+    persp = Perspective(name=unquote(name))
+    for child, csub in _iter_children(body, header.indent):
+        if _first_token(child.text) != "perspectiveTable":
+            continue
+        tname, _ = parse_decl(child.text, "perspectiveTable")
+        persp.tables.append(unquote(tname))
+        for gc, _gsub in _iter_children(csub, child.indent):
+            if _first_token(gc.text) == "perspectiveMeasure":
+                mname, _ = parse_decl(gc.text, "perspectiveMeasure")
+                persp.measures.append(unquote(mname))
+    return persp
+
+
+def _parse_culture(header: Line, body: list[Line]) -> Culture:
+    name, _ = parse_decl(header.text, "culture")
+    # Best-effort: a culture's value is a count of translated captions in it.
+    count = sum(1 for ln in body if _first_token(ln.text).rstrip(":") == "translatedCaption")
+    return Culture(name=unquote(name), translated_object_count=count)
+
+
 def _parse_expression(header: Line, body: list[Line]) -> MExpression:
     name, inline = parse_decl(header.text, "expression")
     # parameters carry `... meta [IsParameterQuery=true, ...]`
@@ -296,6 +467,10 @@ def parse_tmdl_text(text: str, agg: dict, warnings: list[str]) -> None:
                 agg["roles"].append(_parse_role(ln, body))
             elif kw == "expression":
                 agg["expressions"].append(_parse_expression(ln, body))
+            elif kw == "perspective":
+                agg.setdefault("perspectives", []).append(_parse_perspective(ln, body))
+            elif kw == "culture":
+                agg.setdefault("cultures", []).append(_parse_culture(ln, body))
             elif kw in ("database", "model"):
                 rest = ln.text[len(kw):].strip()
                 if rest and not agg.get("model_name"):
@@ -309,7 +484,7 @@ def parse_semantic_model_tmdl(definition_dir: Path, warnings: list[str]) -> dict
     """Parse every ``*.tmdl`` under a SemanticModel ``definition/`` folder."""
     agg: dict = {
         "tables": [], "relationships": [], "roles": [],
-        "expressions": [], "model_name": None,
+        "expressions": [], "perspectives": [], "cultures": [], "model_name": None,
     }
     for path in sorted(definition_dir.rglob("*.tmdl")):
         try:

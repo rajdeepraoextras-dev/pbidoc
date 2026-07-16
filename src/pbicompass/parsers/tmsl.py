@@ -11,10 +11,17 @@ from __future__ import annotations
 from typing import Any
 
 from ..schemas.model import (
+    CalculationItem,
     Column,
+    Culture,
+    Hierarchy,
+    HierarchyLevel,
     Measure,
+    MeasureKPI,
     MExpression,
     Partition,
+    Perspective,
+    RefreshPolicy,
     Relationship,
     Role,
     Table,
@@ -47,7 +54,27 @@ def _parse_column(obj: dict) -> Column:
     )
 
 
+def _parse_kpi(obj: dict) -> MeasureKPI | None:
+    kpi = MeasureKPI(
+        target_expression=_expr(obj.get("targetExpression")) or None,
+        target_format_string=obj.get("targetFormatString"),
+        status_expression=_expr(obj.get("statusExpression")) or None,
+        status_graphic=obj.get("statusGraphic"),
+        trend_expression=_expr(obj.get("trendExpression")) or None,
+    )
+    if any((kpi.target_expression, kpi.status_expression, kpi.trend_expression,
+            kpi.status_graphic, kpi.target_format_string)):
+        return kpi
+    return None
+
+
 def _parse_measure(obj: dict, table: str) -> Measure:
+    kpi_obj = obj.get("kpi")
+    fmt_def = obj.get("formatStringDefinition")
+    if isinstance(fmt_def, dict):
+        fmt_def = _expr(fmt_def.get("expression")) or None
+    elif fmt_def is not None:
+        fmt_def = _expr(fmt_def) or None
     return Measure(
         name=obj.get("name", ""),
         expression=_expr(obj.get("expression")),
@@ -56,6 +83,24 @@ def _parse_measure(obj: dict, table: str) -> Measure:
         display_folder=obj.get("displayFolder"),
         description=_expr(obj.get("description")) or None,
         is_hidden=bool(obj.get("isHidden", False)),
+        kpi=_parse_kpi(kpi_obj) if isinstance(kpi_obj, dict) else None,
+        format_string_expression=fmt_def,
+    )
+
+
+def _parse_refresh_policy(obj: dict) -> RefreshPolicy:
+    def _int(key):
+        v = obj.get(key)
+        return int(v) if isinstance(v, (int, float)) else None
+    return RefreshPolicy(
+        policy_type=obj.get("policyType"),
+        mode=obj.get("mode"),
+        rolling_window_granularity=obj.get("rollingWindowGranularity"),
+        rolling_window_periods=_int("rollingWindowPeriods"),
+        incremental_granularity=obj.get("incrementalGranularity"),
+        incremental_periods=_int("incrementalPeriods"),
+        source_expression=_expr(obj.get("sourceExpression")) or None,
+        polling_expression=_expr(obj.get("pollingExpression")) or None,
     )
 
 
@@ -67,6 +112,39 @@ def _parse_partition(obj: dict) -> Partition:
         mode=obj.get("mode") or source.get("mode"),
         expression=_expr(source.get("expression")) or None,
     )
+
+
+def _parse_calculation_item(obj: dict) -> CalculationItem:
+    fmt = obj.get("formatStringDefinition")
+    if isinstance(fmt, dict):
+        fmt = _expr(fmt.get("expression")) or None
+    elif fmt is not None:
+        fmt = _expr(fmt) or None
+    return CalculationItem(
+        name=obj.get("name", ""),
+        expression=_expr(obj.get("expression")),
+        ordinal=obj.get("ordinal"),
+        format_string_expression=fmt,
+        description=_expr(obj.get("description")) or None,
+        is_hidden=bool(obj.get("isHidden", False)),
+    )
+
+
+def _parse_hierarchy(obj: dict) -> Hierarchy:
+    hierarchy = Hierarchy(
+        name=obj.get("name", ""),
+        description=_expr(obj.get("description")) or None,
+        is_hidden=bool(obj.get("isHidden", False)),
+    )
+    for i, lvl in enumerate(obj.get("levels", [])):
+        hierarchy.levels.append(HierarchyLevel(
+            name=lvl.get("name", ""),
+            column=lvl.get("column"),
+            ordinal=lvl.get("ordinal", i),
+        ))
+    # TMSL levels may arrive out of order; ordinal is authoritative.
+    hierarchy.levels.sort(key=lambda lv: (lv.ordinal if lv.ordinal is not None else 0))
+    return hierarchy
 
 
 def _parse_table(obj: dict, warnings: list[str]) -> Table:
@@ -91,8 +169,28 @@ def _parse_table(obj: dict, warnings: list[str]) -> Table:
         if part.source_kind == "calculated":
             table.is_calculated = True
             table.kind = "calculation"
-    if "calculationGroup" in obj:
+    for h in obj.get("hierarchies", []):
+        try:
+            table.hierarchies.append(_parse_hierarchy(h))
+        except Exception as exc:
+            warnings.append(f"table '{table.name}': hierarchy parse error: {exc}")
+    rp = obj.get("refreshPolicy")
+    if isinstance(rp, dict):
+        try:
+            table.refresh_policy = _parse_refresh_policy(rp)
+        except Exception as exc:
+            warnings.append(f"table '{table.name}': refreshPolicy parse error: {exc}")
+    cg = obj.get("calculationGroup")
+    if cg is not None:
         table.kind = "calculation-group"
+        if isinstance(cg, dict):
+            if isinstance(cg.get("precedence"), int):
+                table.calculation_group_precedence = cg["precedence"]
+            for ci in cg.get("calculationItems", []):
+                try:
+                    table.calculation_items.append(_parse_calculation_item(ci))
+                except Exception as exc:
+                    warnings.append(f"table '{table.name}': calculationItem parse error: {exc}")
     return table
 
 
@@ -131,12 +229,46 @@ def _parse_role(obj: dict) -> Role:
     return role
 
 
+def _parse_perspective(obj: dict) -> Perspective:
+    persp = Perspective(name=obj.get("name", ""))
+    for pt in obj.get("tables", []):
+        persp.tables.append(pt.get("name", ""))
+        for pm in pt.get("measures", []):
+            persp.measures.append(pm.get("name", ""))
+    return persp
+
+
+def _count_translated_captions(node) -> int:
+    """Recursively count ``translatedCaption`` keys in a TMSL culture's
+    translations tree — the useful documentation signal (how many objects
+    carry a translation) without materialising every string."""
+    total = 0
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if k == "translatedCaption" and v:
+                total += 1
+            else:
+                total += _count_translated_captions(v)
+    elif isinstance(node, list):
+        for item in node:
+            total += _count_translated_captions(item)
+    return total
+
+
+def _parse_culture(obj: dict) -> Culture:
+    return Culture(
+        name=obj.get("name", ""),
+        translated_object_count=_count_translated_captions(obj.get("translations")),
+    )
+
+
 def parse_semantic_model_tmsl(bim: dict, warnings: list[str]) -> dict:
     """Parse a TMSL/``model.bim`` document into canonical building blocks."""
     model = bim.get("model", bim)
     agg: dict = {
-        "tables": [], "relationships": [], "roles": [],
-        "expressions": [], "model_name": bim.get("name") or model.get("name"),
+        "tables": [], "relationships": [], "roles": [], "expressions": [],
+        "perspectives": [], "cultures": [],
+        "model_name": bim.get("name") or model.get("name"),
     }
     for t in model.get("tables", []):
         try:
@@ -163,4 +295,14 @@ def parse_semantic_model_tmsl(bim: dict, warnings: list[str]) -> dict:
                 expression=_expr(e.get("expression")) or None,
             )
         )
+    for pv in model.get("perspectives", []):
+        try:
+            agg["perspectives"].append(_parse_perspective(pv))
+        except Exception as exc:
+            warnings.append(f"perspective parse error: {exc}")
+    for cu in model.get("cultures", []):
+        try:
+            agg["cultures"].append(_parse_culture(cu))
+        except Exception as exc:
+            warnings.append(f"culture parse error: {exc}")
     return agg

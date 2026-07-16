@@ -88,6 +88,56 @@ def build_model_digest(model: SemanticModel, audit_summary: dict, char_budget: i
             expr = expr[:MAX_DAX_CHARS] + "..."
         measure_lines.append(f"- {m.name} ({m.table}): {expr}")
 
+    calc_group_lines = []
+    for t in model.tables:
+        if not t.calculation_items:
+            continue
+        prec = f", precedence {t.calculation_group_precedence}" if t.calculation_group_precedence is not None else ""
+        items = []
+        for ci in t.calculation_items:
+            expr = " ".join((ci.expression or "").split())
+            if len(expr) > MAX_DAX_CHARS:
+                expr = expr[:MAX_DAX_CHARS] + "..."
+            items.append(f"{ci.name} = {expr}")
+        calc_group_lines.append(f"- {t.name}{prec}: " + " | ".join(items))
+
+    hierarchy_lines = []
+    for t in model.tables:
+        for h in t.hierarchies:
+            path = " > ".join(lvl.name for lvl in h.levels)
+            hierarchy_lines.append(f"- {t.name}[{h.name}]: {path}")
+
+    kpi_lines = []
+    for m in model.all_measures():
+        if not m.kpi:
+            continue
+        tgt = " ".join((m.kpi.target_expression or "").split())[:MAX_DAX_CHARS]
+        kpi_lines.append(f"- {m.name}: target {tgt or '(set)'}"
+                         + (f", graphic {m.kpi.status_graphic}" if m.kpi.status_graphic else ""))
+
+    refresh_lines = []
+    for t in model.tables:
+        rp = t.refresh_policy
+        if not rp:
+            continue
+        bits = []
+        if rp.rolling_window_periods and rp.rolling_window_granularity:
+            bits.append(f"rolling {rp.rolling_window_periods} {rp.rolling_window_granularity}")
+        if rp.incremental_periods and rp.incremental_granularity:
+            bits.append(f"incremental {rp.incremental_periods} {rp.incremental_granularity}")
+        refresh_lines.append(f"- {t.name}: {', '.join(bits) or 'incremental refresh configured'}")
+
+    field_param_lines = [
+        f"- {fp.table}: {', '.join(fp.fields)}" for fp in model.field_parameters
+    ]
+    perspective_lines = [
+        f"- {pv.name}: {len(pv.tables)} tables, {len(pv.measures)} measures"
+        for pv in model.perspectives
+    ]
+    culture_lines = [
+        f"- {c.name} ({c.translated_object_count} translated captions)" for c in model.cultures
+    ]
+
     relationship_lines = []
     for r in model.relationships:
         flag = "" if r.is_active else " [inactive]"
@@ -117,6 +167,13 @@ def build_model_digest(model: SemanticModel, audit_summary: dict, char_budget: i
     sections: list[tuple[str, list[str]]] = [
         ("Tables", table_lines),
         ("Measures", measure_lines),
+        ("Calculation Groups", calc_group_lines),
+        ("Hierarchies", hierarchy_lines),
+        ("Measure KPIs", kpi_lines),
+        ("Refresh Policies", refresh_lines),
+        ("Field Parameters", field_param_lines),
+        ("Perspectives", perspective_lines),
+        ("Translation Cultures", culture_lines),
         ("Pages", page_lines),
         ("Relationships", relationship_lines),
         ("RLS Roles", rls_lines),

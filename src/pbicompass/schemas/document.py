@@ -101,6 +101,22 @@ class SemanticModelDoc:
     # structured table/edge data for the model diagram
     tables: list[dict[str, Any]] = field(default_factory=list)          # {name, kind, columns, measures}
     relationship_edges: list[dict[str, Any]] = field(default_factory=list)  # {from, to, from_card, to_card, cross_filter, is_active}
+    # user-defined drill hierarchies: {table, name, levels:[{name, column}]}
+    hierarchies: list[dict[str, Any]] = field(default_factory=list)
+    # calculation groups: {table, precedence, items:[{name, expression, format_string}]}
+    calculation_groups: list[dict[str, Any]] = field(default_factory=list)
+    # measure KPIs: {table, measure, target, status, trend, status_graphic}
+    kpis: list[dict[str, Any]] = field(default_factory=list)
+    # measures with a dynamic format string: {table, measure, expression}
+    dynamic_formats: list[dict[str, Any]] = field(default_factory=list)
+    # incremental-refresh policies: {table, policy_type, mode, rolling_*, incremental_*}
+    refresh_policies: list[dict[str, Any]] = field(default_factory=list)
+    # field parameters: {table, fields:[...], display_names:[...]}
+    field_parameters: list[dict[str, Any]] = field(default_factory=list)
+    # perspectives: {name, tables:[...], measures:[...]}
+    perspectives: list[dict[str, Any]] = field(default_factory=list)
+    # translation cultures: {name, translated_object_count}
+    cultures: list[dict[str, Any]] = field(default_factory=list)
     provenance: str = "Extracted"
 
 

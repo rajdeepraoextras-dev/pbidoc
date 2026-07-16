@@ -326,6 +326,145 @@ class PanZoomVendorTest(unittest.TestCase):
         self.assertNotIn("</script>", SVG_PAN_ZOOM_JS)
 
 
+class CalcGroupHierarchyRenderTest(unittest.TestCase):
+    """Track B1: calc-group items and hierarchies must appear in the technical
+    doc across md/html/docx. Model built in-code so no fixture/golden changes."""
+
+    def _doc_with_features(self):
+        from pbicompass.schemas.model import (
+            SemanticModel, Table, Column, Measure,
+            CalculationItem, Hierarchy, HierarchyLevel,
+        )
+        model = SemanticModel(report_name="Sales", tables=[
+            Table(name="Time Intelligence", kind="calculation-group",
+                  calculation_group_precedence=10,
+                  calculation_items=[
+                      CalculationItem(name="Current", expression="SELECTEDMEASURE()", ordinal=0),
+                      CalculationItem(name="YTD",
+                                      expression="CALCULATE(SELECTEDMEASURE(), DATESYTD('Date'[Date]))",
+                                      ordinal=1, format_string_expression='"#,##0"'),
+                  ]),
+            Table(name="Date",
+                  columns=[Column(name="Year", data_type="int64"),
+                           Column(name="Quarter", data_type="string")],
+                  hierarchies=[Hierarchy(name="Calendar", levels=[
+                      HierarchyLevel(name="Year", column="Year"),
+                      HierarchyLevel(name="Quarter", column="Quarter")])]),
+            Table(name="Sales", kind="fact",
+                  measures=[Measure(name="Total", expression="SUM(Sales[Amt])")]),
+        ])
+        return generate_document(model)
+
+    def test_markdown_shows_calc_groups_and_hierarchies(self):
+        md = render_markdown(self._doc_with_features())
+        self.assertIn("Hierarchies", md)
+        self.assertIn("Calculation groups", md)
+        self.assertIn("Date[Calendar]", md)
+        self.assertIn("DATESYTD", md)
+        self.assertIn("precedence 10", md)
+
+    def test_html_shows_calc_groups_and_hierarchies(self):
+        html = render_html(self._doc_with_features())
+        self.assertIn("<h3>Hierarchies</h3>", html)
+        self.assertIn("<h3>Calculation groups</h3>", html)
+        self.assertIn("SELECTEDMEASURE()", html)
+
+    def test_docx_shows_calc_groups_and_hierarchies(self):
+        with tempfile.TemporaryDirectory() as td:
+            out = render_docx(self._doc_with_features(), Path(td) / "r.docx")
+            with zipfile.ZipFile(out) as zf:
+                document = zf.read("word/document.xml").decode("utf-8")
+            self.assertIn("Calculation groups", document)
+            self.assertIn("Hierarchies", document)
+            self.assertIn("DATESYTD", document)
+
+
+class KpiAndRefreshPolicyRenderTest(unittest.TestCase):
+    """Track B3/B4: measure KPIs appear in §7, refresh policies in §11, in all
+    three renderers. Model built in-code so no fixture/golden changes."""
+
+    def _doc(self):
+        from pbicompass.schemas.model import (
+            SemanticModel, Table, Measure, MeasureKPI, RefreshPolicy,
+        )
+        model = SemanticModel(report_name="Sales", tables=[
+            Table(name="Sales", kind="fact",
+                  measures=[Measure(name="Sales KPI", expression="[Total]",
+                                    kpi=MeasureKPI(target_expression="[Target]",
+                                                   status_expression="DIVIDE([Total],[Target])",
+                                                   status_graphic="Traffic Light - Single"))],
+                  refresh_policy=RefreshPolicy(policy_type="basic", rolling_window_periods=3,
+                                               rolling_window_granularity="month",
+                                               incremental_periods=10, incremental_granularity="day")),
+        ])
+        return generate_document(model)
+
+    def test_markdown(self):
+        md = render_markdown(self._doc())
+        self.assertIn("KPI targets", md)
+        self.assertIn("[Target]", md)
+        self.assertIn("Incremental refresh policies", md)
+        self.assertIn("stores the last 3 months", md)
+        self.assertIn("refreshes the last 10 days", md)
+
+    def test_html(self):
+        html = render_html(self._doc())
+        self.assertIn("<h3>KPI targets</h3>", html)
+        self.assertIn("Incremental refresh policies", html)
+
+    def test_docx(self):
+        with tempfile.TemporaryDirectory() as td:
+            out = render_docx(self._doc(), Path(td) / "r.docx")
+            with zipfile.ZipFile(out) as zf:
+                document = zf.read("word/document.xml").decode("utf-8")
+            self.assertIn("KPI targets", document)
+            self.assertIn("Incremental refresh", document)
+
+
+class FieldParamPerspectiveCultureRenderTest(unittest.TestCase):
+    """Track B5/B6: field parameters, perspectives, cultures, and measure
+    dynamic format strings appear in the technical doc across md/html/docx."""
+
+    def _doc(self):
+        from pbicompass.schemas.model import (
+            SemanticModel, Table, Column, Measure, FieldParameter, Perspective, Culture,
+        )
+        model = SemanticModel(report_name="Sales",
+            tables=[Table(name="Sales", kind="fact",
+                          columns=[Column(name="Amt")],
+                          measures=[Measure(name="Total", expression="SUM(Sales[Amt])",
+                                            format_string_expression='IF([Total]>0,"#,0","(#,0)")')])],
+            field_parameters=[FieldParameter(table="Field Selector",
+                                             fields=["Sales[Amt]"], display_names=["Amount"])],
+            perspectives=[Perspective(name="Exec View", tables=["Sales"], measures=["Total"])],
+            cultures=[Culture(name="fr-FR", translated_object_count=4)])
+        return generate_document(model)
+
+    def test_markdown(self):
+        md = render_markdown(self._doc())
+        self.assertIn("Field parameters", md)
+        self.assertIn("Sales[Amt]", md)
+        self.assertIn("Perspectives", md)
+        self.assertIn("Exec View", md)
+        self.assertIn("fr-FR", md)
+        self.assertIn("Dynamic format strings", md)
+
+    def test_html(self):
+        html = render_html(self._doc())
+        self.assertIn("<h3>Field parameters</h3>", html)
+        self.assertIn("<h3>Perspectives</h3>", html)
+        self.assertIn("<h3>Dynamic format strings</h3>", html)
+
+    def test_docx(self):
+        with tempfile.TemporaryDirectory() as td:
+            out = render_docx(self._doc(), Path(td) / "r.docx")
+            with zipfile.ZipFile(out) as zf:
+                document = zf.read("word/document.xml").decode("utf-8")
+            self.assertIn("Field parameters", document)
+            self.assertIn("Perspectives", document)
+            self.assertIn("Dynamic format", document)
+
+
 class DocxRenderTest(unittest.TestCase):
     def test_valid_ooxml_package(self):
         with tempfile.TemporaryDirectory() as td:

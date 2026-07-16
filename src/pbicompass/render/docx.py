@@ -19,6 +19,7 @@ from ._shared import MODEL_DIAGRAM_RENDERED
 from ._shared import format_timestamp as _fmt_ts
 from ._shared import is_local_path as _is_local_path
 from ._shared import non_data_note as _non_data_note
+from ._shared import refresh_policy_summary as _refresh_policy_summary
 from ._shared import section_provenance
 from ._shared import slicer_field_label as _slicer_label
 
@@ -179,6 +180,40 @@ def render_docx(doc: Document, out_path) -> Path:
     d.table(["From", "To", "Cardinality", "Cross-filter", "Active"],
             _t([[ed["from"], ed["to"], f'{ed.get("from_card")}-to-{ed.get("to_card")}', ed.get("cross_filter"),
                  "Yes" if ed.get("is_active") else "No"] for ed in sm.relationship_edges]) or [["—", "—", "—", "—", "—"]])
+    if sm.hierarchies:
+        d.heading(2, "Hierarchies")
+        for h in sm.hierarchies:
+            path = " > ".join(
+                (f'{lvl["name"]} ({lvl["column"]})'
+                 if lvl.get("column") and lvl["name"] != lvl.get("column")
+                 else lvl.get("name", ""))
+                for lvl in h.get("levels", [])
+            )
+            d.bullet(f'{h.get("table","")}[{h.get("name","")}] — {path or "no levels"}')
+    if sm.calculation_groups:
+        d.heading(2, "Calculation groups")
+        for cg in sm.calculation_groups:
+            prec = cg.get("precedence")
+            prec_s = f" (precedence {prec})" if prec is not None else ""
+            d.heading(3, f'{cg.get("table","")}{prec_s}')
+            d.table(["Calculation item", "DAX", "Dynamic format"],
+                    _t([[it.get("name", ""),
+                         str(it.get("expression", "")).replace("\n", " ").strip() or "—",
+                         str(it.get("format_string") or "—")]
+                        for it in cg.get("items", [])]) or [["—", "—", "—"]])
+    if sm.field_parameters:
+        d.heading(2, "Field parameters")
+        for fp in sm.field_parameters:
+            d.bullet(f"{fp.get('table','')} exposes: {', '.join(fp.get('fields', [])) or 'none'}")
+    if sm.perspectives:
+        d.heading(2, "Perspectives")
+        for pv in sm.perspectives:
+            d.bullet(f"{pv.get('name','')} — {len(pv.get('tables', []))} tables, "
+                     f"{len(pv.get('measures', []))} measures")
+    if sm.cultures:
+        langs = ", ".join(f"{c.get('name','')} ({c.get('translated_object_count', 0)} translated)"
+                          for c in sm.cultures)
+        d.para([d._run("Translations / languages: ", bold=True), d._run(langs)])
     d.heading(2, "Data dictionary")
     d.table(["Table", "Column", "Data Type", "Description", "Used by"],
             _t([[r.get("table", ""), r.get("column", ""), r.get("data_type", ""), r.get("description", ""), r.get("used_by", "")]
@@ -186,6 +221,20 @@ def render_docx(doc: Document, out_path) -> Path:
 
     # 7. Measures
     d.heading(1, f"7. Measures & Calculations (DAX Dictionary){_badge(7)}")
+    if sm.kpis:
+        d.heading(2, "KPI targets")
+        d.table(["Measure", "Target", "Status", "Trend", "Indicator"],
+                _t([[f'{k.get("table","")}[{k.get("measure","")}]',
+                     str(k.get("target") or "—").replace("\n", " ").strip() or "—",
+                     str(k.get("status") or "—").replace("\n", " ").strip() or "—",
+                     str(k.get("trend") or "—").replace("\n", " ").strip() or "—",
+                     str(k.get("status_graphic") or "—")] for k in sm.kpis]) or [["—"] * 5])
+    if sm.dynamic_formats:
+        d.heading(2, "Dynamic format strings")
+        d.table(["Measure", "Format expression"],
+                _t([[f'{df.get("table","")}[{df.get("measure","")}]',
+                     str(df.get("expression", "")).replace("\n", " ").strip()]
+                    for df in sm.dynamic_formats]) or [["—", "—"]])
     for m in doc.measure_catalog.measures:
         suffix = f" · {m.category}" if m.category else ""
         d.heading(3, m.name + suffix)
@@ -323,7 +372,11 @@ def render_docx(doc: Document, out_path) -> Path:
         ]
         d.table(["Field", "Value / Status"], _t(placeholder_rows))
         todo("Detail performance considerations and gateway configurations.")
-        
+    if sm.refresh_policies:
+        d.heading(2, "Incremental refresh policies (extracted)")
+        for rp in sm.refresh_policies:
+            d.bullet(f"{rp.get('table','')} — {_refresh_policy_summary(rp)}")
+
     # 12. Deployment
     d.heading(1, f"12. Deployment & Environment{_badge(12)}")
     if md.deployment_notes:

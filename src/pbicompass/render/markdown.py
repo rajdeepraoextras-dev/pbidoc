@@ -19,6 +19,7 @@ from ._shared import is_local_path as _is_local_path
 from ._shared import md_table as _table
 from ._shared import md_todo as _todo
 from ._shared import non_data_note as _non_data_note
+from ._shared import refresh_policy_summary as _refresh_policy_summary
 from ._shared import section_provenance
 from ._shared import slicer_field_label as _slicer_label
 
@@ -158,6 +159,46 @@ def render_markdown(doc: Document) -> str:
                        for ed in sm.relationship_edges], "_No relationships defined._"))
     if MODEL_DIAGRAM_RENDERED:
         out.append("\n_(See the HTML version for the model diagram.)_\n")
+    if sm.hierarchies:
+        out.append("\n**Hierarchies**\n")
+        for h in sm.hierarchies:
+            path = " → ".join(
+                lvl.get("column") and lvl["name"] != lvl.get("column")
+                and f'{lvl["name"]} ({lvl["column"]})' or lvl.get("name", "")
+                for lvl in h.get("levels", [])
+            )
+            out.append(f"- **{h.get('table','')}[{h.get('name','')}]** — {path or '_no levels_'}")
+        out.append("")
+    if sm.calculation_groups:
+        out.append("\n**Calculation groups**\n")
+        for cg in sm.calculation_groups:
+            prec = cg.get("precedence")
+            prec_s = f" · precedence {prec}" if prec is not None else ""
+            out.append(f"\n_{cg.get('table','')}{prec_s}_\n")
+            rows = []
+            for it in cg.get("items", []):
+                fmt = it.get("format_string")
+                expr = str(it.get("expression", "")).replace("\n", " ").strip()
+                rows.append([it.get("name", ""), "`" + expr + "`" if expr else "—",
+                             "`" + str(fmt).replace("\n", " ") + "`" if fmt else "—"])
+            out.append(_table(["Calculation item", "DAX", "Dynamic format"], rows,
+                              "_No calculation items._"))
+    if sm.field_parameters:
+        out.append("\n**Field parameters**\n")
+        for fp in sm.field_parameters:
+            fields = ", ".join(fp.get("fields", [])) or "_none_"
+            out.append(f"- **{fp.get('table','')}** exposes: {fields}")
+        out.append("")
+    if sm.perspectives:
+        out.append("\n**Perspectives**\n")
+        for pv in sm.perspectives:
+            out.append(f"- **{pv.get('name','')}** — {len(pv.get('tables', []))} tables, "
+                       f"{len(pv.get('measures', []))} measures")
+        out.append("")
+    if sm.cultures:
+        langs = ", ".join(f"{c.get('name','')} ({c.get('translated_object_count', 0)} translated)"
+                          for c in sm.cultures)
+        out.append(f"\n**Translations / languages:** {langs}\n")
     out.append("\n**Data dictionary**\n")
     out.append(_table(["Table", "Column", "Data Type", "Description", "Used by"],
                       [[r.get("table", ""), r.get("column", ""), r.get("data_type", ""), r.get("description", ""), r.get("used_by", "")]
@@ -165,6 +206,24 @@ def render_markdown(doc: Document) -> str:
 
     # 7. Measures & Calculations
     out.append(f"\n## 7. Measures & Calculations (DAX Dictionary){_badge(7)}\n")
+    if sm.kpis:
+        out.append("**KPI targets**\n")
+        kpi_rows = []
+        for k in sm.kpis:
+            def _c(v):
+                v = str(v or "").replace("\n", " ").strip()
+                return "`" + v + "`" if v else "—"
+            kpi_rows.append([f'{k.get("table","")}[{k.get("measure","")}]', _c(k.get("target")),
+                             _c(k.get("status")), _c(k.get("trend")), k.get("status_graphic") or "—"])
+        out.append(_table(["Measure", "Target", "Status", "Trend", "Indicator"], kpi_rows))
+        out.append("")
+    if sm.dynamic_formats:
+        out.append("**Dynamic format strings**\n")
+        out.append(_table(["Measure", "Format expression"],
+                          [[f'{d.get("table","")}[{d.get("measure","")}]',
+                            "`" + str(d.get("expression", "")).replace("\n", " ").strip() + "`"]
+                           for d in sm.dynamic_formats]))
+        out.append("")
     for m in doc.measure_catalog.measures:
         cat = f" · _{m.category}_" if m.category else ""
         out.append(f"### {m.name}{cat}\n")
@@ -313,7 +372,12 @@ def render_markdown(doc: Document) -> str:
         ]
         out.append(_table(["Field", "Value / Status"], placeholder_rows))
         out.append(_todo("Detail performance considerations and gateway configurations."))
-        
+    if sm.refresh_policies:
+        out.append("\n**Incremental refresh policies** (extracted)\n")
+        for rp in sm.refresh_policies:
+            out.append(f"- **{rp.get('table','')}** — {_refresh_policy_summary(rp)}")
+        out.append("")
+
     # 12. Deployment
     out.append(f"\n## 12. Deployment & Environment{_badge(12)}\n")
     if md.deployment_notes:

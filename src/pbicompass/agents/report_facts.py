@@ -81,6 +81,36 @@ def field_parameter_table_names(model: SemanticModel) -> set[str]:
     return names
 
 
+# A field-parameter row: ("Display Name", NAMEOF('Table'[Column]), ordinal).
+_NAMEOF_ENTRY_RE = re.compile(
+    r'"([^"]*)"\s*,\s*NAMEOF\s*\(\s*(.+?)\s*\)', re.IGNORECASE | re.DOTALL
+)
+
+
+def extract_field_parameters(model: SemanticModel):
+    """Turn each detected field-parameter table into a first-class
+    :class:`FieldParameter` by pulling its ``("Label", NAMEOF(ref), n)`` rows
+    out of the table's own DAX. Returns ``[]`` when none are found or the DAX
+    isn't available (graceful — the heuristic flag still stands)."""
+    from ..schemas.model import FieldParameter  # local import avoids a cycle
+
+    fp_names = field_parameter_table_names(model)
+    out = []
+    for t in model.tables:
+        if t.name not in fp_names:
+            continue
+        dax = " ".join(
+            (p.expression or "") for p in t.partitions if p.expression
+        ) or " ".join((c.expression or "") for c in t.columns if c.expression)
+        display_names, fields = [], []
+        for label, ref in _NAMEOF_ENTRY_RE.findall(dax or ""):
+            display_names.append(label.strip())
+            fields.append(ref.replace("'", "").strip())
+        if fields:
+            out.append(FieldParameter(table=t.name, fields=fields, display_names=display_names))
+    return out
+
+
 def named_field_parameter_table_names(model: SemanticModel) -> set[str]:
     """The strict subset of :func:`field_parameter_table_names`: a
     disconnected table whose *name itself* is a telltale field-parameter
