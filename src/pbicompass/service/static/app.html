@@ -158,6 +158,9 @@
 .download-btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: 100px; background: hsl(0 0% 100% / .07); color: #fff; font-size: .8rem; font-weight: 500; transition: transform .3s var(--ease), background .2s; animation: fadeUp .4s var(--ease) backwards; }
 .download-btn:hover { transform: scale(1.05); background: hsl(0 0% 100% / .14); }
 .download-btn svg { width: 14px; height: 14px; }
+.download-btn.coming-soon { background: hsl(0 0% 100% / .03); color: hsl(0 0% 100% / .38); cursor: not-allowed; }
+.download-btn.coming-soon:hover { transform: none; background: hsl(0 0% 100% / .03); }
+.download-btn .soon-tag { font-style: normal; font-size: .62rem; font-weight: 500; text-transform: uppercase; letter-spacing: .1em; padding: 2px 7px; border-radius: 100px; background: hsl(0 0% 100% / .07); color: hsl(0 0% 100% / .5); }
 
 #feedback-prompt { margin-top: 22px; padding: 16px 18px; border-radius: 14px; background: hsl(0 0% 100% / .05); border: 1px solid hsl(0 0% 100% / .1); text-align: center; animation: fadeUp .4s var(--ease) backwards; animation-delay: .2s; }
 #feedback-prompt.show { display: block !important; }
@@ -1232,6 +1235,9 @@ function finishProgress(success) {
 }
 
 const FORMATS = { html: "HTML Document", docx: "Word Document", pdf: "PDF Report", md: "Markdown", json: "Raw JSON Schema", zip: "Download All (.zip)" };
+// Only the HTML document is offered for download right now; every other format
+// still generates server-side but is surfaced as "coming soon".
+const DOWNLOADABLE_FORMATS = new Set(["html"]);
 const DOC_TYPE_LABELS = { technical: "Technical Documentation", audit: "Audit & Health Report", executive: "Executive Summary", "user-guide": "Business User Guide", index: "Documentation Hub" };
 const DL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>';
 
@@ -1368,11 +1374,20 @@ function renderDownloads(jobId, formats) {
     const row = document.createElement("div"); row.className = "dl-group-row";
     fmts.forEach(shortFmt => {
       const key = type ? `${type}.${shortFmt}` : shortFmt;
-      const a = document.createElement("a");
-      a.href = "/jobs/" + jobId + "/download?format=" + key;
-      a.className = "download-btn"; a.style.animationDelay = (delay++ * 0.06) + "s";
-      a.innerHTML = DL_ICON + "<span>" + (FORMATS[shortFmt] || shortFmt.toUpperCase()) + "</span>";
-      a.addEventListener("click", ev => { ev.preventDefault(); downloadFile(a.href, key); });
+      const label = FORMATS[shortFmt] || shortFmt.toUpperCase();
+      const enabled = DOWNLOADABLE_FORMATS.has(shortFmt);
+      const a = document.createElement(enabled ? "a" : "span");
+      a.className = "download-btn" + (enabled ? "" : " coming-soon");
+      a.style.animationDelay = (delay++ * 0.06) + "s";
+      if (enabled) {
+        a.href = "/jobs/" + jobId + "/download?format=" + key;
+        a.innerHTML = DL_ICON + "<span>" + label + "</span>";
+        a.addEventListener("click", ev => { ev.preventDefault(); downloadFile(a.href, key); });
+      } else {
+        a.setAttribute("aria-disabled", "true");
+        a.title = label + " downloads are coming soon";
+        a.innerHTML = DL_ICON + "<span>" + label + "</span><em class=\"soon-tag\">Coming soon</em>";
+      }
       row.appendChild(a);
     });
     wrap.appendChild(row); container.appendChild(wrap);
