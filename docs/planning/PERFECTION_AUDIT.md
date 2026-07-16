@@ -341,6 +341,43 @@ measure-level `formatStringDefinition` — **none of the 4 real models contain
 them**, so those three parsers remain synthetic-only and should be treated as
 unproven until a model that uses them is available.
 
+### 2026-07-16 — **TRACK A CLOSED: first clean fully-live scored bundle**
+
+`--provider meshapi --model deepseek/deepseek-v4-flash --effort high --document all`
+over the Corporate Spend fixture, through the real CLI. **rc=0 in 822s, zero API
+errors, zero deterministic fallbacks — every agent and all four documents ran
+live.** Model chosen for cost: v4-flash is reasoning-capable per
+`_meshapi_reasoning_capable` and ~$0.14/$0.28 per Mtok (vs gpt-5's $1.25/$10.00).
+
+**Score: 59/61** (benchmark v3.0, 0 fix cycles) — the one unresolved check, **C8,
+is a verified false negative**: the judge claimed "no refresh schedule documented
+in any bundle document" while technical.md §11 plainly reads *"Refresh schedule:
+Daily 06:00 UTC via on-premises gateway"* (present 2× in technical, 1× in
+executive). So the true structural result on this bundle is effectively **61/61**.
+
+**The trust layer works on live prose — proven, not assumed.** Grounding fired
+across all four documents (corrected contradicted claims, softened unverifiable
+ones), and the cross-artifact consistency pass caught the technical doc calling
+the model a *"star schema"* when the audit said otherwise → auto-corrected to
+*"multi-fact (galaxy) schema"* in three separate places across two documents.
+
+**Real defects found by *reading* the prose (what the score cannot catch):**
+1. **Self-contradicting risk (genuine defect).** The exec doc says *"Since
+   row-level security is not configured, there is no risk of role misalignment…"*
+   then asks *"Review RLS role memberships quarterly"* — reviewing memberships of
+   roles that do not exist. The AI reframed the consequence for a no-RLS model but
+   kept the deterministic ask written for a model *with* roles.
+2. **"based on the same 30% modeled estimate"** appears in two KPI bullets with no
+   antecedent for "the same" — reads as confusing/unmoored.
+3. **Silent, flattering RTM failure (UX trap, not strictly a bug).**
+   `traceability.parse_requirements` documents one-requirement-per-**line**; seven
+   semicolon-separated requirements on one line collapse to a single row and
+   render as *"Requirements coverage: 1/1"* — which looks perfect. Worth splitting
+   on `;` defensively, or warning.
+
+**Scorer reliability caveat:** C8 is a `judge`-method check, and the judge is the
+configured model. On a cheap model the judge **hallucinates failures**. Judge-method
+checks should be read as advisory; deterministic checks are the trustworthy ones.
+
 **Next up:** C1 "Ask about this report" (Phase-5 Q&A, the big net-new surface);
-C4 live cross-provider verification; plus the still-owed Track A clean
-fully-live scored bundle (blocked on MeshAPI credits).
+C4 live cross-provider verification; the three live-prose defects above.
