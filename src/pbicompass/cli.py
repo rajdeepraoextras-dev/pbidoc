@@ -266,6 +266,42 @@ def main(argv: list[str] | None = None) -> int:
                         help="Output format: 'md' (default, reviewer-ready markdown) or 'html' "
                              "(a self-contained styled 'What Changed' page)")
 
+    p_pub = sub.add_parser(
+        "publish",
+        help="Publish generated documentation to where your docs live "
+             "(Confluence, SharePoint, a Git repo/share) or announce it in Teams")
+    p_pub.add_argument("target", choices=["filesystem", "confluence", "sharepoint", "teams"],
+                       help="Destination. Credentials come from PBICOMPASS_* env vars "
+                            "unless passed explicitly.")
+    p_pub.add_argument("path", type=Path,
+                       help="A generated .html/.md document, or a bundle directory")
+    p_pub.add_argument("--prefer", choices=["html", "md"], default="html",
+                       help="Which document kind to publish for page/notification targets "
+                            "(default: html)")
+    p_pub.add_argument("--dry-run", action="store_true",
+                       help="Show exactly what would be published, and send nothing")
+    # filesystem / git
+    p_pub.add_argument("--dest", help="filesystem: destination directory")
+    p_pub.add_argument("--git", action="store_true",
+                       help="filesystem: stage and commit the copy (destination must be a repo)")
+    p_pub.add_argument("--git-push", action="store_true",
+                       help="filesystem: also push the commit (implies --git)")
+    p_pub.add_argument("-m", "--message", help="filesystem: git commit message")
+    # confluence
+    p_pub.add_argument("--url", help="confluence: base URL, e.g. https://site.atlassian.net/wiki")
+    p_pub.add_argument("--email", help="confluence: account email")
+    p_pub.add_argument("--space", help="confluence: space key")
+    p_pub.add_argument("--parent-id", help="confluence: parent page id")
+    # sharepoint
+    p_pub.add_argument("--drive-id", help="sharepoint: Graph drive id")
+    p_pub.add_argument("--folder", help="sharepoint: destination folder (default: PBICompass)")
+    # teams
+    p_pub.add_argument("--webhook", help="teams: Incoming Webhook URL")
+    p_pub.add_argument("--link", help="teams: link to where the docs live")
+    # shared secret (confluence API token / sharepoint Graph token). Prefer the
+    # env var: a token passed as an argument lands in shell history.
+    p_pub.add_argument("--token", help="API token (prefer the PBICOMPASS_* env var)")
+
     p_serve = sub.add_parser("serve", help="Run the web service (upload UI + API)")
     p_serve.add_argument("--host", default="127.0.0.1")
     p_serve.add_argument("--port", type=int, default=8000)
@@ -340,6 +376,49 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Wrote {args.out} ({total} change(s))", file=sys.stderr)
         else:
             print(output)
+        return 0
+
+    if args.command == "publish":
+        from .publish import PublishError, collect_documents, get_publisher
+
+        try:
+            publisher = get_publisher(
+                args.target,
+                dest=args.dest, git=args.git, git_push=args.git_push,
+                commit_message=args.message,
+                url=args.url, email=args.email, token=args.token,
+                space=args.space, parent_id=args.parent_id,
+                drive_id=args.drive_id, folder=args.folder,
+                webhook=args.webhook, link=args.link,
+                prefer=args.prefer,
+            )
+        except PublishError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+
+        if args.dry_run:
+            try:
+                if args.target in ("confluence", "teams"):
+                    items = [d.title for d in collect_documents(args.path, prefer=args.prefer)]
+                else:
+                    p = args.path
+                    items = [p.name] if p.is_file() else sorted(
+                        x.name for x in p.iterdir() if x.is_file())
+            except PublishError as exc:
+                print(f"error: {exc}", file=sys.stderr)
+                return 1
+            print(f"Dry run — would publish {len(items)} item(s) to {args.target}:")
+            for name in items:
+                print(f"  - {name}")
+            print("Nothing was sent.")
+            return 0
+
+        try:
+            result = publisher.publish(args.path)
+        except PublishError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        print(result.summary())
         return 0
 
     if args.command == "generate":

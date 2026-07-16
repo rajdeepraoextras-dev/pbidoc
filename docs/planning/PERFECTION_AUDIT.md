@@ -275,6 +275,35 @@ Turned the thin `pbicompass diff` into a real change-management surface.
 - Tests: new `tests/test_model_diff.py` (coverage + impact + severity + both
   renderers); existing enrichment/CLI diff tests updated for the richer output.
 
+### 2026-07-16 — Track C3 shipped (publish to where docs live)
+
+New stdlib-only `src/pbicompass/publish/` package (no new dependency) plus a
+`pbicompass publish <target> <path>` command. Documentation nobody can find
+isn't documentation; this puts it where the team already works.
+
+| Target | Behaviour | Fidelity |
+|---|---|---|
+| `filesystem` | Copies into a directory; `--git` stages+commits, `--git-push` pushes | **Verbatim** — HTML/DOCX/PDF/diagrams intact |
+| `sharepoint` | Uploads to a Graph drive folder | **Verbatim** |
+| `confluence` | Page per document, created **or updated in place** (idempotent — never duplicates) | HTML→storage format; text/tables/code carry, diagrams don't |
+| `teams` | Incoming-webhook notification card | Notice only — **document content never enters a chat** |
+
+Decisions worth keeping:
+- **Nothing publishes without an explicit command + that destination's own
+  credentials** (env `PBICOMPASS_*` preferred over flags, which leak into shell
+  history). `--dry-run` shows exactly what would be sent and sends nothing.
+- **SharePoint takes an already-issued Graph token** rather than embedding an
+  OAuth flow — token acquisition is tenant-specific and baking one flow in would
+  be wrong for most orgs. An honest boundary, documented in the module.
+- Fidelity differs by destination **by design**, and is stated rather than
+  papered over: Confluence's storage format cannot carry our CSS/JS diagrams.
+- Graph's 4 MB simple-upload limit is **flagged, never silently truncated**.
+- `tests/test_publish.py` (32 tests): every network target runs against a
+  stubbed `http_request` — **no real request leaves the suite**; the filesystem
+  target runs for real, including a real `git init` repo. Teams has an explicit
+  test that document *body text* is never in the payload.
+- New env vars documented in `.env.example`.
+
 **Next up:** C1 "Ask about this report" (Phase-5 Q&A, the big net-new surface);
-C3 publish targets; C4 live cross-provider verification; plus the still-owed
-Track A clean fully-live scored bundle (blocked on MeshAPI credits).
+C4 live cross-provider verification; plus the still-owed Track A clean
+fully-live scored bundle (blocked on MeshAPI credits).

@@ -255,6 +255,53 @@ class EnrichFlagTest(unittest.TestCase):
             self.assertTrue(out.exists())
 
 
+class PublishCommandTest(unittest.TestCase):
+    """C3: the ``publish`` subcommand. Only the filesystem target runs for real;
+    nothing here ever reaches the network."""
+
+    def _src(self, td: Path) -> Path:
+        src = td / "bundle"
+        src.mkdir()
+        (src / "technical.html").write_text("<html><body><h1>T</h1></body></html>",
+                                            encoding="utf-8")
+        (src / "model.json").write_text("{}", encoding="utf-8")
+        return src
+
+    def test_dry_run_sends_nothing_and_lists_items(self):
+        with tempfile.TemporaryDirectory() as td:
+            src = self._src(Path(td))
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                code = cli.main(["publish", "filesystem", str(src),
+                                 "--dest", str(Path(td) / "out"), "--dry-run"])
+            self.assertEqual(code, 0)
+            out = stdout.getvalue()
+            self.assertIn("Dry run", out)
+            self.assertIn("technical.html", out)
+            self.assertIn("Nothing was sent", out)
+            self.assertFalse((Path(td) / "out").exists())  # truly nothing happened
+
+    def test_filesystem_publish_copies_files(self):
+        with tempfile.TemporaryDirectory() as td:
+            src = self._src(Path(td))
+            dest = Path(td) / "out"
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                code = cli.main(["publish", "filesystem", str(src), "--dest", str(dest)])
+            self.assertEqual(code, 0)
+            self.assertTrue((dest / "technical.html").exists())
+            self.assertIn("Published 2 document(s)", stdout.getvalue())
+
+    def test_missing_config_exits_nonzero_with_clear_error(self):
+        with tempfile.TemporaryDirectory() as td:
+            src = self._src(Path(td))
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                code = cli.main(["publish", "confluence", str(src)])
+            self.assertEqual(code, 1)
+            self.assertIn("missing config", stderr.getvalue())
+
+
 class DiffCommandTest(unittest.TestCase):
     def test_diff_reports_changed_measure(self):
         with tempfile.TemporaryDirectory() as td:
