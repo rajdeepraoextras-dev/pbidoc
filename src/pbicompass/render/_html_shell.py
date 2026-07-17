@@ -1206,7 +1206,11 @@ _THEME_INIT_SCRIPT = """
 </script>
 """
 
-_SCRIPT = """
+# Raw: backslash escapes in here belong to the emitted JavaScript, not to
+# Python — a cooked string turns "\n" into a real line break and every JS
+# string literal holding one becomes an unterminated-literal SyntaxError that
+# kills this whole block.
+_SCRIPT = r"""
 <script>
 document.addEventListener('DOMContentLoaded', () => {
   const editable = document.getElementById('document-content');

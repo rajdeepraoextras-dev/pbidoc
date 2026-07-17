@@ -8,6 +8,8 @@ is installed, graceful ``PandocError`` if not.
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
 import tempfile
 import unittest
 import xml.dom.minidom as minidom
@@ -1145,6 +1147,47 @@ class WireframeHrefResolutionTest(unittest.TestCase):
         html = render_html(generate_document(model))
         self.assertIn("×3", html)  # confirms the grouping this test targets actually fired
         self._assert_no_dead_hrefs(html, "technical (duplicate-visual fixture)")
+
+
+class ShellScriptSyntaxTest(unittest.TestCase):
+    """The shell's JS is one inline block: a single syntax error anywhere in it
+    costs the reader *every* interactive feature at once — edit/save, search,
+    TOC scrollspy, theme toggle, diagram pan/zoom — and does it silently, in the
+    browser, where no Python test looks. It shipped broken exactly that way: the
+    ``_SCRIPT`` heredoc wasn't raw, so Python ate the ``\\n`` in a JS string
+    literal and left it unterminated. The golden snapshots pinned the breakage
+    rather than catching it, since a byte-comparison can't tell valid JS from
+    invalid."""
+
+    def _scripts(self):
+        from pbicompass.render._html_shell import _SCRIPT, _THEME_INIT_SCRIPT
+
+        for name, block in (("_SCRIPT", _SCRIPT), ("_THEME_INIT_SCRIPT", _THEME_INIT_SCRIPT)):
+            yield name, block.replace("<script>", "").replace("</script>", "")
+
+    def test_no_js_string_literal_spans_a_line_break(self):
+        """Guards the specific regression with no external dependency."""
+        from pbicompass.render._html_shell import _SCRIPT
+
+        self.assertIn(
+            "'<!doctype html>" + chr(92) + "n'",
+            _SCRIPT,
+            "the newline in the Save HTML doctype literal must reach the browser as a JS "
+            "escape; a real line break here is an unterminated string literal",
+        )
+
+    @unittest.skipUnless(shutil.which("node"), "node not installed")
+    def test_inline_script_parses(self):
+        """Full parse of every shell script block, when a JS engine is around."""
+        for name, js in self._scripts():
+            with self.subTest(script=name), tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / "block.js"
+                path.write_text(js, encoding="utf-8")
+                proc = subprocess.run(
+                    [shutil.which("node"), "--check", str(path)],
+                    capture_output=True, text=True,
+                )
+                self.assertEqual(proc.returncode, 0, f"{name} is not valid JavaScript:\n{proc.stderr}")
 
 
 if __name__ == "__main__":

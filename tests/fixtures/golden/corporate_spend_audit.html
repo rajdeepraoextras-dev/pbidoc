@@ -1481,8 +1481,7 @@ document.addEventListener('DOMContentLoaded', () => {
     saveButton.addEventListener('click', () => {
       const wasEditing = editable && editable.getAttribute('contenteditable') === 'true';
       if (editable) editable.setAttribute('contenteditable', 'false');
-      const source = '<!doctype html>
-' + document.documentElement.outerHTML;
+      const source = '<!doctype html>\n' + document.documentElement.outerHTML;
       if (editable && wasEditing) editable.setAttribute('contenteditable', 'true');
       const blob = new Blob([source], { type: 'text/html;charset=utf-8' });
       const link = document.createElement('a');
