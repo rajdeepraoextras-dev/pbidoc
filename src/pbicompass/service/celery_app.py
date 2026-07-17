@@ -29,7 +29,7 @@ from pathlib import Path
 
 from celery import Celery
 
-from .jobs import JobStore
+from .jobs import DEFAULT_JOB_TIMEOUT_SECONDS, JobStore
 from .output_store import output_store_from_env
 from .sandbox import JobSandbox
 from .worker import process_job
@@ -46,8 +46,11 @@ def _result_backend() -> str:
 def _job_timeout_seconds() -> int:
     # Mirrors app.py's own helper (not imported from there, so a
     # worker-only deployment never needs FastAPI installed just to run
-    # ``celery -A pbicompass.service.celery_app worker``).
-    return int(os.environ.get("PBICOMPASS_JOB_TIMEOUT_SECONDS", "600"))
+    # ``celery -A pbicompass.service.celery_app worker``). The default
+    # itself comes from ``jobs.py`` — which this module already imports —
+    # so the API and the worker cannot drift apart on it.
+    return int(os.environ.get("PBICOMPASS_JOB_TIMEOUT_SECONDS",
+                              str(DEFAULT_JOB_TIMEOUT_SECONDS)))
 
 
 # Module-level so both ``app.py`` (enqueuing) and the ``celery worker`` CLI
@@ -62,6 +65,30 @@ celery_app.conf.update(
     # lives in JobStore, polled by the client); dropping results keeps the
     # backend from accumulating content-free-but-still-unbounded bookkeeping.
     task_ignore_result=True,
+    # Without these, a wedged job (a provider socket that never returns, a
+    # pathological render) occupies a worker slot forever: JobStore's own
+    # watchdog only rewrites the job *row*, it cannot reclaim the process
+    # running it.
+    #
+    # Three escalating layers, deliberately ordered:
+    #   t+0     JobStore.sweep force-fails the row with the actionable
+    #           "Generation timed out..." message, and the worker stops at
+    #           its next ``active()`` checkpoint.
+    #   t+60    soft limit: raises inside the task for a worker that never
+    #           reached a checkpoint (a checkpoint only sits *between*
+    #           stages, and one LLM call can legitimately run for minutes).
+    #           ``process_job``'s ``finally`` still shreds the sandbox, so
+    #           the zero-retention contract holds.
+    #   t+120   hard limit: kill the process if even that hung.
+    #
+    # The soft limit trails the store's deadline rather than matching it so
+    # the user always sees the store's specific message, never the generic
+    # "generation failed" that process_job's catch-all would record for a
+    # SoftTimeLimitExceeded. worker.py stays queue-agnostic (it must never
+    # import celery), so the ordering — not an exception handler — is what
+    # keeps the two consistent.
+    task_soft_time_limit=_job_timeout_seconds() + 60,
+    task_time_limit=_job_timeout_seconds() + 120,
 )
 
 

@@ -1315,9 +1315,16 @@ $("select-all-docs").addEventListener("click", () => {
 // for that to be honest. The bar just creeps against a pacing constant and
 // the label shows a broad duration range instead.
 let progressTimer = null;
+// Pacing numbers are measured, not aspirational. An AI bundle is ~25 LLM
+// calls; wall-clock is dominated by the provider's own decode time (~33s per
+// call on the MeshAPI/deepseek default), and the calls that can overlap
+// already do (agents/parallel.py). Measured critical path: ~8.5 min for a
+// small model, ~10.5 min for a 50-page/250-measure one. The old copy here
+// promised "3–4 minutes, max 7–8" against a real 13.7-minute run — every AI
+// job overran its own progress bar and looked broken while working fine.
 function progressPacing() {
   return EFFORT_CAPABLE_PROVIDERS.includes($("provider").value)
-    ? { seconds: 240, hint: "output takes about 3–4 minutes, max 7–8 minutes" }
+    ? { seconds: 540, hint: "output usually takes 8–10 minutes on a large model" }
     : { seconds: 120, hint: "output takes max 2–3 minutes" };
 }
 function startProgress() {
@@ -1434,7 +1441,15 @@ $("gen-form").addEventListener("submit", async e => {
 
 async function poll(jobId) {
   setStatus("Generating your documents...");
-  const deadline = Date.now() + 15 * 60 * 1000;
+  // Deliberately LONGER than the server's own watchdog
+  // (PBICOMPASS_JOB_TIMEOUT_SECONDS, 900s) so the server always gets to
+  // deliver the verdict. At 15 min the two raced, and whoever won decided
+  // what the user was told: the server's specific, actionable "Generation
+  // timed out — try a smaller file, a lower AI effort level, or the offline
+  // engine" versus this vague client-side shrug. The server's message is
+  // the useful one; this stays a backstop for a lost connection, not a
+  // second opinion on how long generation may take.
+  const deadline = Date.now() + 17 * 60 * 1000;
   for (;;) {
     if (Date.now() > deadline) {
       setStatus("Generation timed out client-side. It may still finish — check the Jobs tab later, or try again.", "err");

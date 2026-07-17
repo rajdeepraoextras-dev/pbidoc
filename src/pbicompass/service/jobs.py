@@ -37,6 +37,26 @@ _TIMEOUT_MESSAGE = (
     "or the offline engine."
 )
 
+# Watchdog ceiling for a job stuck in PROCESSING (``sweep`` force-fails past
+# this). The single source of truth: ``app.py`` and ``celery_app.py`` both
+# read ``PBICOMPASS_JOB_TIMEOUT_SECONDS`` and fall back to this.
+#
+# It must sit *above* the slowest healthy run, or it stops being a watchdog
+# and becomes a guillotine. It was 600s while a real, fully-successful
+# MeshAPI bundle took 822s (2026-07-16, measured) — so every AI bundle was
+# force-failed at 10 minutes and the user was told to "try a smaller file"
+# about a job that was working fine. Nothing was hung; the deadline was
+# simply set below the work.
+#
+# Current measured critical path, after the agent fan-out (~33s/call):
+#   3-page fixture ~508s | 30-page ~531s | 50-page/250-measure ~626s
+# 900s leaves ~44% headroom over the slowest of those for provider variance
+# (a 429 wave, a retry, a slower model) while still catching a genuinely
+# wedged job in a bounded time. Raise it for very large models rather than
+# lowering it to make a slow job "fail faster" — a false timeout costs the
+# user the whole bundle.
+DEFAULT_JOB_TIMEOUT_SECONDS = 900
+
 
 class JobStatus(str, Enum):
     QUEUED = "queued"
@@ -72,7 +92,7 @@ class Job:
 
 class JobStore:
     def __init__(self, db_path: str = ":memory:", ttl_seconds: int = 3600,
-                 processing_timeout_seconds: int = 600,
+                 processing_timeout_seconds: int = DEFAULT_JOB_TIMEOUT_SECONDS,
                  metrics: MetricsRegistry | None = None,
                  output_store: OutputStore | None = None) -> None:
         # Recorded (not just consumed) so a separate process — a Celery

@@ -595,7 +595,7 @@ required to run locally with the offline engine.
 | `PBICOMPASS_RESULT_BACKEND` | = broker URL | Celery result backend. |
 | `PBICOMPASS_SANDBOX_ROOT` | (system temp) | Per-job working dir — point at tmpfs for strict zero-retention. |
 | `PBICOMPASS_MAX_UPLOAD_MB` | `100` | Max upload size. |
-| `PBICOMPASS_JOB_TIMEOUT_SECONDS` | `600` | Watchdog: force-fail a stuck job. |
+| `PBICOMPASS_JOB_TIMEOUT_SECONDS` | `900` | Watchdog: force-fail a stuck job. Must exceed the slowest healthy run (a 50-page AI bundle measures ~10.5 min) — set it too low and working jobs are killed and reported as timeouts. |
 
 **Rate limits**
 

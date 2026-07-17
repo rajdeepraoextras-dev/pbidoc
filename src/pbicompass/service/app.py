@@ -37,7 +37,7 @@ from .accounts import PLAN_AI_LIMITS, PLAN_LIMITS, PLAN_PRICES, AccountStore
 from .admin import AdminGuard, verify_admin_token
 from .supabase_auth import SupabaseAuthConfig
 from .ingest import ingest_to_model
-from .jobs import JobStatus, JobStore
+from .jobs import DEFAULT_JOB_TIMEOUT_SECONDS, JobStatus, JobStore
 from .logging_config import configure_logging, job_id_var, request_id_var
 from .metrics import MetricsRegistry
 from .output_store import output_store_from_env
@@ -67,7 +67,8 @@ def _max_upload_bytes() -> int:
 
 
 def _job_timeout_seconds() -> int:
-    return int(os.environ.get("PBICOMPASS_JOB_TIMEOUT_SECONDS", "600"))
+    return int(os.environ.get("PBICOMPASS_JOB_TIMEOUT_SECONDS",
+                              str(DEFAULT_JOB_TIMEOUT_SECONDS)))
 
 
 def _output_ttl_seconds() -> int:

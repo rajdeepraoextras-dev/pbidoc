@@ -48,7 +48,34 @@ EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
 # job then sits in "processing" forever since nothing else marks it failed.
 # ``call_llm`` (agents/generators/base.py) catches the resulting timeout
 # exception and falls back to the deterministic engine for that agent.
+#
+# 180s is deliberately generous and should not be trimmed to "fail faster":
+# it is a per-attempt ceiling on the slowest *legitimate* call, not a target.
+# Measured mean is ~33s/call, but that is a mean over 25 calls spanning
+# effort tiers — the xhigh whole-bundle passes (Report Intelligence, Senior
+# Reviewer) are far slower than the low-effort Critic. Cutting this to near
+# the mean would time out exactly the calls the output quality leans on, and
+# each false timeout costs a retry *and* degrades that agent to
+# deterministic.
 _DEFAULT_TIMEOUT_SECONDS = 180.0
+
+# Retries belong to ``_call_with_retries`` below and to nothing else.
+#
+# Every provider SDK here ships its own retry loop (anthropic and openai both
+# default to max_retries=2, i.e. 3 attempts). Left at the default, that loop
+# nests *underneath* ours and the two multiply: 3 of ours x 3 of the SDK's =
+# 9 HTTP attempts for one agent call, each bounded only by the 180s timeout
+# above. A single slow-but-healthy provider could therefore burn ~27 minutes
+# inside one ``complete_json`` and still return None to the deterministic
+# fallback — with the job's own watchdog force-failing the whole bundle long
+# before that resolved. Pinning the SDKs to a single attempt makes the retry
+# budget exactly what ``PBICOMPASS_LLM_MAX_RETRIES`` says it is.
+#
+# The trade-off, stated plainly: the SDK loops honour a 429's ``Retry-After``
+# header and ours does not (it uses bounded exponential backoff with jitter).
+# One predictable retry layer is worth more here than a smarter one whose
+# real budget nobody can see.
+_SDK_MAX_RETRIES = 0
 
 
 def _resolve_error_class(module: Any, *dotted_paths: str, default: type = Exception) -> type:
@@ -202,8 +229,10 @@ class AnthropicClient(_UsageTracker):
         self._init_usage()
         self._anthropic = anthropic
         self._client = (
-            anthropic.Anthropic(api_key=api_key, timeout=timeout)
-            if api_key else anthropic.Anthropic(timeout=timeout)
+            anthropic.Anthropic(api_key=api_key, timeout=timeout,
+                                max_retries=_SDK_MAX_RETRIES)
+            if api_key else anthropic.Anthropic(timeout=timeout,
+                                                max_retries=_SDK_MAX_RETRIES)
         )
         self.model = model
         self.effort = effort
@@ -566,7 +595,8 @@ class MeshAPIClient(_UsageTracker):
             ) from exc
         self._init_usage()
         key = api_key or os.environ.get("MESHAPI_API_KEY")
-        self._client = openai.OpenAI(base_url=self._BASE_URL, api_key=key, timeout=timeout)
+        self._client = openai.OpenAI(base_url=self._BASE_URL, api_key=key, timeout=timeout,
+                                     max_retries=_SDK_MAX_RETRIES)
         self._openai = openai
         # Model resolution: explicit arg > MESHAPI_MODEL env (deploy-time
         # override, no code change to switch models) > hard fallback. The env
