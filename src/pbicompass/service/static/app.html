@@ -154,19 +154,40 @@
 #downloads { display: flex; flex-direction: column; margin-top: 6px; }
 .dl-group { margin-top: 16px; }
 .dl-group-title { font-size: .64rem; font-weight: 500; color: hsl(0 0% 100% / .78); text-transform: uppercase; letter-spacing: .2em; margin-bottom: 9px; text-align: center; }
-.dl-group-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
-.download-btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: 100px; background: hsl(0 0% 100% / .07); color: #fff; font-size: .8rem; font-weight: 500; transition: transform .3s var(--ease), background .2s; animation: fadeUp .4s var(--ease) backwards; }
-.download-btn:hover { transform: scale(1.05); background: hsl(0 0% 100% / .14); }
+.dl-group-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px; }
+.download-btn { display: inline-flex; align-items: center; gap: 8px; padding: 11px 20px; border-radius: 100px; background: hsl(0 0% 100% / .12); color: #fff; font-size: .82rem; font-weight: 500; transition: transform .3s var(--ease), background .2s; animation: fadeUp .4s var(--ease) backwards; }
+.download-btn:hover { transform: scale(1.05); background: hsl(0 0% 100% / .2); }
 .download-btn svg { width: 14px; height: 14px; }
-.download-btn.coming-soon { background: hsl(0 0% 100% / .03); color: hsl(0 0% 100% / .38); cursor: not-allowed; }
-.download-btn.coming-soon:hover { transform: none; background: hsl(0 0% 100% / .03); }
-.download-btn .soon-tag { font-style: normal; font-size: .62rem; font-weight: 500; text-transform: uppercase; letter-spacing: .1em; padding: 2px 7px; border-radius: 100px; background: hsl(0 0% 100% / .07); color: hsl(0 0% 100% / .5); }
+
+/* Unavailable formats: one quiet cluster, not one loud pill each.
+   Previously every locked format rendered as a full-size pill carrying its own
+   "COMING SOON" badge — the phrase appeared 9 times over, and each disabled
+   pill was physically wider than the single button that actually works, so the
+   formats you can't have outweighed the one you can. The label is now said
+   once per row and the formats behind it are inert chips: still discoverable
+   as a roadmap, no longer competing with the real download. */
+.dl-soon { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; padding-left: 12px; margin-left: 2px; border-left: 1px solid hsl(0 0% 100% / .12); animation: fadeUp .4s var(--ease) backwards; }
+.dl-soon-label { font-size: .6rem; font-weight: 500; text-transform: uppercase; letter-spacing: .14em; color: hsl(0 0% 100% / .45); white-space: nowrap; }
+.dl-soon-chip { font-size: .72rem; font-weight: 400; color: hsl(0 0% 100% / .5); padding: 4px 10px; border-radius: 100px; border: 1px solid hsl(0 0% 100% / .12); cursor: default; white-space: nowrap; }
+/* The divider separates real downloads from locked ones, so it only earns its
+   keep when there is a download to its left — the .zip row has none. */
+.dl-soon:first-child { padding-left: 0; margin-left: 0; border-left: 0; }
+/* No :hover lift — these are not actionable, and pretending otherwise invites
+   the click that does nothing. Cursor stays default for the same reason. */
+@media (max-width: 560px) {
+  /* The border-left reads as a divider between two columns once the row wraps;
+     drop to a stacked label instead. */
+  .dl-soon { padding-left: 0; border-left: 0; justify-content: center; }
+}
 
 #feedback-prompt { margin-top: 22px; padding: 16px 18px; border-radius: 14px; background: hsl(0 0% 100% / .05); border: 1px solid hsl(0 0% 100% / .1); text-align: center; animation: fadeUp .4s var(--ease) backwards; animation-delay: .2s; }
 #feedback-prompt.show { display: block !important; }
 #feedback-prompt p { margin: 0 0 10px; font-size: .84rem; color: hsl(0 0% 100% / .82); }
-#feedback-prompt .download-btn { background: hsl(0 0% 100% / .1); }
-#feedback-prompt .download-btn:hover { background: hsl(0 0% 100% / .18); }
+/* Lifted a notch above the base button: this one sits on the feedback card's
+   own lighter panel and would otherwise sink into it. Kept relative to the
+   base values above — if those move, these move with them. */
+#feedback-prompt .download-btn { background: hsl(0 0% 100% / .15); }
+#feedback-prompt .download-btn:hover { background: hsl(0 0% 100% / .24); }
 
 .err-text { color: var(--status-err); font-size: .84rem; min-height: 1.1rem; margin-top: 4px; }
 .ok-text { color: var(--status-ok); font-size: .84rem; min-height: 1.1rem; margin-top: 4px; }
@@ -1235,6 +1256,9 @@ function finishProgress(success) {
 }
 
 const FORMATS = { html: "HTML Document", docx: "Word Document", pdf: "PDF Report", md: "Markdown", json: "Raw JSON Schema", zip: "Download All (.zip)" };
+// Short forms for the "Coming soon" chips — full names are kept for the real
+// buttons and for each chip's tooltip.
+const FORMATS_SHORT = { html: "HTML", docx: "Word", pdf: "PDF", md: "Markdown", json: "JSON", zip: "ZIP (all)" };
 // Only the HTML document is offered for download right now; every other format
 // still generates server-side but is surfaced as "coming soon".
 const DOWNLOADABLE_FORMATS = new Set(["html"]);
@@ -1372,24 +1396,40 @@ function renderDownloads(jobId, formats) {
     const wrap = document.createElement("div"); wrap.className = "dl-group";
     if (type) { const h = document.createElement("div"); h.className = "dl-group-title"; h.textContent = DOC_TYPE_LABELS[type] || type; wrap.appendChild(h); }
     const row = document.createElement("div"); row.className = "dl-group-row";
-    fmts.forEach(shortFmt => {
+    // Real downloads first and at full weight; everything still locked collects
+    // into one "Coming soon" cluster after them, so the phrase is said once per
+    // row instead of once per format.
+    fmts.filter(f => DOWNLOADABLE_FORMATS.has(f)).forEach(shortFmt => {
       const key = type ? `${type}.${shortFmt}` : shortFmt;
-      const label = FORMATS[shortFmt] || shortFmt.toUpperCase();
-      const enabled = DOWNLOADABLE_FORMATS.has(shortFmt);
-      const a = document.createElement(enabled ? "a" : "span");
-      a.className = "download-btn" + (enabled ? "" : " coming-soon");
+      const a = document.createElement("a");
+      a.className = "download-btn";
       a.style.animationDelay = (delay++ * 0.06) + "s";
-      if (enabled) {
-        a.href = "/jobs/" + jobId + "/download?format=" + key;
-        a.innerHTML = DL_ICON + "<span>" + label + "</span>";
-        a.addEventListener("click", ev => { ev.preventDefault(); downloadFile(a.href, key); });
-      } else {
-        a.setAttribute("aria-disabled", "true");
-        a.title = label + " downloads are coming soon";
-        a.innerHTML = DL_ICON + "<span>" + label + "</span><em class=\"soon-tag\">Coming soon</em>";
-      }
+      a.href = "/jobs/" + jobId + "/download?format=" + key;
+      a.innerHTML = DL_ICON + "<span>" + (FORMATS[shortFmt] || shortFmt.toUpperCase()) + "</span>";
+      a.addEventListener("click", ev => { ev.preventDefault(); downloadFile(a.href, key); });
       row.appendChild(a);
     });
+    const locked = fmts.filter(f => !DOWNLOADABLE_FORMATS.has(f));
+    if (locked.length) {
+      const soon = document.createElement("span");
+      soon.className = "dl-soon";
+      soon.style.animationDelay = (delay++ * 0.06) + "s";
+      const lbl = document.createElement("span");
+      lbl.className = "dl-soon-label";
+      lbl.textContent = "Coming soon";
+      soon.appendChild(lbl);
+      locked.forEach(shortFmt => {
+        const chip = document.createElement("span");
+        chip.className = "dl-soon-chip";
+        // Short names here: the cluster is a roadmap glance, and "Raw JSON
+        // Schema" next to "Word Document" is more words than the point needs.
+        chip.textContent = FORMATS_SHORT[shortFmt] || FORMATS[shortFmt] || shortFmt.toUpperCase();
+        chip.title = (FORMATS[shortFmt] || shortFmt.toUpperCase()) + " downloads are coming soon";
+        chip.setAttribute("aria-disabled", "true");
+        soon.appendChild(chip);
+      });
+      row.appendChild(soon);
+    }
     wrap.appendChild(row); container.appendChild(wrap);
   });
 }
