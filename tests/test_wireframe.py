@@ -420,7 +420,14 @@ class LegendAndTooltipTest(unittest.TestCase):
         page = _page([Visual(id="v1", type="columnChart", title="Revenue by Month", x=0, y=0, z=0,
                              width=300, height=200, fields=["Sales.Revenue", "Date.Month"])])
         svg = render_wireframe(page)
-        self.assertIn("Revenue by Month — Column chart (Revenue, Month)", svg)
+        self.assertIn("Revenue by Month — Column chart (Sales.Revenue, Date.Month)", svg)
+        self.assertNotIn("no fields bound", svg)
+
+    def test_large_data_visual_shows_bound_fields_on_the_card(self):
+        page = _page([Visual(id="v1", type="columnChart", title="Revenue by Month", x=0, y=0, z=0,
+                             width=500, height=300, fields=["Sales.Revenue", "Date.Month"])])
+        svg = render_wireframe(page)
+        self.assertIn(">Revenue, Month</text>", svg)
 
     def test_returns_empty_string_without_layout_coordinates(self):
         page = Page(id="p1", display_name="No Layout", visuals=[Visual(id="v1", type="card")])

@@ -8,8 +8,10 @@ from ._diagram_theme import (
     canvas, canvas_defs, chip, legend,
 )
 from ._shared import anchor_slug, html_e
-from ..agents.usage import measure_usage
-from ..agents.report_facts import find_referenced_tables, data_source_summaries
+from ..agents import audit_rules
+from ..agents.report_facts import (
+    data_source_summaries, find_referenced_tables, named_field_parameter_table_names,
+)
 
 # v6 "Studio" (2026-07-11) — the lineage graph now shares the wireframe's
 # v6 design DNA (see ``_diagram_theme``): the soft gradient + dot-grid
@@ -157,22 +159,33 @@ def _pluralize(n: int, word: str) -> str:
 
 
 def build_lineage_data(model: SemanticModel) -> tuple[list[dict[str, str]], str]:
-    """Build all lineage edges and render the layered left-to-right SVG lineage graph."""
+    """Build a complete source -> model -> report lineage graph.
+
+    Every known source, table, measure, and page is retained, including
+    disconnected objects. Column-only visuals connect their table directly to
+    the page so reports without explicit measures do not produce a blank page
+    layer.
+    """
     raw_edges: list[dict[str, str]] = []
 
     # 1. Source to Table
     sources_map = {get_source_label(ds): ds for ds in model.data_sources}
     for t in model.tables:
+        matched_sources: set[str] = set()
         for p in t.partitions:
             if p.expression:
+                expression = p.expression.casefold()
                 for src_label, ds in sources_map.items():
-                    if (
-                        (ds.server and ds.server in p.expression) or
-                        (ds.detail and ds.detail in p.expression) or
-                        (ds.database and ds.database in p.expression) or
-                        (ds.type and ds.type in p.expression)
-                    ):
+                    tokens = (ds.server, ds.detail, ds.database, ds.type)
+                    if any(token and str(token).casefold() in expression for token in tokens):
                         raw_edges.append({"from": src_label, "to": t.name, "type": "Source to Table"})
+                        matched_sources.add(src_label)
+        # A single declared source is unambiguous even when the partition was
+        # shortened or redacted by the exporter. Calculated tables stay
+        # disconnected because their origin is the semantic model itself.
+        if not matched_sources and len(sources_map) == 1 and not t.is_calculated and t.partitions:
+            src_label = next(iter(sources_map))
+            raw_edges.append({"from": src_label, "to": t.name, "type": "Source to Table"})
 
     # 2. Table to Measure
     measures = model.all_measures()
@@ -185,11 +198,39 @@ def build_lineage_data(model: SemanticModel) -> tuple[list[dict[str, str]], str]
             if any(tbl.name == ref_t for tbl in model.tables) and ref_t != m.table:
                 raw_edges.append({"from": ref_t, "to": m.name, "type": "Table to Measure"})
 
-    # 3. Measure to Page
-    usage = measure_usage(model)
-    for m_name, pages in usage.items():
-        for page_name in pages:
-            raw_edges.append({"from": m_name, "to": page_name, "type": "Measure to Page"})
+    # 3. Semantic fields to report pages. Measures use the full four-stage
+    # path; ordinary columns connect their owning table directly to the page.
+    table_names = {t.name for t in model.tables}
+    table_name_ci = {t.name.casefold(): t.name for t in model.tables}
+    measure_names = {m.name for m in measures}
+    column_homes: dict[str, set[str]] = {}
+    for table in model.tables:
+        for column in table.columns:
+            column_homes.setdefault(column.name.casefold(), set()).add(table.name)
+
+    for page in model.pages:
+        page_name = (page.display_name or page.id or "").strip()
+        if not page_name:
+            continue
+        for visual in page.visuals:
+            for field in visual.fields:
+                field = (field or "").strip()
+                if not field:
+                    continue
+                leaf = field.rsplit(".", 1)[-1]
+                if leaf in measure_names:
+                    raw_edges.append({"from": leaf, "to": page_name, "type": "Measure to Page"})
+                    continue
+                table_name = ""
+                if "." in field:
+                    candidate = field.rsplit(".", 1)[0].strip("'")
+                    table_name = candidate if candidate in table_names else table_name_ci.get(candidate.casefold(), "")
+                if not table_name:
+                    homes = column_homes.get(leaf.casefold(), set())
+                    if len(homes) == 1:
+                        table_name = next(iter(homes))
+                if table_name:
+                    raw_edges.append({"from": table_name, "to": page_name, "type": "Table to Page"})
 
     # De-duplicate edges
     seen_edges = set()
@@ -200,92 +241,32 @@ def build_lineage_data(model: SemanticModel) -> tuple[list[dict[str, str]], str]
             seen_edges.add(edge_key)
             edges.append(edge)
 
-    # Compute layers
-    layer_0_all = sorted(list({e["from"] for e in edges if e["type"] == "Source to Table"}))
-    layer_1_all = sorted(list(
-        {e["to"] for e in edges if e["type"] == "Source to Table"} |
-        {e["from"] for e in edges if e["type"] == "Table to Measure"}
-    ))
-    layer_2_all = sorted(list(
-        {e["to"] for e in edges if e["type"] == "Table to Measure"} |
-        {e["from"] for e in edges if e["type"] == "Measure to Page"}
-    ))
-    layer_3_all = sorted(list({e["to"] for e in edges if e["type"] == "Measure to Page"}))
+    # Complete layers: disconnected model/report objects remain visible and
+    # large models are not collapsed behind a lossy "+N more" card.
+    layer_0_all = sorted({label for label in sources_map if label.strip()})
+    layer_1_all = sorted({t.name.strip() for t in model.tables if t.name.strip()})
+    layer_2_all = sorted({m.name.strip() for m in measures if m.name.strip()})
+    layer_3_all = sorted({(p.display_name or p.id).strip() for p in model.pages if (p.display_name or p.id).strip()})
 
-    # Cap nodes in each layer at 8
-    max_cap = 8
-
-    def cap_layer(layer_nodes: list[str], layer_index: int) -> tuple[list[str], dict[str, str], int]:
-        # Count connections for sorting
-        conn_counts = {}
-        for n in layer_nodes:
-            count = 0
-            for e in edges:
-                if e["from"] == n or e["to"] == n:
-                    count += 1
-            conn_counts[n] = count
-
-        sorted_nodes = sorted(layer_nodes, key=lambda n: conn_counts.get(n, 0), reverse=True)
-        if len(sorted_nodes) <= max_cap:
-            return sorted_nodes, {}, 0
-
-        keep_count = max_cap - 1
-        keep_nodes = sorted_nodes[:keep_count]
-        overflow_nodes = sorted_nodes[keep_count:]
-
-        overflow_label = f"+{len(overflow_nodes)} more " + ["sources", "tables", "measures", "pages"][layer_index]
-        mapping = {n: overflow_label for n in overflow_nodes}
-        return keep_nodes + [overflow_label], mapping, len(overflow_nodes)
-
-    l0, map0, count0 = cap_layer(layer_0_all, 0)
-    l1, map1, count1 = cap_layer(layer_1_all, 1)
-    l2, map2, count2 = cap_layer(layer_2_all, 2)
-    l3, map3, count3 = cap_layer(layer_3_all, 3)
-
-    # Map edges to capped labels
-    mapped_raw_edges = []
-    for e in edges:
-        f = e["from"]
-        t = e["to"]
-
-        if e["type"] == "Source to Table":
-            f = map0.get(f, f)
-            t = map1.get(t, t)
-        elif e["type"] == "Table to Measure":
-            f = map1.get(f, f)
-            t = map2.get(t, t)
-        elif e["type"] == "Measure to Page":
-            f = map2.get(f, f)
-            t = map3.get(t, t)
-
-        mapped_raw_edges.append({"from": f, "to": t, "type": e["type"]})
-
-    # Dedup mapped edges
-    seen_mapped = set()
-    mapped_edges: list[dict[str, str]] = []
-    for me in mapped_raw_edges:
-        key = (me["from"], me["to"], me["type"])
-        if key not in seen_mapped:
-            seen_mapped.add(key)
-            mapped_edges.append(me)
+    if not any((layer_0_all, layer_1_all, layer_2_all, layer_3_all)):
+        return edges, ""
 
     # --- Layout: layered DAG (Sugiyama-style) ------------------------------
     # Order nodes within each column to minimise edge crossings (real layout,
-    # not an alphabetical stack). Cheap: layers are capped at 8 nodes.
-    layers = _minimize_crossings([l0, l1, l2, l3], mapped_edges)
+    # not an alphabetical stack).
+    layers = _minimize_crossings(
+        [layer_0_all, layer_1_all, layer_2_all, layer_3_all], edges
+    )
     counts = [len(layer_0_all), len(layer_1_all), len(layer_2_all), len(layer_3_all)]
 
     # --- Per-node display metadata (title, sublabel, href, tooltip) --------
     table_by_name = {t.name: t for t in model.tables}
+    section_only_tables = {t.name for t in model.tables if audit_rules.is_auto_date_table(t.name)}
+    section_only_tables |= named_field_parameter_table_names(model)
     measure_table = {m.name: m.table for m in measures}
     page_visuals = {p.display_name: len(p.visuals) for p in model.pages}
-    layer_index = {n: ci for ci, lay in enumerate(layers) for n in lay}
-
     def _node_meta(name: str, ci: int) -> tuple[str, str, str, str]:
         """-> (title, sublabel, href, tooltip)"""
-        if name.startswith("+"):
-            sec_id = _LAYER_SECTION_ID[ci]
-            return name, f"view all in {_LAYER_PLURAL[ci].title()}", f"#{sec_id}", name
         if ci == 0:
             title, sub = _source_title_sub(name)
             return title, sub, f"#source-{anchor_slug(name)}", name
@@ -297,7 +278,8 @@ def build_lineage_data(model: SemanticModel) -> tuple[list[dict[str, str]], str]
                     parts.append(_pluralize(len(t.columns), "column"))
                 if t.measures:
                     parts.append(_pluralize(len(t.measures), "measure"))
-            return name, " · ".join(parts), f"#table-{anchor_slug(name)}", name
+            href = "#sec6" if name in section_only_tables else f"#table-{anchor_slug(name)}"
+            return name, " · ".join(parts), href, name
         if ci == 2:
             home = measure_table.get(name)
             return name, (f"in {home}" if home else ""), f"#measure-{anchor_slug(name)}", name
@@ -322,7 +304,7 @@ def build_lineage_data(model: SemanticModel) -> tuple[list[dict[str, str]], str]
 
     # Pass 1: pure geometry — every node's (x, y), each column vertically
     # centred, so edges (pass 2) can be drawn *under* the cards (pass 3).
-    node_coords: dict[str, tuple[float, float]] = {}
+    node_coords: dict[tuple[int, str], tuple[float, float]] = {}
     for ci, nodes in enumerate(layers):
         n = len(nodes)
         if not n:
@@ -330,7 +312,7 @@ def build_lineage_data(model: SemanticModel) -> tuple[list[dict[str, str]], str]
         col_h = n * BOX_H + (n - 1) * V_GAP
         y0 = TOP + (content_h - col_h) / 2
         for i, name in enumerate(nodes):
-            node_coords[name] = (col_x[ci], y0 + i * (BOX_H + V_GAP))
+            node_coords[(ci, name)] = (col_x[ci], y0 + i * (BOX_H + V_GAP))
 
     # Hover-connect keys: layer-prefixed slugs, so a table and a measure
     # that share a name can never cross-highlight.
@@ -339,7 +321,12 @@ def build_lineage_data(model: SemanticModel) -> tuple[list[dict[str, str]], str]
     def _node_key(name: str, ci: int) -> str:
         return _PREFIX[ci] + anchor_slug(name)
 
-    _EDGE_LAYERS = {"Source to Table": (0, 1), "Table to Measure": (1, 2), "Measure to Page": (2, 3)}
+    _EDGE_LAYERS = {
+        "Source to Table": (0, 1),
+        "Table to Measure": (1, 2),
+        "Measure to Page": (2, 3),
+        "Table to Page": (1, 3),
+    }
 
     svg = [
         f'<svg viewBox="0 0 {W} {H}" width="100%" xmlns="http://www.w3.org/2000/svg" '
@@ -352,12 +339,12 @@ def build_lineage_data(model: SemanticModel) -> tuple[list[dict[str, str]], str]
     # (source-layer accent -> target-layer accent along the actual segment).
     edge_defs: list[str] = []
     edge_elems: list[str] = []
-    for i, me in enumerate(mapped_edges):
-        p1 = node_coords.get(me["from"])
-        p2 = node_coords.get(me["to"])
+    for i, me in enumerate(edges):
+        lf, lt = _EDGE_LAYERS.get(me["type"], (0, 1))
+        p1 = node_coords.get((lf, me["from"]))
+        p2 = node_coords.get((lt, me["to"]))
         if not p1 or not p2:
             continue
-        lf, lt = _EDGE_LAYERS.get(me["type"], (0, 1))
         a1, a2 = _LAYER_STYLE[lf][1], _LAYER_STYLE[lt][1]
         x1, y1 = p1[0] + BOX_W, p1[1] + BOX_H / 2
         x2, y2 = p2[0], p2[1] + BOX_H / 2
@@ -423,7 +410,7 @@ def build_lineage_data(model: SemanticModel) -> tuple[list[dict[str, str]], str]
         layer_key, accent = _LAYER_STYLE[ci]
         chip_cat = _LAYER_CHIP_CAT[ci]
         for name in nodes:
-            cx, cy = node_coords[name]
+            cx, cy = node_coords[(ci, name)]
             is_overflow = name.startswith("+")
             title, sub, href, tooltip = _node_meta(name, ci)
             key = _node_key(name, ci)

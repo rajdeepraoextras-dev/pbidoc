@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ..schemas.model import Page, Visual
 
-from ..agents.report_facts import DECORATIVE, friendly_visual_type, visual_label
+from ..agents.report_facts import DECORATIVE, friendly_visual_type, is_field_selector, visual_label
 from ._diagram_theme import (
     ACCENT, CAPTION, EDGE, FAINT, GHOST_EDGE, GHOST_FILL, HAIRLINE, INK, MUTED,
     SKELETON, SKELETON_SOFT, canvas, canvas_defs, chip, legend,
@@ -675,8 +675,6 @@ def render_wireframe(
 
         metrics, dims = [], []
         if category == "data":
-            from ..agents.report_facts import is_field_selector
-
             for f in v.fields:
                 if is_field_selector(f, field_param_tables):
                     continue
@@ -687,6 +685,9 @@ def render_wireframe(
         # raw type — this is what makes the mock read like the real report.
         link_label = visual_label(v.title, v.type, metrics, dims)
         label = v.title or (link_label if category == "data" else friendly)
+        bound_fields = [
+            f for f in v.fields if not is_field_selector(f, field_param_tables)
+        ] if category in ("data", "slicer") else []
 
         href = ""
         if category == "data":
@@ -800,14 +801,25 @@ def render_wireframe(
                 if draw:
                     card.append(draw(bx0, by0, bx1, by1, category, glyph_suffix, seed))
 
+            # Surface the binding on the card; the tooltip below retains the
+            # complete table-qualified list for detailed inspection.
+            if category in ("data", "slicer") and bound_fields and vw >= 120 and vh >= 72:
+                field_text = ", ".join(f.rsplit(".", 1)[-1] for f in bound_fields)
+                field_text = _truncate(field_text, max(8, int((vw - 28) / 5.2)))
+                fy = vy + vh - 8
+                card.append(
+                    f'<rect x="{vx + 10:.1f}" y="{fy - 10:.1f}" width="{max(0.0, vw - 20):.1f}" '
+                    f'height="13" rx="6.5" fill="#ffffff" fill-opacity=".92"/>'
+                    f'<text x="{vx + 16:.1f}" y="{fy:.1f}" font-size="7.5" font-weight="600" '
+                    f'fill="{CAPTION}">{html_e(field_text)}</text>'
+                )
+
         group = [f'<g class="wf-node cat-{category}">'] + card + ["</g>"]
 
         if category == "data":
             drawn_rects.append((vx, vy, vx + vw, vy + vh))
-            field_leaves = ", ".join(
-                f.split(".")[-1] for f in v.fields if not is_field_selector(f, field_param_tables)
-            ) or "no fields bound"
-            tooltip = f"{label} — {friendly} ({field_leaves})"
+            binding = ", ".join(bound_fields) or "binding metadata unavailable in this report export"
+            tooltip = f"{label} — {friendly} ({binding})"
             svg.append(f'<a href="{html_e(href)}">')
             svg.append(f"<title>{html_e(tooltip)}</title>")
             svg.extend(group)

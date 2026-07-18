@@ -92,22 +92,57 @@ def _extract_title(visual_obj: dict) -> Optional[str]:
 _AGG_QUERYREF_WRAPPER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*\((.+)\)$")
 
 
-def _clean_query_ref(ref: str) -> str:
+_BRACKET_FIELD_RE = re.compile(r"^'?([^'\[\]]+)'?\[([^\]]+)\]$")
+
+
+def _clean_query_ref(ref: str, aliases: dict[str, str] | None = None) -> str:
     m = _AGG_QUERYREF_WRAPPER_RE.match(ref.strip())
     if m and m.group(1).count("(") == m.group(1).count(")"):
-        return m.group(1)
+        ref = m.group(1)
+    ref = ref.strip()
+    bracket = _BRACKET_FIELD_RE.match(ref)
+    if bracket:
+        ref = f"{bracket.group(1)}.{bracket.group(2)}"
+    elif ref.startswith("[") and ref.endswith("]"):
+        ref = ref[1:-1]
+    if aliases and "." in ref:
+        prefix, leaf = ref.split(".", 1)
+        ref = f"{aliases.get(prefix, prefix)}.{leaf}"
     return ref
 
 
-def _field_from_node(field: dict) -> str | None:
-    for kind in ("Column", "Measure", "Aggregation"):
+def _source_aliases(node) -> dict[str, str]:
+    """Return SemanticQuery ``From`` aliases (``s`` -> ``Sales``)."""
+    aliases: dict[str, str] = {}
+    if isinstance(node, dict):
+        name, entity = node.get("Name"), node.get("Entity")
+        if isinstance(name, str) and isinstance(entity, str) and name and entity:
+            aliases[name] = entity
+        for value in node.values():
+            aliases.update(_source_aliases(value))
+    elif isinstance(node, list):
+        for value in node:
+            aliases.update(_source_aliases(value))
+    return aliases
+
+
+def _field_from_node(field: dict, aliases: dict[str, str] | None = None) -> str | None:
+    aliases = aliases or {}
+    for kind in ("Column", "Measure", "Aggregation", "HierarchyLevel"):
         node = field.get(kind)
         if not node:
             continue
         if kind == "Aggregation":
+            nested = _field_from_node(node.get("Expression", {}), aliases)
+            if nested:
+                return nested
             node = node.get("Expression", {}).get("Column", {})
-        entity = node.get("Expression", {}).get("SourceRef", {}).get("Entity")
-        prop = node.get("Property")
+        expression = node.get("Expression", {})
+        if kind == "HierarchyLevel":
+            expression = expression.get("Hierarchy", {}).get("Expression", expression)
+        source_ref = expression.get("SourceRef", {})
+        entity = source_ref.get("Entity") or aliases.get(source_ref.get("Source", ""))
+        prop = node.get("Property") or node.get("Level")
         if entity and prop:
             return f"{entity}.{prop}"
         if prop:
@@ -115,7 +150,7 @@ def _field_from_node(field: dict) -> str | None:
     return None
 
 
-def _walk_field_refs(node, fields: list[str]) -> None:
+def _walk_field_refs(node, fields: list[str], aliases: dict[str, str] | None = None) -> None:
     """Find Power BI field references across modern and legacy visual JSON.
 
     PBIR exports have moved visual bindings between ``query.queryState``,
@@ -124,33 +159,38 @@ def _walk_field_refs(node, fields: list[str]) -> None:
     collects the same structured field object and queryRef shapes wherever
     they appear in the visual payload.
     """
+    aliases = aliases or {}
     if isinstance(node, dict):
         resolved = None
         nested_field = node.get("field")
         if isinstance(nested_field, dict):
-            resolved = _field_from_node(nested_field)
+            resolved = _field_from_node(nested_field, aliases)
             if resolved:
                 fields.append(resolved)
-        if any(k in node for k in ("Column", "Measure", "Aggregation")):
-            resolved = _field_from_node(node)
+        if any(k in node for k in ("Column", "Measure", "Aggregation", "HierarchyLevel")):
+            resolved = _field_from_node(node, aliases)
             if resolved:
                 fields.append(resolved)
         ref = node.get("queryRef")
         if not resolved and isinstance(ref, str) and ref.strip():
-            fields.append(_clean_query_ref(ref))
+            fields.append(_clean_query_ref(ref, aliases))
+        if not resolved and any(k in node for k in ("Column", "Measure", "Aggregation", "HierarchyLevel")):
+            name = node.get("Name")
+            if isinstance(name, str) and name.strip():
+                fields.append(_clean_query_ref(name, aliases))
         for key, value in node.items():
             if resolved and key == "field":
                 continue
-            _walk_field_refs(value, fields)
+            _walk_field_refs(value, fields, aliases)
     elif isinstance(node, list):
         for item in node:
-            _walk_field_refs(item, fields)
+            _walk_field_refs(item, fields, aliases)
 
 
 def _extract_fields(visual_obj: dict) -> list[str]:
     fields: list[str] = []
     try:
-        _walk_field_refs(visual_obj, fields)
+        _walk_field_refs(visual_obj, fields, _source_aliases(visual_obj))
     except Exception:
         pass
     # de-dupe, preserve order
@@ -271,9 +311,23 @@ def _parse_legacy_container(container: dict, warnings: list[str]) -> Optional[Vi
         title = str(lit).strip().strip("'")
     except Exception:
         pass
+    payloads: list[dict | list] = [sv]
+    for key in ("query", "dataTransforms", "filters"):
+        payload = container.get(key)
+        if isinstance(payload, str) and payload.strip():
+            try:
+                payload = json.loads(payload)
+            except Exception:
+                continue
+        if isinstance(payload, (dict, list)):
+            payloads.append(payload)
+    aliases: dict[str, str] = {}
+    for payload in payloads:
+        aliases.update(_source_aliases(payload))
     fields: list[str] = []
     try:
-        _walk_field_refs(sv, fields)
+        for payload in payloads:
+            _walk_field_refs(payload, fields, aliases)
     except Exception:
         pass
     seen: set[str] = set()

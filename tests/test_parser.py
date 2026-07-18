@@ -619,6 +619,45 @@ class PbirVisualFieldExtractionTest(unittest.TestCase):
 
         self.assertEqual(_extract_fields(visual), ["Orders.City", "Sales.Revenue"])
 
+    def test_legacy_query_payload_resolves_source_aliases(self):
+        import json
+
+        from pbicompass.parsers.pbir import _parse_legacy_container
+
+        query = {
+            "Commands": [{"SemanticQueryDataShapeCommand": {"Query": {
+                "From": [
+                    {"Name": "s", "Entity": "Sales", "Type": 0},
+                    {"Name": "d", "Entity": "Date", "Type": 0},
+                ],
+                "Select": [
+                    {
+                        "Aggregation": {"Expression": {"Column": {
+                            "Expression": {"SourceRef": {"Source": "s"}},
+                            "Property": "Amount",
+                        }}, "Function": 0},
+                        "Name": "Sum(s.Amount)",
+                    },
+                    {
+                        "Column": {
+                            "Expression": {"SourceRef": {"Source": "d"}},
+                            "Property": "Month",
+                        },
+                        "Name": "d.Month",
+                    },
+                ],
+            }}}]
+        }
+        container = {
+            "config": json.dumps({"name": "v1", "singleVisual": {"visualType": "columnChart"}}),
+            "query": json.dumps(query),
+            "x": 0, "y": 0, "width": 300, "height": 200,
+        }
+
+        visual = _parse_legacy_container(container, [])
+
+        self.assertEqual(visual.fields, ["Sales.Amount", "Date.Month"])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

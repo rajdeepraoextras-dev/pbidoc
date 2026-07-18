@@ -47,6 +47,7 @@ def generate_document(
     glossary: Optional[str] = None,
     assumptions: Optional[str] = None,
     support_notes: Optional[str] = None,
+    supplied_optional_fields: Optional[list[str]] = None,
     ai_context: Optional[JobAIContext] = None,
     top_cluster: Optional[FindingCluster] = None,
     audit_verdicts: Optional[AuditVerdicts] = None,
@@ -75,6 +76,7 @@ def generate_document(
         refresh_notes=refresh_notes, deployment_notes=deployment_notes,
         access_notes=access_notes, glossary=glossary,
         assumptions=assumptions, support_notes=support_notes,
+        supplied_optional_fields=supplied_optional_fields,
         ai_context=ai_context, top_cluster=top_cluster, audit_verdicts=audit_verdicts,
         requirements_matrix=requirements_matrix,
     )

@@ -137,12 +137,10 @@ class InteractiveNodesTest(unittest.TestCase):
         self.assertIn(">SalesDW</text>", svg)         # source title: db name, not the raw label
 
 
-class OverflowNodeTest(unittest.TestCase):
-    """8+ nodes in a layer collapse into one "+N more ..." card — a dashed
-    ghost card (no accent bar or icon) that links to the layer's own
-    document section instead of a single object."""
+class CompleteLayerTest(unittest.TestCase):
+    """Large layers retain every real object instead of hiding names."""
 
-    def test_overflow_node_is_a_ghost_card_linking_to_its_section(self):
+    def test_large_table_layer_keeps_every_table(self):
         # Partition expressions must actually match a data source (server
         # substring) for a Source-to-Table edge to form at all — a bare
         # disconnected table never enters the graph.
@@ -158,18 +156,41 @@ class OverflowNodeTest(unittest.TestCase):
             tables=tables,
         )
         edges, svg = build_lineage_data(model)
-        self.assertIn("more tables", svg)
-        # ghost treatment + a link to the Data Model section, not a bogus object row
-        self.assertIn('stroke-dasharray="4 3"', svg)
-        self.assertIn('href="#sec6"', svg)
-        self.assertIn("view all in Tables", svg)
+        self.assertNotIn("more tables", svg)
+        for i in range(10):
+            self.assertIn(f'href="#table-dim{i}"', svg)
+
+    def test_column_only_page_is_connected_directly_to_its_table(self):
+        from pbicompass.schemas.model import Column
+
+        model = SemanticModel(
+            report_name="R",
+            tables=[Table(name="Sales", columns=[Column(name="Region")])],
+            pages=[Page(id="p", display_name="Overview", visuals=[
+                Visual(id="v", type="barChart", fields=["Sales.Region"]),
+            ])],
+        )
+        edges, svg = build_lineage_data(model)
+        self.assertIn({"from": "Sales", "to": "Overview", "type": "Table to Page"}, edges)
+        self.assertIn('data-from="t-sales" data-to="p-overview"', svg)
+
+    def test_disconnected_objects_still_render(self):
+        model = SemanticModel(
+            report_name="R",
+            tables=[Table(name="Unused")],
+            pages=[Page(id="p", display_name="Empty Page")],
+        )
+        edges, svg = build_lineage_data(model)
+        self.assertEqual(edges, [])
+        self.assertIn('href="#table-unused"', svg)
+        self.assertIn('href="#page-empty-page"', svg)
 
 
 class EmptyModelTest(unittest.TestCase):
-    def test_empty_model_renders_a_diagram_with_no_edges(self):
+    def test_empty_model_does_not_render_a_blank_diagram(self):
         edges, svg = build_lineage_data(SemanticModel(report_name="Empty"))
         self.assertEqual(edges, [])
-        self.assertIn('<div class="diagram">', svg)
+        self.assertEqual(svg, "")
 
 
 if __name__ == "__main__":
