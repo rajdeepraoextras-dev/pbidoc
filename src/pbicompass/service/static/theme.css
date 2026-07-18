@@ -10,11 +10,21 @@
 :root {
   /* grayscale-only tokens (0 0% X%) */
   --background: hsl(160 24% 10%);
-  --foreground: hsl(0 0% 100%);
-  --muted: hsl(0 0% 100% / .8);
-  --muted-2: hsl(0 0% 100% / .72);
-  --soft: hsl(0 0% 100% / .95);
+  --foreground: hsl(var(--fg));
+  --muted: hsl(var(--fg) / .8);
+  --muted-2: hsl(var(--fg) / .72);
+  --soft: hsl(var(--fg) / .95);
   --radius: 1rem;
+
+  /* ---- themeable channels (Phase 1 tokenization) ----
+     Shared with index.html. Every white/black resolves through these two HSL
+     channels so one light-theme override flips the whole product. Shadows keep
+     literal rgba(0,0,0,...); brand hexes and --status-* stay literal. */
+  --fg: 0 0% 100%;          /* foreground channel — text, icons, glass edges */
+  --ink: 0 0% 0%;           /* ink channel — inverted accent surfaces + overlays */
+  --fg-solid: hsl(var(--fg));
+  --ink-solid: hsl(var(--ink));
+  --surface-solid: #101a15; /* opaque menu / <option> surfaces */
 
   --font-display: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-serif: 'Source Serif 4', Georgia, serif;
@@ -47,7 +57,7 @@ h3 em, h3 i, h3 .italic {
   font-family: var(--font-serif);
   font-style: italic;
   font-weight: 400;
-  color: hsl(0 0% 100% / .95);
+  color: hsl(var(--fg) / .95);
 }
 a { color: inherit; text-decoration: none; }
 ::selection { background: hsl(156 45% 48% / .35); }
@@ -58,11 +68,11 @@ a { color: inherit; text-decoration: none; }
 
 a:focus-visible, button:focus-visible, input:focus-visible,
 select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
-  outline: 2px solid hsl(0 0% 100% / .85); outline-offset: 3px; border-radius: 10px;
+  outline: 2px solid hsl(var(--fg) / .85); outline-offset: 3px; border-radius: 10px;
 }
 .skip-link {
   position: fixed; left: 16px; top: -60px; z-index: 100;
-  padding: 10px 18px; border-radius: 100px; background: #fff; color: #000;
+  padding: 10px 18px; border-radius: 100px; background: var(--fg-solid); color: var(--ink-solid);
   font-size: .8rem; font-weight: 600; transition: top .25s var(--ease);
 }
 .skip-link:focus { top: 16px; }
@@ -93,14 +103,14 @@ select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
 .liquid-glass, .liquid-glass-strong {
   position: relative;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.01);
+  background: hsl(var(--fg) / 0.01);
   background-blend-mode: luminosity;
   border: none;
 }
 .liquid-glass {
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 1px 1px hsl(var(--fg) / 0.1);
 }
 .liquid-glass::before, .liquid-glass-strong::before {
   content: "";
@@ -108,14 +118,14 @@ select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
   border-radius: inherit;
   padding: 1.4px;
   background: linear-gradient(180deg,
-    rgba(255,255,255,0.45) 0%,
-    rgba(255,255,255,0.15) 20%,
+    hsl(var(--fg) / 0.45) 0%,
+    hsl(var(--fg) / 0.15) 20%,
     transparent 40%,
     transparent 60%,
-    rgba(255,255,255,0.15) 80%,
-    rgba(255,255,255,0.45) 100%);
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-          mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    hsl(var(--fg) / 0.15) 80%,
+    hsl(var(--fg) / 0.45) 100%);
+  -webkit-mask: linear-gradient(var(--ink-solid) 0 0) content-box, linear-gradient(var(--ink-solid) 0 0);
+          mask: linear-gradient(var(--ink-solid) 0 0) content-box, linear-gradient(var(--ink-solid) 0 0);
   -webkit-mask-composite: xor;
           mask-composite: exclude;
   pointer-events: none;
@@ -123,16 +133,16 @@ select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
 .liquid-glass-strong {
   backdrop-filter: blur(50px);
   -webkit-backdrop-filter: blur(50px);
-  box-shadow: 4px 4px 4px rgba(0, 0, 0, 0.05), inset 0 1px 1px rgba(255, 255, 255, 0.15);
+  box-shadow: 4px 4px 4px rgba(0, 0, 0, 0.05), inset 0 1px 1px hsl(var(--fg) / 0.15);
 }
 .liquid-glass-strong::before {
   background: linear-gradient(180deg,
-    rgba(255,255,255,0.5) 0%,
-    rgba(255,255,255,0.2) 20%,
+    hsl(var(--fg) / 0.5) 0%,
+    hsl(var(--fg) / 0.2) 20%,
     transparent 40%,
     transparent 60%,
-    rgba(255,255,255,0.2) 80%,
-    rgba(255,255,255,0.5) 100%);
+    hsl(var(--fg) / 0.2) 80%,
+    hsl(var(--fg) / 0.5) 100%);
 }
 
 /* interaction language */
@@ -141,7 +151,7 @@ select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
 .cta-press:active { transform: scale(.95); }
 .icon-orb {
   width: 32px; height: 32px; border-radius: 50%; flex: none;
-  background: hsl(0 0% 100% / .1);
+  background: hsl(var(--fg) / .1);
   display: flex; align-items: center; justify-content: center;
 }
 .icon-orb svg { width: 15px; height: 15px; }
@@ -151,26 +161,26 @@ select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
    the app-shell header)
    ============================================================== */
 .brand { display: inline-flex; align-items: center; gap: 11px; }
-.brand-mark { width: 32px; height: 32px; flex: none; color: #fff; filter: drop-shadow(0 2px 8px rgba(0,0,0,.35)); }
-.brand-name { font-size: 1.5rem; font-weight: 600; letter-spacing: -.045em; color: #fff; }
-.brand-name span { color: hsl(0 0% 100% / .82); font-weight: 400; }
+.brand-mark { width: 32px; height: 32px; flex: none; color: var(--fg-solid); filter: drop-shadow(0 2px 8px rgba(0,0,0,.35)); }
+.brand-name { font-size: 1.5rem; font-weight: 600; letter-spacing: -.045em; color: var(--fg-solid); }
+.brand-name span { color: hsl(var(--fg) / .82); font-weight: 400; }
 /* ".brand-name .beta-tag" (not just ".beta-tag") so it outranks the
    ".brand-name span" rule above. */
 .brand-name .beta-tag, .foot-brand .beta-tag { font-size: .58rem; font-weight: 600; letter-spacing: .18em;
-  text-transform: uppercase; color: hsl(0 0% 100% / .92); border: 1px solid hsl(0 0% 100% / .35);
+  text-transform: uppercase; color: hsl(var(--fg) / .92); border: 1px solid hsl(var(--fg) / .35);
   padding: 2px 7px; border-radius: 100px; margin-left: 8px; vertical-align: middle; }
 
 .pill {
   display: inline-flex; align-items: center;
   padding: 8px 17px; border-radius: 100px;
-  font-size: .75rem; font-weight: 400; color: hsl(0 0% 100% / .95);
+  font-size: .75rem; font-weight: 400; color: hsl(var(--fg) / .95);
   white-space: nowrap;
 }
 
 .account-btn {
   display: inline-flex; align-items: center; gap: 9px; cursor: pointer;
   padding: 10px 20px; border-radius: 100px;
-  font-size: .82rem; font-weight: 500; color: #fff;
+  font-size: .82rem; font-weight: 500; color: var(--fg-solid);
 }
 
 /* ==============================================================
@@ -180,19 +190,19 @@ select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
 .tab-btn {
   flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px;
   background: none; border: none; cursor: pointer;
-  color: hsl(0 0% 100% / .82); padding: 11px 10px; border-radius: 100px;
+  color: hsl(var(--fg) / .82); padding: 11px 10px; border-radius: 100px;
   font-family: inherit; font-size: .82rem; font-weight: 500;
   transition: color .2s, background .25s, transform .3s var(--ease);
 }
-.tab-btn:hover { color: #fff; }
+.tab-btn:hover { color: var(--fg-solid); }
 .tab-btn .tn {
   width: 20px; height: 20px; border-radius: 50%; flex: none;
   display: flex; align-items: center; justify-content: center;
-  font-size: .66rem; background: hsl(0 0% 100% / .1); color: hsl(0 0% 100% / .88);
+  font-size: .66rem; background: hsl(var(--fg) / .1); color: hsl(var(--fg) / .88);
   transition: background .2s, color .2s;
 }
-.tab-btn.active { color: #000; background: #fff; }
-.tab-btn.active .tn { background: rgba(0,0,0,.14); color: #000; }
+.tab-btn.active { color: var(--ink-solid); background: var(--fg-solid); }
+.tab-btn.active .tn { background: rgba(0,0,0,.14); color: var(--ink-solid); }
 @media (max-width: 620px) { .tab-btn span.txt { display: none; } }
 
 .tab-content { display: none; }
@@ -206,24 +216,24 @@ select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
 @media (max-width: 640px) { .grid-2 { grid-template-columns: 1fr; } }
 
 .form-group { margin-bottom: 17px; }
-label { display: block; margin-bottom: 7px; font-weight: 500; font-size: .8rem; color: hsl(0 0% 100% / .9); }
-label small { color: hsl(0 0% 100% / .68); font-weight: 300; margin-left: 4px; }
+label { display: block; margin-bottom: 7px; font-weight: 500; font-size: .8rem; color: hsl(var(--fg) / .9); }
+label small { color: hsl(var(--fg) / .68); font-weight: 300; margin-left: 4px; }
 
 input[type=text], input[type=email], input[type=password], select, textarea {
   width: 100%; padding: 12px 15px;
-  background: hsl(0 0% 0% / .3);
-  border: 1px solid hsl(0 0% 100% / .12);
-  border-radius: 14px; color: #fff;
+  background: hsl(var(--ink) / .3);
+  border: 1px solid hsl(var(--fg) / .12);
+  border-radius: 14px; color: var(--fg-solid);
   font-family: inherit; font-size: .87rem; outline: none;
   transition: border-color .2s, background .2s;
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
 }
-input::placeholder, textarea::placeholder { color: hsl(0 0% 100% / .5); }
+input::placeholder, textarea::placeholder { color: hsl(var(--fg) / .5); }
 input[type=text]:focus, input[type=email]:focus, input[type=password]:focus,
-select:focus, textarea:focus { border-color: hsl(0 0% 100% / .68); background: hsl(0 0% 0% / .45); }
+select:focus, textarea:focus { border-color: hsl(var(--fg) / .68); background: hsl(var(--ink) / .45); }
 select { cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='none' stroke='%23ffffff99' stroke-width='2' viewBox='0 0 24 24'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 38px; }
-select option { background: #101a15; color: #fff; }
+select option { background: var(--surface-solid); color: var(--fg-solid); }
 textarea { resize: vertical; min-height: 90px; }
 
 .password-field { position: relative; }
@@ -231,11 +241,11 @@ textarea { resize: vertical; min-height: 90px; }
 .password-toggle {
   position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
   width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center;
-  border: 0; border-radius: 10px; background: transparent; color: hsl(0 0% 100% / .68);
+  border: 0; border-radius: 10px; background: transparent; color: hsl(var(--fg) / .68);
   cursor: pointer; transition: color .2s, background .2s;
 }
 .password-toggle:hover, .password-toggle:focus-visible {
-  color: #fff; background: hsl(0 0% 100% / .08); outline: none;
+  color: var(--fg-solid); background: hsl(var(--fg) / .08); outline: none;
 }
 .password-toggle svg { width: 18px; height: 18px; }
 .password-toggle .eye-off { display: none; }
@@ -244,31 +254,31 @@ textarea { resize: vertical; min-height: 90px; }
 
 .link-btn {
   background: none; border: none; cursor: pointer; padding: 2px 0;
-  color: hsl(0 0% 100% / .88); font-family: inherit; font-size: .74rem; font-weight: 500;
-  text-decoration: underline; text-underline-offset: 3px; text-decoration-color: hsl(0 0% 100% / .3);
+  color: hsl(var(--fg) / .88); font-family: inherit; font-size: .74rem; font-weight: 500;
+  text-decoration: underline; text-underline-offset: 3px; text-decoration-color: hsl(var(--fg) / .3);
 }
-.link-btn:hover { color: #fff; }
+.link-btn:hover { color: var(--fg-solid); }
 
 /* per-field "AI Fill" / "Format" buttons (Notes tab) */
 .field-actions { display: flex; align-items: center; gap: 8px; margin: -3px 0 8px; flex-wrap: wrap; }
 .field-ai-btn {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 5px 12px; border-radius: 100px; cursor: pointer;
-  background: hsl(0 0% 100% / .07); color: hsl(0 0% 100% / .88); border: 1px solid hsl(0 0% 100% / .14);
+  background: hsl(var(--fg) / .07); color: hsl(var(--fg) / .88); border: 1px solid hsl(var(--fg) / .14);
   font-family: inherit; font-size: .72rem; font-weight: 500;
   transition: transform .2s var(--ease), background .2s;
 }
-.field-ai-btn:hover:not(:disabled) { transform: scale(1.03); background: hsl(0 0% 100% / .14); color: #fff; }
+.field-ai-btn:hover:not(:disabled) { transform: scale(1.03); background: hsl(var(--fg) / .14); color: var(--fg-solid); }
 .field-ai-btn:disabled { opacity: .55; cursor: not-allowed; }
 .field-ai-btn svg { width: 12px; height: 12px; flex: none; }
-.field-ai-msg { font-size: .72rem; color: hsl(0 0% 100% / .68); }
+.field-ai-msg { font-size: .72rem; color: hsl(var(--fg) / .68); }
 .field-ai-msg.ok { color: var(--status-ok); }
 .field-ai-msg.err { color: var(--status-err); }
 
 button[type=submit], .btn-primary {
   width: 100%; margin-top: 14px; padding: 16px; cursor: pointer;
   display: flex; align-items: center; justify-content: center; gap: 10px;
-  background: #fff; color: #000; border: none; border-radius: 100px;
+  background: var(--fg-solid); color: var(--ink-solid); border: none; border-radius: 100px;
   font-family: inherit; font-size: .96rem; font-weight: 600;
   transition: transform .3s var(--ease), opacity .2s;
 }
@@ -277,18 +287,18 @@ button[type=submit]:active:not(:disabled), .btn-primary:active:not(:disabled) { 
 button[type=submit]:disabled, .btn-primary:disabled { opacity: .55; cursor: not-allowed; }
 .spin {
   width: 16px; height: 16px; border-radius: 50%; display: none;
-  border: 2px solid rgba(0,0,0,.25); border-top-color: #000;
+  border: 2px solid rgba(0,0,0,.25); border-top-color: var(--ink-solid);
   animation: spin .7s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .btn-ghost {
   padding: 10px 18px; border-radius: 100px; cursor: pointer;
-  background: hsl(0 0% 100% / .07); color: #fff; border: none;
+  background: hsl(var(--fg) / .07); color: var(--fg-solid); border: none;
   font-family: inherit; font-size: .82rem; font-weight: 500;
   transition: transform .3s var(--ease), background .2s;
 }
-.btn-ghost:hover { transform: scale(1.03); background: hsl(0 0% 100% / .14); }
+.btn-ghost:hover { transform: scale(1.03); background: hsl(var(--fg) / .14); }
 .btn-danger {
   padding: 8px 14px; border-radius: 100px; cursor: pointer;
   background: hsl(0 30% 60% / .12); color: var(--status-err); border: none;
@@ -298,17 +308,17 @@ button[type=submit]:disabled, .btn-primary:disabled { opacity: .55; cursor: not-
 .btn-danger:hover { background: hsl(0 30% 60% / .2); }
 
 /* status text + meters (job status, quota meter) */
-.status-line { margin-top: 22px; text-align: center; font-weight: 500; font-size: .9rem; min-height: 22px; color: hsl(0 0% 100% / .97); }
+.status-line { margin-top: 22px; text-align: center; font-weight: 500; font-size: .9rem; min-height: 22px; color: hsl(var(--fg) / .97); }
 .status-line.err { color: var(--status-err); }
 .status-line.ok { color: var(--status-ok); }
 .status-line.warn { color: var(--status-warn); }
 
-.meter { height: .5rem; background: hsl(0 0% 100% / .1); border-radius: 1rem; overflow: hidden; margin: .5rem 0; }
-.meter > span { display: block; height: 100%; background: #fff; transition: width .4s var(--ease); }
+.meter { height: .5rem; background: hsl(var(--fg) / .1); border-radius: 1rem; overflow: hidden; margin: .5rem 0; }
+.meter > span { display: block; height: 100%; background: var(--fg-solid); transition: width .4s var(--ease); }
 
 .badge {
   display: inline-block; font-size: .72rem; font-weight: 600; padding: .18rem .6rem; border-radius: 1rem;
-  background: hsl(0 0% 100% / .1); color: hsl(0 0% 100% / .92);
+  background: hsl(var(--fg) / .1); color: hsl(var(--fg) / .92);
 }
 .badge.ok { color: var(--status-ok); background: hsl(150 40% 50% / .14); }
 .badge.warn { color: var(--status-warn); background: hsl(38 60% 60% / .14); }
@@ -319,16 +329,55 @@ button[type=submit]:disabled, .btn-primary:disabled { opacity: .55; cursor: not-
 }
 .panel-card h2 {
   font-size: .68rem; font-weight: 600; letter-spacing: .18em; text-transform: uppercase;
-  color: hsl(0 0% 100% / .68); margin-bottom: 14px;
+  color: hsl(var(--fg) / .68); margin-bottom: 14px;
 }
 
 table.data-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
-table.data-table th, table.data-table td { text-align: left; padding: .6rem .4rem; border-bottom: 1px solid hsl(0 0% 100% / .08); }
-table.data-table th { color: hsl(0 0% 100% / .6); font-weight: 600; font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; }
+table.data-table th, table.data-table td { text-align: left; padding: .6rem .4rem; border-bottom: 1px solid hsl(var(--fg) / .08); }
+table.data-table th { color: hsl(var(--fg) / .6); font-weight: 600; font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; }
 
-.muted { color: hsl(0 0% 100% / .68); font-size: .85rem; }
+.muted { color: hsl(var(--fg) / .68); font-size: .85rem; }
 .keybox {
-  background: hsl(0 0% 0% / .4); color: hsl(0 0% 100% / .92); padding: .6rem .75rem; border-radius: .6rem;
+  background: hsl(var(--ink) / .4); color: hsl(var(--fg) / .92); padding: .6rem .75rem; border-radius: .6rem;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; word-break: break-all; margin: .5rem 0;
 }
 .hidden { display: none !important; }
+
+/* ==============================================================
+   LIGHT THEME (Phase 2) — shared primitives only. Dormant until a
+   page sets <html data-theme="light">; pages without it stay dark,
+   so /app, /pricing, etc. are unaffected. Page-specific layout keeps
+   its own light overrides in that page's <style> block.
+   ============================================================== */
+:root[data-theme="light"] {
+  --fg: 210 22% 18%;
+  --ink: 0 0% 100%;
+  --surface-solid: #ffffff;
+  --background: hsl(160 30% 97%);
+  --foreground: hsl(210 22% 18%);
+  --status-ok: #1c7a4d;
+  --status-warn: #8a5d00;
+  --status-err: #b23b3b;
+}
+:root[data-theme="light"] .bg-base {
+  background:
+    radial-gradient(44% 38% at 16% 16%, hsl(158 60% 74% / .30), transparent 68%),
+    radial-gradient(50% 44% at 88% 10%, hsl(150 55% 78% / .26), transparent 70%),
+    radial-gradient(56% 48% at 80% 76%, hsl(162 55% 76% / .30), transparent 70%),
+    linear-gradient(180deg, hsl(160 40% 98%), hsl(158 32% 95%) 45%, hsl(162 34% 96%));
+}
+:root[data-theme="light"] .bg-grain { mix-blend-mode: multiply; opacity: .035; }
+:root[data-theme="light"] .liquid-glass { background: hsl(0 0% 100% / .55); }
+:root[data-theme="light"] .liquid-glass-strong { background: hsl(0 0% 100% / .62); }
+:root[data-theme="light"] .liquid-glass::before,
+:root[data-theme="light"] .liquid-glass-strong::before { opacity: .55; }
+:root[data-theme="light"] input[type=text],
+:root[data-theme="light"] input[type=email],
+:root[data-theme="light"] input[type=password],
+:root[data-theme="light"] select,
+:root[data-theme="light"] textarea { background: hsl(0 0% 100% / .7); }
+:root[data-theme="light"] select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='none' stroke='%2333404a' stroke-width='2' viewBox='0 0 24 24'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+}
+:root[data-theme="light"] ::-webkit-scrollbar-track { background: hsl(160 20% 92%); }
+:root[data-theme="light"] ::-webkit-scrollbar-thumb { background: hsl(156 14% 72%); border-color: hsl(160 20% 92%); }

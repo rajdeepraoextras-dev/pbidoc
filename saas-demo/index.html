@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7f8f5">
+  <title>PBICompass — Power BI documentation, done in minutes</title>
+  <meta name="description" content="A standalone SaaS homepage concept for PBICompass. Turn a PBIX or PBIP file into complete, review-ready documentation in minutes.">
+  <meta property="og:title" content="PBICompass — Power BI documentation, done in minutes">
+  <meta property="og:description" content="Turn a PBIX or PBIP file into four review-ready documents in minutes.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="og.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="og.png">
+  <meta name="robots" content="index,follow">
+  <link rel="canonical" href="https://pbicompass-saas-demo.rajdeepextrastuffs.chatgpt.site/">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "PBICompass",
+    "applicationCategory": "BusinessApplication",
+    "operatingSystem": "Web",
+    "description": "AI documentation and governance for Power BI teams.",
+    "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+  }
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <div class="announcement">
+    <div class="container announcement-inner">
+      <span class="announcement-dot" aria-hidden="true"></span>
+      <span>New: document PBIX and PBIP models from one secure upload</span>
+      <a href="#how">See how it works <span aria-hidden="true">→</span></a>
+    </div>
+  </div>
+
+  <header class="site-header">
+    <div class="container nav-shell">
+      <a class="brand" href="#top" aria-label="PBICompass home">
+        <span class="brand-mark" aria-hidden="true">P</span>
+        <span>PBI<span>Compass</span></span>
+        <small>Beta</small>
+      </a>
+
+      <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="main-nav">
+        <span></span><span></span><span></span>
+        <span class="sr-only">Open navigation</span>
+      </button>
+
+      <nav class="main-nav" id="main-nav" aria-label="Primary navigation">
+        <a href="#product">Product</a>
+        <a href="#how">How it works</a>
+        <a href="#documents">Examples</a>
+        <a href="#security">Security</a>
+        <a href="#pricing">Pricing</a>
+      </nav>
+
+      <div class="nav-actions">
+        <button class="text-link link-button" type="button" data-open-dialog="signin-dialog">Sign in</button>
+        <button class="button button-small" type="button" data-open-dialog="signup-dialog" data-plan="Free">Start free <span aria-hidden="true">→</span></button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" id="top">
+      <div class="hero-glow hero-glow-one"></div>
+      <div class="hero-glow hero-glow-two"></div>
+      <div class="container hero-grid">
+        <div class="hero-copy">
+          <div class="eyebrow"><span></span> Built for Power BI teams</div>
+          <h1>Document your Power BI reports in <em>minutes, not days.</em></h1>
+          <p class="hero-lede">Upload a PBIX or PBIP file and generate technical documentation, a model audit, an executive summary and a business user guide—automatically.</p>
+          <div class="hero-actions">
+            <button class="button" type="button" data-open-dialog="signup-dialog" data-plan="Free">Start documenting free <span aria-hidden="true">→</span></button>
+            <button class="button button-secondary" type="button" data-open-dialog="sample-dialog">View sample output</button>
+          </div>
+          <div class="trust-line" aria-label="Signup benefits">
+            <span><i aria-hidden="true"></i>No credit card</span>
+            <span><i aria-hidden="true"></i>Metadata only</span>
+            <span><i aria-hidden="true"></i>Source deleted</span>
+          </div>
+        </div>
+
+        <div class="product-window" id="product" aria-label="PBICompass product preview">
+          <div class="window-bar">
+            <div class="window-dots" aria-hidden="true"><i></i><i></i><i></i></div>
+            <span>Sales Performance.pbix</span>
+            <span class="secure-pill">Secure workspace</span>
+          </div>
+          <div class="window-body">
+            <aside class="product-sidebar">
+              <div class="mini-brand">P</div>
+              <button class="side-active" aria-label="Reports">▦</button>
+              <button aria-label="Lineage">⌘</button>
+              <button aria-label="Settings">⚙</button>
+              <div class="avatar">RS</div>
+            </aside>
+            <div class="workspace">
+              <div class="workspace-head">
+                <div>
+                  <small>Documentation workspace</small>
+                  <h2>Sales Performance</h2>
+                </div>
+                <button class="export-button" type="button" id="export-demo">Export sample</button>
+              </div>
+
+              <div class="analysis-row">
+                <div class="score-card">
+                  <div class="score-ring"><strong>86</strong><span>/100</span></div>
+                  <div><small>Model health</small><b>Good condition</b><span class="trend">↑ 8 after fixes</span></div>
+                </div>
+                <div class="model-stats">
+                  <span><b>14</b> tables</span>
+                  <span><b>128</b> measures</span>
+                  <span><b>23</b> relationships</span>
+                </div>
+              </div>
+
+              <div class="document-grid">
+                <article class="doc-card doc-selected">
+                  <span class="doc-icon">T</span>
+                  <small>Technical</small>
+                  <b>Developer reference</b>
+                  <div class="doc-lines"><i></i><i></i><i></i></div>
+                  <span class="ready">Ready</span>
+                </article>
+                <article class="doc-card">
+                  <span class="doc-icon amber">A</span>
+                  <small>Audit</small>
+                  <b>Health report</b>
+                  <div class="doc-lines"><i></i><i></i><i></i></div>
+                  <span class="ready">Ready</span>
+                </article>
+                <article class="doc-card">
+                  <span class="doc-icon blue">E</span>
+                  <small>Executive</small>
+                  <b>Leadership brief</b>
+                  <div class="doc-lines"><i></i><i></i><i></i></div>
+                  <span class="ready">Ready</span>
+                </article>
+                <article class="doc-card">
+                  <span class="doc-icon violet">U</span>
+                  <small>User guide</small>
+                  <b>Report handbook</b>
+                  <div class="doc-lines"><i></i><i></i><i></i></div>
+                  <span class="ready">Ready</span>
+                </article>
+              </div>
+            </div>
+          </div>
+          <div class="float-note note-one"><span>AI</span> DAX explained</div>
+          <div class="float-note note-two"><span>04</span> Documents ready</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="proof-strip" aria-label="Product facts">
+      <div class="container proof-grid">
+        <div><strong>4</strong><span>Document types</span></div>
+        <div><strong>5</strong><span>Export formats</span></div>
+        <div><strong>PBIX + PBIP</strong><span>Supported inputs</span></div>
+        <div><strong>0%</strong><span>Report data retained</span></div>
+      </div>
+    </section>
+
+    <section class="section problem-section">
+      <div class="container">
+        <div class="section-heading split-heading">
+          <div>
+            <div class="eyebrow"><span></span> The problem</div>
+            <h2>Documentation shouldn’t depend on <em>someone’s memory.</em></h2>
+          </div>
+          <p>Report authors move on. Measures multiply. Business logic gets buried. PBICompass turns the model itself into a dependable source of truth.</p>
+        </div>
+
+        <div class="comparison-card">
+          <div class="comparison-column old-way">
+            <span class="comparison-label">Without PBICompass</span>
+            <ul>
+              <li><span>×</span> Hours or days of manual work</li>
+              <li><span>×</span> Different structure every time</li>
+              <li><span>×</span> Unexplained DAX and hidden dependencies</li>
+              <li><span>×</span> Documentation that quickly becomes stale</li>
+            </ul>
+          </div>
+          <div class="comparison-arrow" aria-hidden="true">→</div>
+          <div class="comparison-column new-way">
+            <span class="comparison-label">With PBICompass</span>
+            <ul>
+              <li><span class="benefit-mark" aria-hidden="true"></span> Review-ready documents in minutes</li>
+              <li><span class="benefit-mark" aria-hidden="true"></span> One consistent documentation standard</li>
+              <li><span class="benefit-mark" aria-hidden="true"></span> Plain-English DAX and automatic lineage</li>
+              <li><span class="benefit-mark" aria-hidden="true"></span> Regenerate whenever the model changes</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section steps-section" id="how">
+      <div class="container">
+        <div class="section-heading centered">
+          <div class="eyebrow"><span></span> How it works</div>
+          <h2>From Power BI file to complete documentation.</h2>
+          <p>One simple workflow. No templates to maintain and no documentation marathon.</p>
+        </div>
+
+        <div class="steps-grid">
+          <article class="step-card">
+            <div class="step-number">01</div>
+            <div class="step-visual upload-visual">
+              <div class="upload-icon">↑</div>
+              <b>Drop your file here</b>
+              <span>PBIX or PBIP · up to 100 MB</span>
+            </div>
+            <h3>Upload securely</h3>
+            <p>Your report enters an isolated workspace created for that job.</p>
+          </article>
+          <article class="step-card">
+            <div class="step-number">02</div>
+            <div class="step-visual parse-visual">
+              <div class="parse-nodes">
+                <i>Tables</i><i>DAX</i><i>RLS</i><i>Pages</i>
+                <span></span>
+              </div>
+            </div>
+            <h3>Analyse the model</h3>
+            <p>PBICompass reads metadata, relationships, measures, M queries and security roles.</p>
+          </article>
+          <article class="step-card">
+            <div class="step-number">03</div>
+            <div class="step-visual deliver-visual">
+              <div class="file-stack"><i></i><i></i><i></i><i>04</i></div>
+              <span>PDF · DOCX · HTML · MD · JSON</span>
+            </div>
+            <h3>Download and share</h3>
+            <p>Receive four audience-ready documents in the formats your team already uses.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section documents-section" id="documents">
+      <div class="container">
+        <div class="section-heading centered light-heading">
+          <div class="eyebrow"><span></span> The output</div>
+          <h2>Four documents. <em>One source of truth.</em></h2>
+          <p>Every document is written for the people who actually need to use it.</p>
+        </div>
+
+        <div class="document-showcase" id="sample">
+          <div class="document-tabs" role="tablist" aria-label="Document previews">
+            <button class="tab-button active" role="tab" aria-selected="true" data-tab="technical">Technical</button>
+            <button class="tab-button" role="tab" aria-selected="false" data-tab="audit">Audit &amp; health</button>
+            <button class="tab-button" role="tab" aria-selected="false" data-tab="executive">Executive</button>
+            <button class="tab-button" role="tab" aria-selected="false" data-tab="user">User guide</button>
+          </div>
+
+          <div class="preview-layout">
+            <div class="preview-copy">
+              <div class="tab-panel active" data-panel="technical">
+                <span class="preview-kicker">Developer reference</span>
+                <h3>Everything the next developer needs on day one.</h3>
+                <p>A complete reference for tables, columns, relationships, measures, DAX, RLS and Power Query.</p>
+                <ul><li>Model architecture and lineage</li><li>Measure definitions and dependencies</li><li>Security roles and refresh logic</li></ul>
+              </div>
+              <div class="tab-panel" data-panel="audit" hidden>
+                <span class="preview-kicker">Model health report</span>
+                <h3>Find governance and performance risks early.</h3>
+                <p>Prioritised findings help teams improve model quality before users or auditors discover the problems.</p>
+                <ul><li>Deterministic health score</li><li>Security and relationship checks</li><li>Clear remediation guidance</li></ul>
+              </div>
+              <div class="tab-panel" data-panel="executive" hidden>
+                <span class="preview-kicker">Leadership brief</span>
+                <h3>A concise view of purpose, ownership and value.</h3>
+                <p>A jargon-free summary that helps decision-makers understand what the report does and why it matters.</p>
+                <ul><li>Business purpose and key metrics</li><li>Owners and refresh schedule</li><li>Governance summary</li></ul>
+              </div>
+              <div class="tab-panel" data-panel="user" hidden>
+                <span class="preview-kicker">Report handbook</span>
+                <h3>Help users answer their own report questions.</h3>
+                <p>A practical guide to pages, filters, KPIs and common questions, written in plain English.</p>
+                <ul><li>Page-by-page walkthrough</li><li>Filter and slicer instructions</li><li>KPI definitions and ownership</li></ul>
+              </div>
+              <button class="inline-link link-button" type="button" data-open-dialog="sample-dialog">Open full sample <span aria-hidden="true">→</span></button>
+            </div>
+
+            <div class="paper-preview" aria-live="polite">
+              <div class="paper-top"><span class="paper-logo">P</span><span>PBICompass</span><small>Technical Documentation</small></div>
+              <div class="paper-title">
+                <small>SALES PERFORMANCE · SEMANTIC MODEL</small>
+                <h4>Developer Reference</h4>
+                <p>Generated 18 July 2026 · Model version 4.2</p>
+              </div>
+              <div class="paper-score-row">
+                <div><b>14</b><span>Tables</span></div><div><b>128</b><span>Measures</span></div><div><b>23</b><span>Relationships</span></div>
+              </div>
+              <div class="paper-content">
+                <div class="paper-toc"><b>Contents</b><span>01 Model overview</span><span>02 Data model</span><span>03 Measures &amp; DAX</span><span>04 Security</span></div>
+                <div class="paper-chart">
+                  <b>Model architecture</b>
+                  <div class="model-map"><i>DimDate</i><i>FactSales</i><i>DimProduct</i><i>DimRegion</i><span></span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section intelligence-section">
+      <div class="container">
+        <div class="section-heading split-heading">
+          <div><div class="eyebrow"><span></span> Model intelligence</div><h2>Understand the logic—not just the objects.</h2></div>
+          <p>PBICompass explains how your model works so teams can maintain it with confidence.</p>
+        </div>
+        <div class="intelligence-grid">
+          <article class="code-demo">
+            <div class="demo-head"><span>DAX explanation</span><small>Revenue / Measures</small></div>
+            <pre><code><span>Total Revenue YTD</span> =
+CALCULATE(
+  [Total Revenue],
+  DATESYTD('Date'[Date])
+)</code></pre>
+            <div class="explanation-box"><span>AI explanation</span><p>Calculates total revenue from the start of the year through the currently selected date, while respecting report filters.</p></div>
+          </article>
+          <article class="lineage-demo">
+            <div class="demo-head"><span>Dependency map</span><small>Impact analysis</small></div>
+            <div class="lineage-map">
+              <div class="lineage-column"><small>Source</small><b>FactSales</b><b>DimDate</b></div>
+              <div class="lineage-lines"><i></i><i></i><i></i></div>
+              <div class="lineage-column"><small>Measures</small><b>Total Revenue</b><b>Revenue YTD</b></div>
+              <div class="lineage-lines"><i></i><i></i><i></i></div>
+              <div class="lineage-column"><small>Report</small><b>Overview</b><b>Sales trends</b></div>
+            </div>
+            <div class="impact-note"><span>3</span><p>downstream objects are affected by a change to <b>Total Revenue</b>.</p></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section use-cases-section">
+      <div class="container">
+        <div class="section-heading centered">
+          <div class="eyebrow"><span></span> Built for your team</div>
+          <h2>Useful to everyone responsible for Power BI.</h2>
+        </div>
+        <div class="use-case-grid">
+          <article><span class="case-icon">DEV</span><h3>BI developers</h3><p>Understand inherited reports, document complex DAX and analyse impact before making changes.</p><a href="#documents">Explore developer docs →</a></article>
+          <article><span class="case-icon">CON</span><h3>Consultants</h3><p>Deliver professional, standardised documentation with every client implementation and handover.</p><a href="#documents">Explore consultant use →</a></article>
+          <article><span class="case-icon">GOV</span><h3>Governance teams</h3><p>Review security, ownership, model health and documentation coverage across critical reports.</p><a href="#security">Explore governance →</a></article>
+          <article><span class="case-icon">EXE</span><h3>Business leaders</h3><p>Get a clear, jargon-free view of report purpose, metrics, ownership and reliability.</p><a href="#documents">Explore executive docs →</a></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section security-section" id="security">
+      <div class="security-orb one"></div><div class="security-orb two"></div>
+      <div class="container security-grid">
+        <div class="security-copy">
+          <div class="eyebrow light"><span></span> Security by design</div>
+          <h2>Your Power BI file has a <em>short, controlled lifecycle.</em></h2>
+          <p>PBICompass is designed to extract only the metadata needed to create documentation. Your source upload is deleted after processing and private downloads expire automatically.</p>
+          <div class="security-badges"><span>Metadata only</span><span>Isolated processing</span><span>Short retention</span></div>
+          <a class="button button-light" href="#faq">Read security FAQ →</a>
+        </div>
+        <ol class="lifecycle">
+          <li><span>01</span><div><b>Encrypted upload</b><small>PBIX or PBIP received over TLS</small></div><i></i></li>
+          <li><span>02</span><div><b>Isolated workspace</b><small>One secure processing environment per job</small></div><i></i></li>
+          <li><span>03</span><div><b>Metadata extraction</b><small>Model structure, never report data rows</small></div><i></i></li>
+          <li><span>04</span><div><b>Private delivery</b><small>Review-ready documents with expiring access</small></div><i></i></li>
+          <li><span>05</span><div><b>Automatic cleanup</b><small>Source deleted and downloads expire</small></div></li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="section pricing-section" id="pricing">
+      <div class="container">
+        <div class="section-heading centered">
+          <div class="eyebrow"><span></span> Simple pricing</div>
+          <h2>Start free. Scale when your team is ready.</h2>
+          <p>Every plan includes the four core documents and all five export formats.</p>
+        </div>
+        <div class="pricing-grid">
+          <article class="price-card">
+            <span class="plan">Free</span><h3>$0 <small>/ month</small></h3><p>For exploring PBICompass with your own reports.</p>
+            <button class="button button-secondary full-button" type="button" data-open-dialog="signup-dialog" data-plan="Free">Start free</button>
+            <ul><li>10 reports per month</li><li>2 AI-enhanced generations</li><li>Four document types</li><li>Five export formats</li></ul>
+          </article>
+          <article class="price-card featured-price">
+            <span class="popular">Most popular</span><span class="plan">Pro</span><h3>$20 <small>/ month</small></h3><p>For Power BI professionals and independent consultants.</p>
+            <button class="button full-button" type="button" data-open-dialog="signup-dialog" data-plan="Pro">Join Pro waitlist</button>
+            <ul><li>30 reports per month</li><li>10 AI-enhanced generations</li><li>Priority processing</li><li>Email support</li></ul>
+          </article>
+          <article class="price-card">
+            <span class="plan">Business</span><h3>$50 <small>/ month</small></h3><p>For internal BI teams documenting a shared estate.</p>
+            <button class="button button-secondary full-button" type="button" data-open-dialog="signup-dialog" data-plan="Business">Join Business waitlist</button>
+            <ul><li>50 reports per month</li><li>30 AI-enhanced generations</li><li>Team workspace</li><li>Priority support</li></ul>
+          </article>
+        </div>
+        <div class="enterprise-note"><div><span>Enterprise</span><b>Need SSO, private deployment or higher volume?</b></div><button class="link-button enterprise-link" type="button" data-open-dialog="contact-dialog">Talk to us →</button></div>
+      </div>
+    </section>
+
+    <section class="section faq-section" id="faq">
+      <div class="container faq-grid">
+        <div class="section-heading">
+          <div class="eyebrow"><span></span> FAQ</div>
+          <h2>Before you upload.</h2>
+          <p>Clear answers to the questions Power BI teams ask first.</p>
+        </div>
+        <div class="accordion">
+          <details open><summary>Does PBICompass read my report data?<span>+</span></summary><p>No. The documentation process uses semantic-model metadata such as tables, columns, measures, relationships, DAX and security roles—not the rows inside your report.</p></details>
+          <details><summary>What happens to my uploaded file?<span>+</span></summary><p>The source is processed inside an isolated workspace and deleted after processing. Generated downloads remain private and expire automatically.</p></details>
+          <details><summary>Which Power BI formats are supported?<span>+</span></summary><p>The platform supports PBIX and PBIP projects, including modern TMDL models and supported report-layout formats.</p></details>
+          <details><summary>Can I use it without AI?<span>+</span></summary><p>Yes. A deterministic offline engine can produce complete documentation without using an external AI provider.</p></details>
+          <details><summary>Can I regenerate after the model changes?<span>+</span></summary><p>Yes. Upload the updated model to create a fresh, consistently structured documentation set.</p></details>
+        </div>
+      </div>
+    </section>
+
+    <section class="section final-section" id="final-cta">
+      <div class="container final-card">
+        <div><div class="eyebrow light"><span></span> Ready when you are</div><h2>Your next Power BI report can document itself.</h2><p>Create a free account and generate four review-ready documents from one PBIX or PBIP upload.</p></div>
+        <div class="final-actions"><button class="button button-light" type="button" data-open-dialog="signup-dialog" data-plan="Free">Start documenting free →</button><button class="link-button final-sample-link" type="button" data-open-dialog="sample-dialog">View sample output</button><small>No credit card · Metadata only</small></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <div class="footer-brand"><a class="brand" href="#top"><span class="brand-mark">P</span><span>PBI<span>Compass</span></span></a><p>AI documentation and governance for Power BI teams.</p></div>
+      <div><b>Product</b><a href="#product">Features</a><a href="#documents">Examples</a><a href="#pricing">Pricing</a><a href="#security">Security</a></div>
+      <div><b>Solutions</b><a href="#how">BI developers</a><a href="#how">Consultants</a><a href="#how">Governance teams</a><a href="#how">Enterprise</a></div>
+      <div><b>Resources</b><button class="footer-link" type="button" data-open-dialog="sample-dialog">Documentation sample</button><a href="#how">API workflow</a><button class="footer-link" type="button" data-open-dialog="contact-dialog">Support</button><a href="#security">Status</a></div>
+      <div><b>Company</b><a href="#top">About</a><button class="footer-link" type="button" data-open-dialog="contact-dialog">Contact</button><a href="https://www.linkedin.com/company/pbicompass/about/" target="_blank" rel="noreferrer">LinkedIn</a><a href="#faq">Legal</a></div>
+    </div>
+    <div class="container footer-bottom"><span>© 2026 PBICompass. Demo concept.</span><div><a href="#faq">Privacy</a><a href="#faq">Terms</a></div></div>
+  </footer>
+
+  <dialog class="site-dialog" id="signup-dialog" aria-labelledby="signup-title">
+    <div class="dialog-panel">
+      <div class="dialog-head"><div><span class="dialog-kicker">Create your workspace</span><h2 id="signup-title">Start documenting for free.</h2></div><button class="dialog-close" type="button" data-close-dialog>Close</button></div>
+      <p>Tell us where to send your workspace invitation. This demo stores nothing and sends no data.</p>
+      <form class="dialog-form" data-demo-form="signup">
+        <label>Work email<input type="email" name="email" placeholder="you@company.com" required></label>
+        <label>Your role<select name="role" required><option value="">Choose your role</option><option>BI developer</option><option>Consultant</option><option>Governance or audit</option><option>Business leader</option></select></label>
+        <label>Plan<select name="plan" id="selected-plan"><option>Free</option><option>Pro</option><option>Business</option><option>Enterprise</option></select></label>
+        <button class="button full-button" type="submit">Create demo workspace →</button>
+      </form>
+      <div class="form-success" hidden><span>Invitation prepared</span><h3>Your demo workspace is ready.</h3><p>This concept flow is complete. Connect it to the production authentication service when the new website replaces the existing one.</p><button class="button button-secondary full-button" type="button" data-close-dialog>Return to website</button></div>
+    </div>
+  </dialog>
+
+  <dialog class="site-dialog" id="signin-dialog" aria-labelledby="signin-title">
+    <div class="dialog-panel compact-dialog">
+      <div class="dialog-head"><div><span class="dialog-kicker">Welcome back</span><h2 id="signin-title">Sign in to PBICompass.</h2></div><button class="dialog-close" type="button" data-close-dialog>Close</button></div>
+      <form class="dialog-form" data-demo-form="signin">
+        <label>Email<input type="email" name="email" placeholder="you@company.com" required></label>
+        <label>Password<input type="password" name="password" placeholder="At least 8 characters" minlength="8" required></label>
+        <button class="button full-button" type="submit">Continue to workspace →</button>
+      </form>
+      <div class="form-success" hidden><span>Demo sign-in complete</span><h3>Authentication flow confirmed.</h3><p>The interface is ready to connect to the existing PBICompass account service.</p><button class="button button-secondary full-button" type="button" data-close-dialog>Return to website</button></div>
+    </div>
+  </dialog>
+
+  <dialog class="site-dialog sample-dialog" id="sample-dialog" aria-labelledby="sample-title">
+    <div class="dialog-panel sample-panel">
+      <div class="dialog-head"><div><span class="dialog-kicker">Generated documentation</span><h2 id="sample-title">Sales Performance sample.</h2></div><button class="dialog-close" type="button" data-close-dialog>Close</button></div>
+      <div class="sample-toolbar"><div><span class="status-dot"></span>Complete · 14 tables · 128 measures</div><button class="button button-small" type="button" id="download-sample">Download sample</button></div>
+      <div class="sample-document">
+        <aside><b>Contents</b><span>Model overview</span><span>Architecture</span><span>Measures</span><span>Security</span><span>Recommendations</span></aside>
+        <article><span class="document-label">Technical documentation</span><h3>Sales Performance — Semantic Model</h3><p>This model provides a governed view of regional revenue, product performance and year-to-date sales movement.</p><div class="sample-metrics"><div><b>14</b><span>Tables</span></div><div><b>128</b><span>Measures</span></div><div><b>86</b><span>Health score</span></div></div><h4>Key measure</h4><pre>Total Revenue YTD = CALCULATE([Total Revenue], DATESYTD('Date'[Date]))</pre><div class="sample-insight"><span>Interpretation</span><p>Revenue accumulated from the start of the year through the selected reporting date.</p></div></article>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog class="site-dialog" id="contact-dialog" aria-labelledby="contact-title">
+    <div class="dialog-panel">
+      <div class="dialog-head"><div><span class="dialog-kicker">Enterprise and support</span><h2 id="contact-title">Talk to the PBICompass team.</h2></div><button class="dialog-close" type="button" data-close-dialog>Close</button></div>
+      <form class="dialog-form two-column-form" data-demo-form="contact">
+        <label>Name<input type="text" name="name" placeholder="Your name" required></label>
+        <label>Work email<input type="email" name="email" placeholder="you@company.com" required></label>
+        <label class="wide-field">Company<input type="text" name="company" placeholder="Company name" required></label>
+        <label class="wide-field">How can we help?<textarea name="message" rows="4" placeholder="Tell us about your Power BI environment" required></textarea></label>
+        <button class="button wide-field" type="submit">Prepare enquiry →</button>
+      </form>
+      <div class="form-success" hidden><span>Enquiry prepared</span><h3>Thanks for your interest.</h3><p>This demo interaction is complete and ready to connect to the production support workflow.</p><button class="button button-secondary full-button" type="button" data-close-dialog>Return to website</button></div>
+    </div>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="script.js"></script>
+</body>
+</html>

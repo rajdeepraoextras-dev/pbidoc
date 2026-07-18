@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://pbicompass-saas-demo.rajdeepextrastuffs.chatgpt.site/sitemap.xml

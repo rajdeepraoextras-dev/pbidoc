@@ -30,3 +30,6 @@ examples/*.zip
 .claude/
 .vscode/
 .idea/
+
+saas-demo/.git.local/
+saas-demo/.sites-stage/

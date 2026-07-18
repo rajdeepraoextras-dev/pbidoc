@@ -37,5 +37,9 @@ out/
 .DS_Store
 Thumbs.db
 
+# Local nested tool metadata / staging artifacts
+saas-demo/.git.local/
+saas-demo/.sites-stage/
+
 # Claude Code local tool config (machine-specific, not project source)
 .claude/
