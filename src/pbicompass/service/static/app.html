@@ -1315,16 +1315,12 @@ $("select-all-docs").addEventListener("click", () => {
 // for that to be honest. The bar just creeps against a pacing constant and
 // the label shows a broad duration range instead.
 let progressTimer = null;
-// Pacing numbers are measured, not aspirational. An AI bundle is ~25 LLM
-// calls; wall-clock is dominated by the provider's own decode time (~33s per
-// call on the MeshAPI/deepseek default), and the calls that can overlap
-// already do (agents/parallel.py). Measured critical path: ~8.5 min for a
-// small model, ~10.5 min for a 50-page/250-measure one. The old copy here
-// promised "3–4 minutes, max 7–8" against a real 13.7-minute run — every AI
-// job overran its own progress bar and looked broken while working fine.
+// Pacing numbers are product-facing estimates rather than a hard SLA. The
+// progress bar creeps up to 96% and waits there, so a slightly slow provider
+// still reads as "working" instead of broken.
 function progressPacing() {
   return EFFORT_CAPABLE_PROVIDERS.includes($("provider").value)
-    ? { seconds: 540, hint: "output usually takes 8–10 minutes on a large model" }
+    ? { seconds: 270, hint: "output usually takes 4–5 minutes on a large model" }
     : { seconds: 120, hint: "output takes max 2–3 minutes" };
 }
 function startProgress() {
