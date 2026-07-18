@@ -730,6 +730,9 @@ class EditableHtmlTest(unittest.TestCase):
         for html in documents:
             self.assertIn('id="document-content" contenteditable="false"', html)
             self.assertIn('id="edit-document"', html)
+            self.assertIn('class="edit-icon edit-icon--start"', html)
+            self.assertIn('class="edit-icon edit-icon--done"', html)
+            self.assertNotIn('<path d="M12 20h9"', html)
             self.assertIn('id="save-document"', html)
             self.assertIn("document.documentElement.outerHTML", html)
 

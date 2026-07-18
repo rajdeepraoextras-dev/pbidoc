@@ -1163,8 +1163,8 @@ details.collapsible > .code-block pre {
               color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
 .document-editor button svg {
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
   flex: none;
   fill: none;
   stroke: currentColor;
@@ -1172,6 +1172,9 @@ details.collapsible > .code-block pre {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+.document-editor #edit-document .edit-icon--done { display: none; }
+.document-editor #edit-document[aria-pressed="true"] .edit-icon--start { display: none; }
+.document-editor #edit-document[aria-pressed="true"] .edit-icon--done { display: block; }
 .document-editor button:hover {
   border-color: var(--primary);
   color: var(--primary);
@@ -1338,6 +1341,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const active = editable.getAttribute('contenteditable') !== 'true';
       editable.setAttribute('contenteditable', active ? 'true' : 'false');
       editButton.setAttribute('aria-pressed', active ? 'true' : 'false');
+      editButton.setAttribute('aria-label', active ? 'Finish editing' : 'Edit document');
       // Only the label span — editButton.textContent would take the icon out.
       const label = editButton.querySelector('.editor-btn-label') || editButton;
       label.textContent = active ? 'Finish editing' : 'Edit document';
@@ -1741,10 +1745,15 @@ _MOON_SVG = (
     '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>'
 )
 
-_PENCIL_SVG = (
-    '<svg viewBox="0 0 24 24" aria-hidden="true">'
-    '<path d="M12 20h9"/>'
-    '<path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>'
+_EDIT_SVG = (
+    '<svg class="edit-icon edit-icon--start" viewBox="0 0 24 24" aria-hidden="true">'
+    '<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>'
+    '<path d="M18.4 2.6a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>'
+)
+
+_EDIT_DONE_SVG = (
+    '<svg class="edit-icon edit-icon--done" viewBox="0 0 24 24" aria-hidden="true">'
+    '<path d="m5 12 4 4L19 6"/></svg>'
 )
 
 _DOWNLOAD_SVG = (
@@ -1853,7 +1862,8 @@ def page_shell(
     o.append('<div class="document-editor" aria-label="Document editing controls">')
     # The label lives in its own span: the toggle rewrites it on click, and
     # setting textContent on the button itself would delete the icon with it.
-    o.append(f'<button type="button" id="edit-document" aria-pressed="false">{_PENCIL_SVG}'
+    o.append(f'<button type="button" id="edit-document" aria-pressed="false" aria-label="Edit document">'
+             f'{_EDIT_SVG}{_EDIT_DONE_SVG}'
              f'<span class="editor-btn-label">Edit document</span></button>')
     o.append(f'<button type="button" id="save-document">{_DOWNLOAD_SVG}'
              f'<span class="editor-btn-label">Save HTML</span></button>')
