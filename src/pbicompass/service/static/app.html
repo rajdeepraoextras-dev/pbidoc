@@ -1346,10 +1346,9 @@ const FORMATS = { html: "HTML Document", docx: "Word Document", pdf: "PDF Report
 // Short forms for the "Coming soon" chips — full names are kept for the real
 // buttons and for each chip's tooltip.
 const FORMATS_SHORT = { html: "HTML", docx: "Word", pdf: "PDF", md: "Markdown", json: "JSON", zip: "ZIP (all)" };
-// HTML, Markdown, and the raw JSON schema are offered for download; the
-// remaining formats (Word, PDF, zip) still generate server-side but are
-// surfaced as "coming soon".
-const DOWNLOADABLE_FORMATS = new Set(["html", "md", "json"]);
+// HTML is the only download currently exposed. Markdown, raw JSON, Word, PDF,
+// and zip still generate server-side but are surfaced as "coming soon".
+const DOWNLOADABLE_FORMATS = new Set(["html"]);
 const DOC_TYPE_LABELS = { technical: "Technical Documentation", audit: "Audit & Health Report", executive: "Executive Summary", "user-guide": "Business User Guide", index: "Documentation Hub" };
 const DL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>';
 

@@ -104,6 +104,13 @@ class ServiceTest(unittest.TestCase):
         self.assertEqual(app_page.status_code, 200)
         self.assertIn("/jobs", app_page.text)  # upload JS wired to the API
 
+    def test_workspace_only_exposes_html_downloads(self):
+        app_page = self.client.get("/app")
+        self.assertEqual(app_page.status_code, 200)
+        self.assertIn('const DOWNLOADABLE_FORMATS = new Set(["html"]);', app_page.text)
+        self.assertIn('md: "Markdown"', app_page.text)
+        self.assertIn('json: "JSON"', app_page.text)
+
     def test_full_flow_and_downloads(self):
         res = self._run_job()
         self.assertEqual(res.status_code, 200)
