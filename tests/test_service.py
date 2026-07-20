@@ -104,6 +104,35 @@ class ServiceTest(unittest.TestCase):
         self.assertEqual(app_page.status_code, 200)
         self.assertIn("/jobs", app_page.text)  # upload JS wired to the API
 
+    def test_search_console_assets_are_served(self):
+        with mock.patch.dict(os.environ, {"PBICOMPASS_SITE_URL": "https://pbicompass.com"}):
+            client = TestClient(create_app(JobStore(), sandbox_root=self._root))
+            robots = client.get("/robots.txt")
+            self.assertEqual(robots.status_code, 200)
+            self.assertIn("User-agent: *", robots.text)
+            self.assertIn("User-agent: GPTBot", robots.text)
+            self.assertIn("User-agent: OAI-SearchBot", robots.text)
+            self.assertIn("User-agent: ClaudeBot", robots.text)
+            self.assertIn("Sitemap: https://pbicompass.com/sitemap.xml", robots.text)
+            self.assertIn("LLMS: https://pbicompass.com/llms.txt", robots.text)
+            self.assertIn("Disallow: /app", robots.text)
+
+            sitemap = client.get("/sitemap.xml")
+            self.assertEqual(sitemap.status_code, 200)
+            self.assertEqual(sitemap.headers["content-type"].split(";")[0], "application/xml")
+            self.assertIn("<loc>https://pbicompass.com/</loc>", sitemap.text)
+            self.assertIn("<loc>https://pbicompass.com/pricing</loc>", sitemap.text)
+
+            index = client.get("/")
+            self.assertIn('<link rel="canonical" href="https://pbicompass.com/">', index.text)
+
+            llms = client.get("/llms.txt")
+            self.assertEqual(llms.status_code, 200)
+            self.assertIn("# PBICompass", llms.text)
+            self.assertIn("AI documentation and governance for Power BI teams", llms.text)
+            self.assertIn("https://pbicompass.com/pricing", llms.text)
+            self.assertIn("Do not treat `/app`, `/admin`, `/jobs`, `/me`, or `/metrics` as public documentation", llms.text)
+
     def test_workspace_only_exposes_html_downloads(self):
         app_page = self.client.get("/app")
         self.assertEqual(app_page.status_code, 200)

@@ -24,6 +24,7 @@ import sys
 import threading
 import uuid
 from contextlib import asynccontextmanager
+from html import escape
 from pathlib import Path
 
 from fastapi import (BackgroundTasks, FastAPI, File, Form, HTTPException, Query,
@@ -186,6 +187,20 @@ def _visits_salt() -> str:
     # material -- it never needs to be verified here, just unpredictable so a
     # stored visitor_hash can't be reversed back to an IP.
     return os.environ.get("PBICOMPASS_VISITS_SALT") or os.environ.get("PBICOMPASS_ADMIN_TOKEN") or "pbicompass"
+
+
+def _public_site_url(request: Request | None = None) -> str:
+    """Canonical public origin used by robots.txt and sitemap.xml.
+
+    Hosted deployments should set PBICOMPASS_SITE_URL (or the legacy
+    PBICOMPASS_PUBLIC_URL) to the verified Search Console property.
+    """
+    configured = os.environ.get("PBICOMPASS_SITE_URL") or os.environ.get("PBICOMPASS_PUBLIC_URL")
+    if configured:
+        return configured.strip().rstrip("/")
+    if request is not None:
+        return str(request.base_url).rstrip("/")
+    return "https://pbicompass.com"
 
 
 def _safe_basename(filename: str) -> str:
@@ -512,6 +527,118 @@ def create_app(
     @app.get("/theme.css")
     def theme_css_route() -> Response:
         return Response(content=theme_css, media_type="text/css")
+
+    @app.get("/robots.txt", response_class=PlainTextResponse)
+    def robots_txt(request: Request) -> PlainTextResponse:
+        origin = _public_site_url(request)
+        public_rules = (
+            "Allow: /\n"
+            "Disallow: /admin\n"
+            "Disallow: /app\n"
+            "Disallow: /jobs\n"
+            "Disallow: /me\n"
+            "Disallow: /metrics\n"
+        )
+        body = (
+            "User-agent: *\n"
+            f"{public_rules}"
+            "\n"
+            "User-agent: GPTBot\n"
+            f"{public_rules}"
+            "\n"
+            "User-agent: OAI-SearchBot\n"
+            f"{public_rules}"
+            "\n"
+            "User-agent: ChatGPT-User\n"
+            f"{public_rules}"
+            "\n"
+            "User-agent: ClaudeBot\n"
+            f"{public_rules}"
+            "\n"
+            f"Sitemap: {origin}/sitemap.xml\n"
+            f"LLMS: {origin}/llms.txt\n"
+        )
+        return PlainTextResponse(
+            body,
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
+
+    @app.get("/llms.txt", response_class=PlainTextResponse)
+    def llms_txt(request: Request) -> PlainTextResponse:
+        origin = _public_site_url(request)
+        body = (
+            "# PBICompass\n"
+            "\n"
+            "> AI documentation and governance for Power BI teams.\n"
+            "\n"
+            "PBICompass turns Power BI `.pbix` and `.pbip` files into review-ready "
+            "technical documentation, model audits, executive summaries, and business "
+            "user guides. The service focuses on semantic-model metadata such as "
+            "tables, columns, measures, relationships, DAX, Power Query/M, report "
+            "layout, and RLS roles. It is designed to avoid reading or retaining "
+            "row-level report data.\n"
+            "\n"
+            "## Key facts\n"
+            "\n"
+            "- Product: Power BI documentation and governance generator.\n"
+            "- Inputs: PBIX files and PBIP projects.\n"
+            "- Outputs: Technical, Audit, Executive, and Business/User Guide documentation.\n"
+            "- Formats: HTML, DOCX, PDF, Markdown, and JSON where supported.\n"
+            "- Security posture: Metadata-only processing, isolated jobs, source upload deletion after processing, private expiring downloads.\n"
+            "- Audience: BI developers, Power BI consultants, governance teams, and business leaders.\n"
+            "\n"
+            "## Public pages\n"
+            "\n"
+            f"- Home: {origin}/\n"
+            f"- Pricing: {origin}/pricing\n"
+            f"- Privacy Policy: {origin}/privacy\n"
+            f"- Terms of Service: {origin}/terms\n"
+            f"- Refund Policy: {origin}/refund\n"
+            f"- Sitemap: {origin}/sitemap.xml\n"
+            "\n"
+            "## Private or non-public areas\n"
+            "\n"
+            "Do not treat `/app`, `/admin`, `/jobs`, `/me`, or `/metrics` as public documentation. "
+            "Those paths are application, account, operational, or job-specific surfaces.\n"
+            "\n"
+            "## Contact\n"
+            "\n"
+            "Email: pbicompass@gmail.com\n"
+        )
+        return PlainTextResponse(
+            body,
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
+
+    @app.get("/sitemap.xml")
+    def sitemap_xml(request: Request) -> Response:
+        origin = escape(_public_site_url(request), quote=True)
+        pages = (
+            ("/", "weekly", "1.0"),
+            ("/pricing", "monthly", "0.8"),
+            ("/privacy", "yearly", "0.3"),
+            ("/terms", "yearly", "0.3"),
+            ("/refund", "yearly", "0.3"),
+        )
+        urls = "\n".join(
+            "  <url>\n"
+            f"    <loc>{origin}{path}</loc>\n"
+            f"    <changefreq>{changefreq}</changefreq>\n"
+            f"    <priority>{priority}</priority>\n"
+            "  </url>"
+            for path, changefreq, priority in pages
+        )
+        xml = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+            f"{urls}\n"
+            "</urlset>\n"
+        )
+        return Response(
+            content=xml,
+            media_type="application/xml",
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
 
     @app.get("/", response_class=HTMLResponse)
     def index() -> str:
